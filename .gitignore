@@ -1,0 +1,26 @@
+# deps
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# env — never commit secrets
+.env
+.env.local
+.env.*.local
+
+# build output
+dist/
+
+# OS
+.DS_Store
+
+# artifacts (screenshots, html snapshots, traces)
+artifacts/
+
+# test coverage
+coverage/
+
+# logs
+*.log
