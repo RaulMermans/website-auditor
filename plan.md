@@ -23,7 +23,7 @@ AC: user submits domain → AuditRun row in DB → job enqueued ✓
 
 AC: `npm run test:integration` proves migration + persist + enqueue on real Postgres ✓
 
-## Shot 3 — Worker: discovery + capture
+## Shot 3 — Worker: discovery + capture (complete)
 
 - Worker HTTP server (`worker/src/index.ts`)
 - Playwright: homepage capture, priority page discovery (up to 5 pages)
@@ -31,7 +31,7 @@ AC: `npm run test:integration` proves migration + persist + enqueue on real Post
 - PageSnapshot rows persisted in DB
 - Homepage-only fallback if discovery fails
 
-AC: worker processes a real domain → snapshots in storage + DB
+AC: worker processes a real domain → snapshots in storage + DB ✓
 
 ## Shot 4 — Evidence extraction + findings
 
@@ -63,6 +63,6 @@ AC: outreach_asset rows in DB, viewable in report
 | Decision | Status | Needed by |
 |---|---|---|
 | Queue provider | pg-boss | Resolved |
-| Storage provider | TBD | Shot 3 |
+| Storage provider | Local FS (dev) | Shot 3 (resolved for local dev) |
 | DB client / ORM | raw pg | Resolved |
 | Auth / access control | Deferred | Post-MVP |

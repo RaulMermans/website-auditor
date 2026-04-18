@@ -7,7 +7,7 @@ Evidence-backed website audits. Rule-first, LLM-second. Fullstack Node.js + Type
 ```sh
 cp .env.example .env.local   # fill in real values
 npm install
-npm run migrate:up           # apply Shot 2 tables in Postgres
+npm run migrate:up           # apply Shot 2+3 tables in Postgres
 npm run dev                  # http://localhost:3000
 ```
 
@@ -18,8 +18,8 @@ npm run dev                  # http://localhost:3000
 | `npm run dev` | Start Next.js dev server |
 | `npm run build` | Production build |
 | `npm run lint` | ESLint |
-| `npm run migrate:up` | Apply the Shot 2 Postgres migration |
-| `npm run migrate:down` | Roll back the Shot 2 Postgres migration |
+| `npm run migrate:up` | Apply the Postgres migrations |
+| `npm run migrate:down` | Roll back the Postgres migrations |
 | `npm run typecheck` | TypeScript check (no emit) |
 | `npm test` | Run Vitest tests |
 | `npm run test:integration` | Run the real Shot 2 Postgres + `pg-boss` proof |
@@ -45,26 +45,26 @@ public/         Static assets
 - **App runtime** (Next.js / Vercel): intake, job dispatch, report viewing.
 - **Worker runtime** (separate Node.js process): all Playwright browser work.
 - **Queue**: `pg-boss` behind `src/server/contracts/queue.ts`.
-- **Storage**: provider TBD — interface at `src/server/contracts/storage.ts`.
+- **Storage**: local FS provider in worker (dev-only MVP), interface at `src/server/contracts/storage.ts`.
 - **DB client / ORM**: raw `pg` client with raw SQL migrations in `migrations/`.
 - **Evidence labels**: every finding is `Measured | Observed | Inferred`. Never present Inferred as Measured.
 
 ## Not yet implemented
 
-- [ ] Audit pipeline (discovery, capture, analysis)
-- [ ] Playwright worker
-- [ ] Worker processing
+- [x] Playwright worker
+- [x] Worker processing (discovery, capture)
 - [ ] Real storage provider
+- [ ] Audit pipeline (analysis)
 - [ ] Dashboard and report UI
 - [ ] LLM enrichment layer
 - [ ] Auth / access control
 
-## Shot 2 status
+## Shot 3 status
 
-- `/intake` validates and normalizes domains before job creation.
-- `target_domains` and `audit_runs` persist in Postgres before enqueue.
-- Queue dispatch uses `pg-boss` and lazily creates the queue on first enqueue.
-- On enqueue failure, the persisted audit run is marked `failed`.
-- `npm run test:integration` is the gate proving migration + persistence + enqueue against a disposable Postgres DB via `TEST_DATABASE_URL`.
+- Worker exists as a separate package under `worker/` using Playwright.
+- Worker CLI (`npm run dev` in `worker/`) processes a single `auditRunId` + `domain`.
+- Discover up to 5 priority pages (homepage, about, services, contact, content).
+- Stores page screenshots and HTML natively to `.storage/` artifact dir.
+- Persists `page_snapshots` and orchestrates status (`discovering` → `capturing` → `complete`).
 
 See `plan.md` for the milestone roadmap.

@@ -17,7 +17,7 @@ Authentication: HMAC-signed request from app → worker using `WORKER_SECRET`.
 
 ## Status
 
-**Not yet implemented.** Interface defined. Playwright setup deferred to Shot 3.
+**Shot 3 Implemented.** The worker can discover up to 5 priority pages, capture HTML/screenshots using Playwright, and persist artifacts and DB rows (`page_snapshots`).
 
 ## Planned layout
 
@@ -34,10 +34,12 @@ worker/
   package.json        # separate deps; playwright here not in root
 ```
 
-## Running (future)
+## Running
+
+Requires `DATABASE_URL` to be present in the environment (e.g., inherited from root `.env.local`).
 
 ```sh
 cd worker
 npm install
-npm run dev   # starts worker HTTP server
+npm run dev -- --audit-run-id=<uuid> --domain=https://example.com
 ```

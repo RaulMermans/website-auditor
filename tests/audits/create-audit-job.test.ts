@@ -29,6 +29,8 @@ function createDeps() {
   const auditJobs: AuditJobRepository = {
     createPendingAuditRun: vi.fn().mockResolvedValue(persistedRecord),
     markAuditRunFailed: vi.fn().mockResolvedValue(undefined),
+    updateAuditRunStatus: vi.fn().mockResolvedValue(undefined),
+    insertPageSnapshot: vi.fn().mockResolvedValue(undefined),
   };
   const queue: QueueClient = {
     enqueue: vi.fn().mockResolvedValue({

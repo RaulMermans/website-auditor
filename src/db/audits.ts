@@ -1,6 +1,8 @@
 import type { PoolClient } from "pg";
 import { withDbClient, withTransaction } from "@/db/client";
-import type { AuditRun, TargetDomain } from "@/lib/types";
+import type { AuditRun, AuditStatus, PageSnapshot, PageType, TargetDomain } from "@/lib/types";
+
+// ─── Row types (DB shape) ────────────────────────────────────────────────────
 
 interface TargetDomainRow {
   id: string;
@@ -20,6 +22,18 @@ interface AuditRunRow {
   created_at: Date;
 }
 
+interface PageSnapshotRow {
+  id: string;
+  audit_run_id: string;
+  url: string;
+  page_type: PageType;
+  html_storage_key: string | null;
+  screenshot_storage_key: string | null;
+  captured_at: Date;
+}
+
+// ─── Public input/output types ────────────────────────────────────────────────
+
 export interface PendingAuditRunRecord {
   targetDomain: TargetDomain;
   auditRun: AuditRun;
@@ -35,10 +49,29 @@ export interface MarkAuditRunFailedInput {
   failureReason: string;
 }
 
+export interface UpdateAuditRunStatusInput {
+  auditRunId: string;
+  status: AuditStatus;
+  homepageOnly?: boolean;
+  failureReason?: string | null;
+}
+
+export interface InsertPageSnapshotInput {
+  auditRunId: string;
+  url: string;
+  pageType: PageType;
+  htmlStorageKey?: string;
+  screenshotStorageKey?: string;
+}
+
 export interface AuditJobRepository {
   createPendingAuditRun(input: CreatePendingAuditRunInput): Promise<PendingAuditRunRecord>;
   markAuditRunFailed(input: MarkAuditRunFailedInput): Promise<void>;
+  updateAuditRunStatus(input: UpdateAuditRunStatusInput): Promise<void>;
+  insertPageSnapshot(input: InsertPageSnapshotInput): Promise<PageSnapshot>;
 }
+
+// ─── Mappers ─────────────────────────────────────────────────────────────────
 
 function mapTargetDomain(row: TargetDomainRow): TargetDomain {
   return {
@@ -61,6 +94,20 @@ function mapAuditRun(row: AuditRunRow): AuditRun {
     createdAt: row.created_at,
   };
 }
+
+function mapPageSnapshot(row: PageSnapshotRow): PageSnapshot {
+  return {
+    id: row.id,
+    auditRunId: row.audit_run_id,
+    url: row.url,
+    pageType: row.page_type,
+    htmlStorageKey: row.html_storage_key ?? undefined,
+    screenshotStorageKey: row.screenshot_storage_key ?? undefined,
+    capturedAt: row.captured_at,
+  };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function findOrCreateTargetDomain(client: PoolClient, domain: string) {
   const inserted = await client.query<TargetDomainRow>(
@@ -92,6 +139,8 @@ async function findOrCreateTargetDomain(client: PoolClient, domain: string) {
 
   return existing.rows[0];
 }
+
+// ─── Repository ───────────────────────────────────────────────────────────────
 
 export const auditJobRepository: AuditJobRepository = {
   async createPendingAuditRun({ domain, projectId }) {
@@ -144,6 +193,53 @@ export const auditJobRepository: AuditJobRepository = {
         `,
         [auditRunId, failureReason, new Date()]
       );
+    });
+  },
+
+  async updateAuditRunStatus({ auditRunId, status, homepageOnly, failureReason }) {
+    await withDbClient(async (client) => {
+      const completed = status === "complete" || status === "failed" ? new Date() : null;
+      await client.query(
+        `
+          UPDATE audit_runs
+          SET status = $2,
+              homepage_only = COALESCE($3, homepage_only),
+              failure_reason = COALESCE($4, failure_reason),
+              completed_at = COALESCE($5, completed_at)
+          WHERE id = $1
+        `,
+        [
+          auditRunId,
+          status,
+          homepageOnly ?? null,
+          failureReason ?? null,
+          completed,
+        ]
+      );
+    });
+  },
+
+  async insertPageSnapshot({ auditRunId, url, pageType, htmlStorageKey, screenshotStorageKey }) {
+    return withDbClient(async (client) => {
+      const result = await client.query<PageSnapshotRow>(
+        `
+          INSERT INTO page_snapshots (
+            id, audit_run_id, url, page_type, html_storage_key, screenshot_storage_key, captured_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          RETURNING id, audit_run_id, url, page_type, html_storage_key, screenshot_storage_key, captured_at
+        `,
+        [
+          crypto.randomUUID(),
+          auditRunId,
+          url,
+          pageType,
+          htmlStorageKey ?? null,
+          screenshotStorageKey ?? null,
+          new Date(),
+        ]
+      );
+      return mapPageSnapshot(result.rows[0]);
     });
   },
 };

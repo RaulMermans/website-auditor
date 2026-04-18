@@ -10,7 +10,7 @@ Archive or delete entries once resolved.
 ### Storage provider
 - Options: Vercel Blob, AWS S3, Cloudflare R2
 - Constraint: artifacts must be access-controlled (no raw public URLs)
-- Decision needed before Shot 3
+- Currently resolved for Shot 3: using local `.storage` filesystem provider to unblock development while maintaining the abstract interface. Real provider required later.
 
 ---
 
@@ -21,4 +21,4 @@ Archive or delete entries once resolved.
 - Shot 2.5 adds a disposable-DB integration proof: real migration + real persistence + real `pg-boss` enqueue via `TEST_DATABASE_URL`.
 - Worker boundary is structural: no Playwright in app runtime under any circumstances.
 - Evidence label discipline: every Finding must set label at creation time, not retroactively.
-- Homepage-only fallback must be explicit in the UI — never hide reduced-scope audits.
+- Shot 3 adds the worker runtime, Playwright discovery, capture, and page_snapshots. The worker uses `tsx` as an isolated CLI script right now.

@@ -1,5 +1,5 @@
 import process from "node:process";
-import { runShot2Migration } from "./migration-helpers.mjs";
+import { runShot2Migration, runShot3Migration } from "./migration-helpers.mjs";
 
 const direction = process.argv[2];
 
@@ -11,10 +11,18 @@ if (!process.env.DATABASE_URL) {
   throw new Error("Missing DATABASE_URL");
 }
 
-await runShot2Migration({
-  direction,
-  databaseUrl: process.env.DATABASE_URL,
-  cwd: process.cwd(),
-});
+const url = process.env.DATABASE_URL;
+const cwd = process.cwd();
 
-console.log(`Applied 0001_shot_2_domain_intake.${direction}.sql`);
+if (direction === "up") {
+  await runShot2Migration({ direction, databaseUrl: url, cwd });
+  console.log(`Applied 0001_shot_2_domain_intake.up.sql`);
+  await runShot3Migration({ direction, databaseUrl: url, cwd });
+  console.log(`Applied 0002_shot_3_page_snapshots.up.sql`);
+} else {
+  // Roll back in reverse order
+  await runShot3Migration({ direction, databaseUrl: url, cwd });
+  console.log(`Applied 0002_shot_3_page_snapshots.down.sql`);
+  await runShot2Migration({ direction, databaseUrl: url, cwd });
+  console.log(`Applied 0001_shot_2_domain_intake.down.sql`);
+}
