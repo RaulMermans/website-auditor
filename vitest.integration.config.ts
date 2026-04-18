@@ -4,12 +4,7 @@ import path from "path";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["tests/**/*.test.ts", "src/**/*.test.ts"],
-    exclude: ["tests/integration/**/*.test.ts"],
-    coverage: {
-      provider: "v8",
-      thresholds: { lines: 80 },
-    },
+    include: ["tests/integration/**/*.test.ts"],
   },
   resolve: {
     alias: {

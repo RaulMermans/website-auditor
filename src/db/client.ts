@@ -20,6 +20,14 @@ export function getDbPool() {
   return globalThis.__websiteAuditorPgPool;
 }
 
+export async function resetDbPool() {
+  if (globalThis.__websiteAuditorPgPool) {
+    const pool = globalThis.__websiteAuditorPgPool;
+    globalThis.__websiteAuditorPgPool = undefined;
+    await pool.end();
+  }
+}
+
 export async function withDbClient<T>(callback: (client: PoolClient) => Promise<T>) {
   const client = await getDbPool().connect();
 

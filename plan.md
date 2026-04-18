@@ -15,6 +15,14 @@ AC: npm install ✓ | dev ✓ | build ✓ | lint ✓ | typecheck ✓ | test ✓ 
 
 AC: user submits domain → AuditRun row in DB → job enqueued ✓
 
+## Shot 2.5 — Integration proof (complete, gate before Shot 3)
+
+- Disposable Postgres integration path applies the real Shot 2 migration
+- `createAuditJob()` runs with the real repository and real `pg-boss` adapter
+- Assertions prove `target_domains`, `audit_runs`, and queue job persistence
+
+AC: `npm run test:integration` proves migration + persist + enqueue on real Postgres ✓
+
 ## Shot 3 — Worker: discovery + capture
 
 - Worker HTTP server (`worker/src/index.ts`)

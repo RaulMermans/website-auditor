@@ -35,6 +35,7 @@ async function getPgBoss() {
 export const queueClient: QueueClient = {
   async enqueue(name, payload) {
     const boss = await getPgBoss();
+    await boss.createQueue(name);
     const jobId = await boss.send(name, payload);
 
     if (!jobId) {
@@ -44,3 +45,11 @@ export const queueClient: QueueClient = {
     return { id: jobId, name, payload };
   },
 };
+
+export async function stopQueueClient() {
+  if (globalThis.__websiteAuditorPgBoss) {
+    const boss = await globalThis.__websiteAuditorPgBoss;
+    globalThis.__websiteAuditorPgBoss = undefined;
+    await boss.stop();
+  }
+}

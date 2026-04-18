@@ -22,6 +22,7 @@ npm run dev                  # http://localhost:3000
 | `npm run migrate:down` | Roll back the Shot 2 Postgres migration |
 | `npm run typecheck` | TypeScript check (no emit) |
 | `npm test` | Run Vitest tests |
+| `npm run test:integration` | Run the real Shot 2 Postgres + `pg-boss` proof |
 | `npm run test:coverage` | Tests + coverage (80% target) |
 
 ## Repo structure
@@ -62,7 +63,8 @@ public/         Static assets
 
 - `/intake` validates and normalizes domains before job creation.
 - `target_domains` and `audit_runs` persist in Postgres before enqueue.
-- Queue dispatch uses `pg-boss`.
+- Queue dispatch uses `pg-boss` and lazily creates the queue on first enqueue.
 - On enqueue failure, the persisted audit run is marked `failed`.
+- `npm run test:integration` is the gate proving migration + persistence + enqueue against a disposable Postgres DB via `TEST_DATABASE_URL`.
 
 See `plan.md` for the milestone roadmap.

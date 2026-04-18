@@ -12,6 +12,7 @@
     "migrate:down": "node --env-file=.env.local scripts/migrate.mjs down",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:integration": "node scripts/run-integration-tests.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
