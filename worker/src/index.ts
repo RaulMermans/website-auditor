@@ -1,44 +1,87 @@
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createHmac } from "node:crypto";
 import process from "node:process";
 import { processCaptureJob } from "./capture.js";
+import type { WorkerCaptureRequest } from "./types.js";
 
-// CLI entrypoint for testing local execution.
-// In real usage, this would be an HTTP server or a queue worker directly.
-// Given Shot 3 constraints: "implement a worker process that handles one audit run at a time via a direct command"
+const PORT = process.env.PORT || 3001;
+const WORKER_SECRET = process.env.WORKER_SECRET;
 
-async function main() {
-  const args = Object.fromEntries(
-    process.argv.slice(2).map((arg) => arg.split("="))
-  );
+if (!WORKER_SECRET) {
+  console.warn("WARNING: WORKER_SECRET is not set. Requests will fail signature validation.");
+}
 
-  const auditRunId = args["--audit-run-id"];
-  const domain = args["--domain"];
-
-  if (!auditRunId || !domain) {
-    console.error("Usage: npm run dev -- --audit-run-id=<uuid> --domain=<url>");
-    process.exit(1);
-  }
-
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    console.error("Missing DATABASE_URL");
-    process.exit(1);
-  }
-
-  console.log(`[worker CLI] invoked for run ${auditRunId} / ${domain}`);
-
-  const result = await processCaptureJob(databaseUrl, {
-    auditRunId,
-    domain,
-  });
-
-  console.log("[worker CLI] Result:", result);
-
-  if (result.errorMessage) {
-    process.exit(1);
+function verifyHmac(payload: string, signature: string | undefined): boolean {
+  const secret = process.env.WORKER_SECRET;
+  if (!secret || !signature) return false;
+  try {
+    const expected = createHmac("sha256", secret).update(payload).digest("hex");
+    return expected === signature;
+  } catch {
+    return false;
   }
 }
 
-main().catch((err) => {
-  console.error("Fatal exception in worker:", err);
-  process.exit(1);
-});
+async function handleRequest(req: IncomingMessage, res: ServerResponse) {
+  if (req.method === "GET" && req.url === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "ok" }));
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/capture") {
+    const signature = req.headers["x-worker-signature"] as string | undefined;
+    
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+
+    req.on("end", async () => {
+      if (!verifyHmac(body, signature)) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Unauthorized: invalid signature" }));
+        return;
+      }
+
+      try {
+        const payload = JSON.parse(body) as WorkerCaptureRequest;
+        
+        if (!payload.auditRunId || !payload.domain) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Missing required fields" }));
+          return;
+        }
+
+        const databaseUrl = process.env.DATABASE_URL;
+        if (!databaseUrl) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Missing DATABASE_URL" }));
+          return;
+        }
+
+        const result = await processCaptureJob(databaseUrl, payload);
+        
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch (error) {
+        console.error("Worker error:", error);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Internal server error" }));
+      }
+    });
+    return;
+  }
+
+  res.writeHead(404, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: "Not found" }));
+}
+
+export const server = createServer(handleRequest);
+
+// Only start the server if run directly (not imported in tests)
+if (process.argv[1] === import.meta.filename) {
+  server.listen(PORT, () => {
+    console.log(`[worker] Server listening on port ${PORT}`);
+  });
+}

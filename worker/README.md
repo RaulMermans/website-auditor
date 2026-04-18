@@ -36,10 +36,12 @@ worker/
 
 ## Running
 
-Requires `DATABASE_URL` to be present in the environment (e.g., inherited from root `.env.local`).
+Requires `DATABASE_URL` and `WORKER_SECRET` to be present in the environment (e.g., inherited from root `.env.local` or explicitly passed).
 
 ```sh
 cd worker
 npm install
-npm run dev -- --audit-run-id=<uuid> --domain=https://example.com
+WORKER_SECRET=dev_secret PORT=3001 npm run dev
 ```
+
+Then dispatch requests via the main Next.js app or explicitly via cURL with the correct `x-worker-signature` header.

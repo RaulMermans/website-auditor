@@ -62,7 +62,7 @@ public/         Static assets
 ## Shot 3 status
 
 - Worker exists as a separate package under `worker/` using Playwright.
-- Worker CLI (`npm run dev` in `worker/`) processes a single `auditRunId` + `domain`.
+- Worker HTTP server (`npm run dev` in `worker/`) processes incoming `POST /capture` requests protected by HMAC.
 - Discover up to 5 priority pages (homepage, about, services, contact, content).
 - Stores page screenshots and HTML natively to `.storage/` artifact dir.
 - Persists `page_snapshots` and orchestrates status (`discovering` → `capturing` → `complete`).
