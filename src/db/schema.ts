@@ -1,8 +1,5 @@
-// DB schema placeholder — defines the logical shape of each table.
-// Actual DDL lives in migrations/. ORM/query-builder TBD.
-//
-// Convention: every table has (id uuid PK, created_at timestamptz).
-// Migrations must be reversible (up + down).
+// Logical table names for the raw-SQL schema.
+// DDL lives in migrations/ and the Shot 2 repositories use raw pg queries.
 
 export const TABLES = {
   projects: "projects",

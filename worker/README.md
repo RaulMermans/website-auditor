@@ -17,7 +17,7 @@ Authentication: HMAC-signed request from app → worker using `WORKER_SECRET`.
 
 ## Status
 
-**Not yet implemented.** Interface defined. Playwright setup deferred to Shot 2+.
+**Not yet implemented.** Interface defined. Playwright setup deferred to Shot 3.
 
 ## Planned layout
 

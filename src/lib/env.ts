@@ -5,14 +5,12 @@ const envSchema = z.object({
 
   // Database
   DATABASE_URL: z.string().url().optional(),
+  PG_BOSS_SCHEMA: z.string().min(1).optional(),
 
   // Storage (provider TBD)
   STORAGE_BUCKET: z.string().optional(),
   STORAGE_ACCESS_KEY: z.string().optional(),
   STORAGE_SECRET_KEY: z.string().optional(),
-
-  // Queue (provider TBD)
-  QUEUE_URL: z.string().optional(),
 
   // Worker
   WORKER_ENDPOINT: z.string().url().optional(),
@@ -38,3 +36,15 @@ function parseEnv() {
 
 // Singleton — validated once at module load time.
 export const env = parseEnv();
+
+export function getRequiredEnv<K extends keyof typeof env>(
+  key: K
+): NonNullable<(typeof env)[K]> {
+  const value = env[key];
+
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${String(key)}`);
+  }
+
+  return value as NonNullable<(typeof env)[K]>;
+}

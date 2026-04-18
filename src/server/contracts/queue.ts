@@ -1,21 +1,46 @@
-// Queue contract — provider TBD (must be Vercel-compatible).
-// Implement this interface with the chosen provider (e.g. Inngest, Trigger.dev, pg-boss).
+import PgBoss from "pg-boss";
+import { env, getRequiredEnv } from "@/lib/env";
 
-export interface QueueJob<TPayload = unknown> {
+export interface QueueJob<TPayload extends object = Record<string, unknown>> {
   id: string;
   name: string;
   payload: TPayload;
 }
 
 export interface QueueClient {
-  enqueue<TPayload>(name: string, payload: TPayload): Promise<QueueJob<TPayload>>;
+  enqueue<TPayload extends object>(name: string, payload: TPayload): Promise<QueueJob<TPayload>>;
 }
 
-// TODO: replace with real implementation before Shot 2 integration work
+declare global {
+  var __websiteAuditorPgBoss: Promise<PgBoss> | undefined;
+}
+
+async function getPgBoss() {
+  if (!globalThis.__websiteAuditorPgBoss) {
+    globalThis.__websiteAuditorPgBoss = (async () => {
+      const boss = new PgBoss({
+        connectionString: getRequiredEnv("DATABASE_URL"),
+        schema: env.PG_BOSS_SCHEMA ?? "pgboss",
+      });
+
+      await boss.start();
+
+      return boss;
+    })();
+  }
+
+  return globalThis.__websiteAuditorPgBoss;
+}
+
 export const queueClient: QueueClient = {
   async enqueue(name, payload) {
-    const job = { id: crypto.randomUUID(), name, payload };
-    console.warn("[queue] stub enqueue — no real queue wired:", name, job.id);
-    return job;
+    const boss = await getPgBoss();
+    const jobId = await boss.send(name, payload);
+
+    if (!jobId) {
+      throw new Error(`pg-boss did not return a job id for ${name}`);
+    }
+
+    return { id: jobId, name, payload };
   },
 };

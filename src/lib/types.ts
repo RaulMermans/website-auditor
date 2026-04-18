@@ -27,19 +27,20 @@ export interface Project {
 
 export interface TargetDomain {
   id: string;
-  projectId: string;
   domain: string;
   createdAt: Date;
 }
 
 export interface AuditRun {
   id: string;
+  projectId?: string | null;
   targetDomainId: string;
   status: AuditStatus;
   homepageOnly: boolean;
   startedAt: Date;
-  completedAt?: Date;
-  errorMessage?: string;
+  completedAt?: Date | null;
+  failureReason?: string | null;
+  createdAt: Date;
 }
 
 export interface PageSnapshot {

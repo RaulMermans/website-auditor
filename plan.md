@@ -6,14 +6,14 @@ Scaffold, conventions, env validation, placeholder contracts, test framework, ho
 
 AC: npm install ✓ | dev ✓ | build ✓ | lint ✓ | typecheck ✓ | test ✓ | homepage ✓
 
-## Shot 2 — Domain intake + job creation
+## Shot 2 — Domain intake + job creation (complete)
 
 - DB client selection and first migration (projects, target_domains, audit_runs)
 - `/intake` route: form accepting a domain, creates AuditRun in DB, enqueues job
-- Queue provider wired (Inngest or pg-boss)
+- Queue provider wired (`pg-boss`)
 - Tests: intake validation, DB persistence, queue enqueue
 
-AC: user submits domain → AuditRun row in DB → job enqueued
+AC: user submits domain → AuditRun row in DB → job enqueued ✓
 
 ## Shot 3 — Worker: discovery + capture
 
@@ -54,7 +54,7 @@ AC: outreach_asset rows in DB, viewable in report
 
 | Decision | Status | Needed by |
 |---|---|---|
-| Queue provider | TBD | Shot 2 |
+| Queue provider | pg-boss | Resolved |
 | Storage provider | TBD | Shot 3 |
-| DB client / ORM | TBD | Shot 2 |
+| DB client / ORM | raw pg | Resolved |
 | Auth / access control | Deferred | Post-MVP |

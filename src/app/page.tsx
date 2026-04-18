@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function HomePage() {
   return (
     <main style={{ maxWidth: 640, margin: "80px auto", padding: "0 24px" }}>
@@ -7,6 +9,12 @@ export default function HomePage() {
       <p style={{ color: "#6b7280", marginBottom: 24 }}>
         Evidence-backed website audits. Rule-first, LLM-second.
       </p>
+      <Link
+        href="/intake"
+        style={{ display: "inline-block", marginBottom: 24, color: "#111827", fontWeight: 600 }}
+      >
+        Create audit job
+      </Link>
       <div
         style={{
           background: "#fff",
