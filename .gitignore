@@ -18,6 +18,7 @@ dist/
 
 # artifacts (screenshots, html snapshots, traces)
 artifacts/
+.storage/
 
 # test coverage
 coverage/
