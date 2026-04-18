@@ -53,12 +53,17 @@ Then dispatch requests via the main Next.js app or explicitly via cURL with the 
 ## Production-style start
 
 The worker is deployed separately from the Vercel app and must run as its own Node process.
+The current storage provider writes to a local `.storage/` directory, so the host must provide a writable filesystem.
+This package does not include deployment config for a specific provider; the supported path is a generic Node host that can run Playwright.
 
 ```sh
 cd worker
 npm install
 npm run build
-PORT=3001 npm run start
+DATABASE_URL=postgres://... \
+WORKER_SECRET=... \
+PORT=3001 \
+npm run start
 ```
 
 Required env vars:
@@ -67,3 +72,7 @@ Required env vars:
 
 Optional:
 - `PORT` (defaults to `3001`)
+
+Operational checks:
+- `GET /health` returns `{"status":"ok"}`
+- `POST /capture` requires a valid `x-worker-signature` HMAC derived from `WORKER_SECRET`

@@ -29,22 +29,20 @@ Archive or delete entries once resolved.
 
 **Deploy-readiness: deploy-ready-with-fixes**
 
-### What was fixed
-- `vitest.config.ts`: added `coverage.include`/`coverage.exclude` to scope unit coverage to `src/**` only,
-  excluding DB layer and infrastructure contracts (integration-tested separately) and Next.js app layer.
-  Coverage now passes at 89.2% lines (was silently failing at 10.5% due to worker/dist leaking in).
-- `.env.example`: annotated which vars belong to Vercel app, worker process, smoke dispatch, and integration tests.
+### Current assessment
+1. `scripts/smoke-dispatch-once.mjs` matches the current runtime contract:
+   it fetches one `audit.run` job from `pg-boss`, signs the raw JSON payload with HMAC, and posts it to `POST /capture`.
+2. App deploy path is Vercel-ready with defaults:
+   `DATABASE_URL` is required, `PG_BOSS_SCHEMA` and `NEXT_PUBLIC_APP_URL` are optional.
+3. Worker deploy path is manual but valid:
+   run a separate Node host with `DATABASE_URL` and `WORKER_SECRET`; current storage is local `.storage/`.
+4. `migrate:up` is repeatable against the same database with the current SQL files.
+5. `test:integration` still requires an explicit disposable `TEST_DATABASE_URL`; it was not runnable in this audit shell without that env.
 
 ### Known gaps before production smoke test
-1. **Worker deployment not defined**: worker must run on a VPS/Railway/Render with persistent filesystem;
-   it cannot run on Vercel. No deployment config exists yet for the worker host.
-2. **Storage is local FS only**: worker writes artifacts to `.storage/` relative to repo root.
-   Fine for a manual smoke test with the worker running locally or on a VPS.
-   A real storage provider (S3, Vercel Blob, R2) is required before multi-operator use.
-3. **Migration not idempotent on repeat runs**: `migrate:up` will error if run twice against the same DB
-   (the `ADD CONSTRAINT` in 0002 is not guarded). Run once on a fresh production DB only.
-4. **No always-on queue consumer**: `smoke:dispatch-once` is the only bridge between the app queue and
-   the worker. Shot 4+ will need a real consumer loop.
+1. **Worker deployment is not automated in-repo**: there is no Dockerfile or provider config.
+2. **Storage is local FS only**: acceptable for a one-run smoke test, not for long-term multi-operator use.
+3. **No always-on queue consumer**: `smoke:dispatch-once` remains a manual bridge by design.
 
 ### App layer env required at Vercel runtime
 - `DATABASE_URL` — required; without it, intake action throws on first request

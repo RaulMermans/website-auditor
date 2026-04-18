@@ -79,20 +79,45 @@ Current state is deploy-testable with one manual bridge: the app creates `audit.
 `npm run smoke:dispatch-once` drains one queued job and calls the worker. There is not yet an always-on queue
 consumer in-repo.
 
-1. Deploy the Next.js app to Vercel with `DATABASE_URL` set. `PG_BOSS_SCHEMA` is optional and defaults to `pgboss`.
+App runtime envs:
+- Required: `DATABASE_URL`
+- Optional: `PG_BOSS_SCHEMA` (defaults to `pgboss`), `NEXT_PUBLIC_APP_URL`
+
+Worker runtime envs:
+- Required: `DATABASE_URL`, `WORKER_SECRET`
+- Optional: `PORT` (defaults to `3001`)
+
+Dispatch-shell envs:
+- Required: `DATABASE_URL`, `WORKER_ENDPOINT`, `WORKER_SECRET`
+- Optional: `PG_BOSS_SCHEMA` if not using the default `pgboss`
+
+Vercel defaults are sufficient for the app deploy. No custom build override or `vercel.json` is required by the current repo.
+The intake flow does not require a live worker to create an audit run; it only requires Postgres and `pg-boss` connectivity.
+
+1. Deploy the Next.js app to Vercel with `DATABASE_URL` set.
 2. Apply DB migrations against the production database:
 
    ```sh
    DATABASE_URL=postgres://... npm run migrate:up
    ```
 
-3. Deploy the worker separately from `worker/` with `DATABASE_URL` and `WORKER_SECRET` set:
+3. Start the worker on a separate Node host from `worker/`.
+   The host must support Playwright and provide a writable filesystem for the current local `.storage/` artifacts path.
 
    ```sh
    cd worker
    npm install
    npm run build
-   PORT=3001 npm run start
+   DATABASE_URL=postgres://... \
+   WORKER_SECRET=... \
+   PORT=3001 \
+   npm run start
+   ```
+
+   Optional sanity check:
+
+   ```sh
+   curl http://127.0.0.1:3001/health
    ```
 
 4. Submit a real domain on `/intake` in the Vercel app and capture the returned `auditRunId`.
@@ -106,15 +131,15 @@ consumer in-repo.
    ```
 
 6. Success signals:
-   - `/intake` shows `Audit job created`
-   - `smoke:dispatch-once` prints the queued payload and worker response JSON
-   - `audit_runs.status` becomes `complete` or `failed`
-   - `page_snapshots` contains rows for the processed run
+   - `/intake` shows `Audit job created.`
+   - `smoke:dispatch-once` prints `jobId`, request payload, and worker response JSON
+   - `audit_runs.status` moves from `pending` to `discovering`/`capturing` and finally `complete` or `failed`
+   - `page_snapshots` contains rows for the processed run when the worker captured at least the homepage
 
 7. Failure signals:
-   - intake redirect with queueing error
+   - `/intake` redirects with a queueing error and `status=failed`
    - `smoke:dispatch-once` reports no queued `audit.run` job
-   - worker returns non-200 / HMAC error / missing `DATABASE_URL`
-   - `audit_runs` remains `pending`
+   - worker `/capture` returns non-200, `401`, or `Missing DATABASE_URL`
+   - `audit_runs` remains `pending`, which means the manual bridge never drained the queue
 
 See `plan.md` for the milestone roadmap.
