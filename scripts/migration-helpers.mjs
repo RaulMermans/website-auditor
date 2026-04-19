@@ -16,6 +16,10 @@ export function getShot4MigrationPath(direction, cwd = process.cwd()) {
   return path.join(cwd, "migrations", `0003_shot_4_evidence_findings.${direction}.sql`);
 }
 
+export function getShot6MigrationPath(direction, cwd = process.cwd()) {
+  return path.join(cwd, "migrations", `0004_shot_6_outreach_assets.${direction}.sql`);
+}
+
 export async function runMigration({ filePath, databaseUrl }) {
   const sql = await readFile(filePath, "utf8");
   const client = new Client({ connectionString: databaseUrl });
@@ -44,6 +48,13 @@ export async function runShot4Migration({ direction, databaseUrl, cwd = process.
   if (direction !== "up" && direction !== "down") throw new Error("direction must be up or down");
   if (!databaseUrl) throw new Error("Missing databaseUrl");
   const filePath = getShot4MigrationPath(direction, cwd);
+  return runMigration({ filePath, databaseUrl });
+}
+
+export async function runShot6Migration({ direction, databaseUrl, cwd = process.cwd() }) {
+  if (direction !== "up" && direction !== "down") throw new Error("direction must be up or down");
+  if (!databaseUrl) throw new Error("Missing databaseUrl");
+  const filePath = getShot6MigrationPath(direction, cwd);
   return runMigration({ filePath, databaseUrl });
 }
 

@@ -1,5 +1,10 @@
 import process from "node:process";
-import { runShot2Migration, runShot3Migration, runShot4Migration } from "./migration-helpers.mjs";
+import {
+  runShot2Migration,
+  runShot3Migration,
+  runShot4Migration,
+  runShot6Migration,
+} from "./migration-helpers.mjs";
 
 const direction = process.argv[2];
 
@@ -21,8 +26,12 @@ if (direction === "up") {
   console.log(`Applied 0002_shot_3_page_snapshots.up.sql`);
   await runShot4Migration({ direction, databaseUrl: url, cwd });
   console.log(`Applied 0003_shot_4_evidence_findings.up.sql`);
+  await runShot6Migration({ direction, databaseUrl: url, cwd });
+  console.log(`Applied 0004_shot_6_outreach_assets.up.sql`);
 } else {
   // Roll back in reverse order
+  await runShot6Migration({ direction, databaseUrl: url, cwd });
+  console.log(`Applied 0004_shot_6_outreach_assets.down.sql`);
   await runShot4Migration({ direction, databaseUrl: url, cwd });
   console.log(`Applied 0003_shot_4_evidence_findings.down.sql`);
   await runShot3Migration({ direction, databaseUrl: url, cwd });

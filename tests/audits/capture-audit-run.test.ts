@@ -202,4 +202,31 @@ describe("captureAuditRun", () => {
       homepageOnly: true,
     });
   });
+
+  it("marks the run failed when Chromium is unavailable in the runtime", async () => {
+    const { deps } = createDeps();
+    deps.launchBrowser = vi.fn().mockRejectedValue(
+      new Error("browserType.launch: Executable doesn't exist at /var/task/.cache/ms-playwright/chromium")
+    );
+
+    const result = await captureAuditRun(
+      {
+        auditRunId: "run-browser-missing",
+        domain: "example.com",
+      },
+      deps
+    );
+
+    expect(result.auditRunId).toBe("run-browser-missing");
+    expect(result.pagesProcessed).toBe(0);
+    expect(result.homepageOnly).toBe(true);
+    expect(result.errorMessage).toMatch(/Playwright Chromium is unavailable in this deployment/);
+    expect(result.errorMessage).toMatch(/Executable doesn't exist/);
+    expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith({
+      auditRunId: "run-browser-missing",
+      status: "failed",
+      failureReason: expect.stringContaining("Playwright Chromium is unavailable in this deployment"),
+      homepageOnly: true,
+    });
+  });
 });

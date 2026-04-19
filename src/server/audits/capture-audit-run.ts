@@ -166,22 +166,47 @@ async function discoverPriorityPages(page: Page, domain: string): Promise<Discov
   return discovered;
 }
 
-async function launchBrowser(): Promise<BrowserSession> {
-  const { chromium } = await import("playwright");
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 800 },
-    userAgent: "WebsiteAuditorAgent/1.0 (+https://example.com/bot)",
-  });
-  const page = await context.newPage();
+function normalizeLaunchError(error: unknown): Error {
+  if (!(error instanceof Error)) {
+    return new Error(String(error));
+  }
 
-  return {
-    page,
-    close: async () => {
-      await context.close();
-      await browser.close();
-    },
-  };
+  if (!/Executable doesn't exist|Cannot find module ['"]playwright['"]/i.test(error.message)) {
+    return error;
+  }
+
+  return new Error(
+    [
+      "Playwright Chromium is unavailable in this deployment.",
+      "Ensure the root install completed so `node scripts/install-playwright.mjs` could install Chromium under `node_modules/playwright-core/.local-browsers`.",
+      `Original error: ${error.message}`,
+    ].join(" "),
+    { cause: error }
+  );
+}
+
+async function launchBrowser(): Promise<BrowserSession> {
+  try {
+    process.env.PLAYWRIGHT_BROWSERS_PATH ??= "0";
+
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      userAgent: "WebsiteAuditorAgent/1.0 (+https://example.com/bot)",
+    });
+    const page = await context.newPage();
+
+    return {
+      page,
+      close: async () => {
+        await context.close();
+        await browser.close();
+      },
+    };
+  } catch (error) {
+    throw normalizeLaunchError(error);
+  }
 }
 
 function buildArtifactKey(
@@ -209,11 +234,13 @@ export async function captureAuditRun(
     status: "discovering",
   });
 
-  const session = await deps.launchBrowser();
+  let session: BrowserSession | undefined;
   let homepageOnly = true;
   let pagesProcessed = 0;
 
   try {
+    session = await deps.launchBrowser();
+
     const response = await session.page.goto(baseUrl, {
       waitUntil: "networkidle",
       timeout: 30000,
@@ -290,7 +317,7 @@ export async function captureAuditRun(
       homepageOnly,
     };
   } catch (error) {
-    const failureReason = error instanceof Error ? error.message : "Unknown error";
+    const failureReason = normalizeLaunchError(error).message;
     await deps.auditJobs.updateAuditRunStatus({
       auditRunId,
       status: "failed",
@@ -305,6 +332,6 @@ export async function captureAuditRun(
       errorMessage: failureReason,
     };
   } finally {
-    await session.close().catch(() => undefined);
+    await session?.close().catch(() => undefined);
   }
 }
