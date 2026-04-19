@@ -68,6 +68,18 @@ AC: shareable report URL with scored findings ✓
 
 AC: outreach_asset rows in DB, viewable in report ✓
 
+## Shot 7 — Runtime fixes + audits dashboard (complete)
+
+- Fixed `launchBrowser()`: always sets `PLAYWRIGHT_BROWSERS_PATH=0`; adds `--no-sandbox`, `--disable-setuid-sandbox`, `--disable-dev-shm-usage` args for Lambda compatibility.
+- Added `export const maxDuration = 300` to the intake route so Vercel keeps the `after()` callback alive for up to 5 minutes.
+- `listRecentAuditRuns()` added to `src/db/report.ts`; returns 50 most recent runs with domain, status, timestamps, homepage_only, failure_reason.
+- `/audits` page lists audit runs with status badges; failed runs show failure_reason; complete runs link to report.
+- Home page now links to `/audits`.
+- All 63 tests pass; 4 new tests for `AuditRunListItem` shape.
+- Operational smoke validation still pending; next step is a live Vercel deploy run.
+
+AC: AC1 ✓ AC2 ✓ AC3 ✓ AC4 ✓ AC5 ✓ AC6 ✓ AC7 ✓ AC8 ✓ AC9 ✓ AC10 ✓
+
 ## Deferred decisions
 
 | Decision | Status | Needed by |

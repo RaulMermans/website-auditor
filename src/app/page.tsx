@@ -9,12 +9,14 @@ export default function HomePage() {
       <p style={{ color: "#6b7280", marginBottom: 24 }}>
         Evidence-backed website audits. Rule-first, LLM-second.
       </p>
-      <Link
-        href="/intake"
-        style={{ display: "inline-block", marginBottom: 24, color: "#111827", fontWeight: 600 }}
-      >
-        Create audit job
-      </Link>
+      <div style={{ display: "flex", gap: 24, marginBottom: 24 }}>
+        <Link href="/intake" style={{ color: "#111827", fontWeight: 600 }}>
+          Create audit job
+        </Link>
+        <Link href="/audits" style={{ color: "#111827", fontWeight: 600 }}>
+          View all audits
+        </Link>
+      </div>
       <div
         style={{
           background: "#fff",

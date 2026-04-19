@@ -1,5 +1,8 @@
 import { submitDomainAction } from "@/app/intake/actions";
 
+// Allow up to 5 minutes for the after() Playwright capture callback to complete on Vercel
+export const maxDuration = 300;
+
 type SearchParams = Record<string, string | string[] | undefined>;
 
 function getValue(params: SearchParams, key: string) {

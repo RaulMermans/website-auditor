@@ -31,6 +31,23 @@ Archive or delete entries once resolved.
 
 ---
 
+## Shot 7 runtime + dashboard status (2026-04-19)
+
+### Changes applied
+1. `launchBrowser()` — `PLAYWRIGHT_BROWSERS_PATH` is now always set to `"0"` (not conditional), and the launch call adds `--no-sandbox`, `--disable-setuid-sandbox`, `--disable-dev-shm-usage`. These flags are required on Vercel Lambda where Chrome runs as root and `/dev/shm` is constrained.
+2. `export const maxDuration = 300` added to `src/app/intake/page.tsx`. Without this, Vercel's default 10 s timeout kills the `after()` Playwright callback before capture can complete.
+3. `listRecentAuditRuns(limit?)` added to `src/db/report.ts` — joins `audit_runs` + `target_domains`, orders by `created_at DESC`, returns `AuditRunListItem[]`.
+4. `src/app/audits/page.tsx` — server component, `force-dynamic`, reads from DB, shows status badges, failure reasons, report links.
+5. `src/app/page.tsx` — links to `/audits`.
+6. All 63 tests pass; build passes; lint clean.
+
+### Still pending
+- Live Vercel smoke run with `DATABASE_URL` + `npm run migrate:up` applied against production DB.
+- Real blob storage provider (currently local FS, not viable for production Vercel artifacts).
+- Confirm `maxDuration = 300` is within the active Vercel plan's allowed limit (Pro = 300 s, Hobby = 60 s).
+
+---
+
 ## Vercel-only pivot status (2026-04-19)
 
 **Implementation status: code path complete, operational smoke validation pending**

@@ -6,8 +6,9 @@ Evidence-backed website audits. Rule-first, LLM-second. Fullstack Node.js + Type
 
 - Vercel-only processing is the intended architecture in code; intake triggers audit processing inside the app project.
 - Deterministic findings and scores remain the source of truth; Gemini enrichment is additive only.
-- MVP is near feature-complete, but operational smoke validation is still pending.
-- The production intake flow is currently failing at runtime, so end-to-end deployment validation remains unresolved.
+- `/audits` dashboard lists recent audit runs with status, failure reasons, and links to reports.
+- Runtime blockers addressed: Lambda-compatible browser launch args + `maxDuration = 300` on the intake route.
+- Operational smoke validation is still pending on Vercel; end-to-end proof requires a live deploy run.
 
 ## Local setup
 
@@ -136,12 +137,18 @@ Do not disable install lifecycle scripts in Vercel, or the Chromium download ste
 - `GEMINI_MODEL` is optional and defaults to `gemini-2.5-flash`.
 - Operational smoke testing is still pending; the MVP is not operationally validated yet.
 
+## Shot 7 status — runtime fixes + dashboard
+
+- `launchBrowser()` now always sets `PLAYWRIGHT_BROWSERS_PATH=0` and passes `--no-sandbox`, `--disable-setuid-sandbox`, `--disable-dev-shm-usage` — required for Lambda environments where Chrome runs as root and `/dev/shm` is constrained.
+- `export const maxDuration = 300` added to the intake route segment so Vercel allows the `after()` Playwright callback up to 5 minutes (Pro plan limit).
+- `/audits` dashboard page added — reads recent audit runs from DB, shows status badges, failure reasons, and report links. Works with zero enrichment.
+- All existing tests still pass; 4 new tests added for the `AuditRunListItem` shape.
+
 ## Validation note
 
-- Vercel-only processing is now the deployed architecture in code.
-- MVP is near feature-complete, but not runtime-validated.
-- Operational smoke validation on a real Vercel deployment is still pending.
-- The production intake flow is currently failing at runtime and remains unresolved.
-- The biggest unresolved production risk is Playwright execution plus local filesystem artifact storage under Vercel server execution; the code path exists, but this has not yet been validated end to end.
+- Vercel-only processing is the deployed architecture in code.
+- Lambda browser flags and intake `maxDuration` are now set correctly.
+- Operational smoke validation on a real Vercel deployment is still required to confirm end-to-end success.
+- Remaining production risks: (1) Playwright binary still needs the `postinstall` step to run on Vercel (do not disable install lifecycle scripts); (2) local FS storage is dev-only and needs a real provider for production artifacts.
 
 See `plan.md` for the milestone roadmap.

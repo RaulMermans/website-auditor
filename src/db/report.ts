@@ -41,6 +41,16 @@ interface FindingRow {
   created_at: Date;
 }
 
+export interface AuditRunListItem {
+  auditRunId: string;
+  domain: string;
+  status: AuditStatus;
+  createdAt: Date;
+  completedAt: Date | null;
+  homepageOnly: boolean;
+  failureReason: string | null;
+}
+
 export interface ReportData {
   auditRunId: string;
   domain: string;
@@ -82,6 +92,46 @@ function mapFinding(row: FindingRow): Finding {
     recommendation: row.recommendation,
     createdAt: row.created_at,
   };
+}
+
+export async function listRecentAuditRuns(limit = 50): Promise<AuditRunListItem[]> {
+  return withDbClient(async (client) => {
+    const result = await client.query<{
+      audit_run_id: string;
+      domain: string;
+      status: AuditStatus;
+      created_at: Date;
+      completed_at: Date | null;
+      homepage_only: boolean;
+      failure_reason: string | null;
+    }>(
+      `
+        SELECT
+          ar.id AS audit_run_id,
+          td.domain,
+          ar.status,
+          ar.created_at,
+          ar.completed_at,
+          ar.homepage_only,
+          ar.failure_reason
+        FROM audit_runs ar
+        JOIN target_domains td ON td.id = ar.target_domain_id
+        ORDER BY ar.created_at DESC
+        LIMIT $1
+      `,
+      [limit]
+    );
+
+    return result.rows.map((row) => ({
+      auditRunId: row.audit_run_id,
+      domain: row.domain,
+      status: row.status,
+      createdAt: row.created_at,
+      completedAt: row.completed_at,
+      homepageOnly: row.homepage_only,
+      failureReason: row.failure_reason,
+    }));
+  });
 }
 
 export const reportRepository: ReportRepository = {

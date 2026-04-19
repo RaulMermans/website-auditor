@@ -187,10 +187,15 @@ function normalizeLaunchError(error: unknown): Error {
 
 async function launchBrowser(): Promise<BrowserSession> {
   try {
-    process.env.PLAYWRIGHT_BROWSERS_PATH ??= "0";
+    // Always set to 0 so Playwright resolves browsers from node_modules/playwright-core/.local-browsers
+    process.env.PLAYWRIGHT_BROWSERS_PATH = "0";
 
     const { chromium } = await import("playwright");
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+      headless: true,
+      // Required for Lambda/Vercel: no sandbox (runs as root) and no /dev/shm (Lambda's is tiny)
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+    });
     const context = await browser.newContext({
       viewport: { width: 1280, height: 800 },
       userAgent: "WebsiteAuditorAgent/1.0 (+https://example.com/bot)",
