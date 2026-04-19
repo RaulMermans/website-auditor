@@ -112,7 +112,7 @@ export interface Scorecard {
 export interface OutreachAsset {
   id: string;
   auditRunId: string;
-  type: "email" | "summary" | "proposal";
+  type: "summary" | "quick_wins" | "email" | "collaboration" | "loom_script";
   content: string;
   generatedAt: Date;
 }

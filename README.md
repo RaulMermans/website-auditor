@@ -62,7 +62,7 @@ public/         Static assets
 - [x] Deterministic evidence extraction + finding generation
 - [x] Scoring + report view (`/report/[auditRunId]`)
 - [ ] Real storage provider
-- [ ] LLM enrichment layer
+- [x] LLM enrichment layer
 - [ ] Auth / access control
 
 ## Shot 3 status
@@ -156,5 +156,13 @@ The intake flow does not require a live worker to create an audit run; it only r
    - `smoke:dispatch-once` reports no queued `audit.run` job
    - worker `/capture` returns non-200, `401`, or `Missing DATABASE_URL`
    - `audit_runs` remains `pending`, which means the manual bridge never drained the queue
+
+## Shot 6 status
+
+- `POST /api/reports/[auditRunId]/enrich` loads persisted findings/scores and calls Anthropic API to produce: executive summary, quick wins, cold email draft, collaboration angle, and Loom script notes.
+- Generated assets are stored in `outreach_assets` (upsert-safe) and displayed in the report page when present.
+- Deterministic report remains source of truth. LLM enrichment is additive and opt-in.
+- `ANTHROPIC_API_KEY` is optional. Missing key returns 503 from the enrich route and hides the enrichment section from the report page — base report is unaffected.
+- Operational smoke testing is still pending; the MVP is not operationally validated yet.
 
 See `plan.md` for the milestone roadmap.
