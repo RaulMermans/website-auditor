@@ -14,7 +14,7 @@ Evidence-backed website audits. Rule-first, LLM-second. Fullstack Node.js + Type
 
 ```sh
 cp .env.example .env.local   # fill in real values
-npm install                  # installs Playwright headless shell and prunes unused assets via postinstall
+npm install                  # installs dependencies including @sparticuz/chromium
 npm run migrate:up:local     # apply all current Postgres migrations
 npm run dev                  # http://localhost:3000
 ```
@@ -88,8 +88,7 @@ App runtime envs:
 - Optional: `PG_BOSS_SCHEMA` (defaults to `pgboss`), `GEMINI_API_KEY`, `GEMINI_MODEL` (defaults to `gemini-2.5-flash`), `NEXT_PUBLIC_APP_URL`
 
 Vercel defaults are sufficient for the app deploy. No custom build override or `vercel.json` is required by the current repo.
-The root install now owns Playwright, and `npm install` runs `node scripts/install-playwright.mjs` to install only the Playwright Chromium headless shell under `node_modules/playwright-core/.local-browsers`, then prunes unused locales and FFmpeg to keep the traced Vercel function under the platform size limit.
-Do not disable install lifecycle scripts in Vercel, or the Chromium download step will be skipped.
+Browser capture uses `@sparticuz/chromium` (Lambda-compatible binary) and `playwright-core`. No `postinstall` step or browser download is required; `npm install` is sufficient for both local dev and Vercel.
 
 1. Ensure the Next.js app deployment has `DATABASE_URL` set.
 2. Ensure DB migrations are applied against the production database:
@@ -149,6 +148,6 @@ Do not disable install lifecycle scripts in Vercel, or the Chromium download ste
 - Vercel-only processing is the deployed architecture in code.
 - Lambda browser flags and intake `maxDuration` are now set correctly.
 - Operational smoke validation on a real Vercel deployment is still required to confirm end-to-end success.
-- Remaining production risks: (1) Playwright binary still needs the `postinstall` step to run on Vercel (do not disable install lifecycle scripts); (2) local FS storage is dev-only and needs a real provider for production artifacts.
+- Remaining production risks: local FS storage is dev-only and needs a real provider for production artifacts.
 
 See `plan.md` for the milestone roadmap.

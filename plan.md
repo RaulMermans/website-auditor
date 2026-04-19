@@ -80,6 +80,17 @@ AC: outreach_asset rows in DB, viewable in report ✓
 
 AC: AC1 ✓ AC2 ✓ AC3 ✓ AC4 ✓ AC5 ✓ AC6 ✓ AC7 ✓ AC8 ✓ AC9 ✓ AC10 ✓
 
+## Shot 8 — Vercel-compatible browser runtime (complete)
+
+- Replaced `playwright` + `scripts/install-playwright.mjs` postinstall with `@sparticuz/chromium@^147` + `playwright-core@^1.59.1`.
+- `@sparticuz/chromium` bundles a Lambda-compatible Chromium binary (no missing shared-lib errors); extracts to `/tmp` at runtime.
+- `launchBrowser()` now uses `chromium.executablePath()` from `@sparticuz/chromium` and `playwright-core` for automation.
+- `next.config.ts`: added `serverExternalPackages`, updated `outputFileTracingIncludes` to `@sparticuz/chromium/bin/**/*`.
+- `scripts/install-playwright.mjs` deleted; `postinstall` script removed from `package.json`.
+- All 63 tests pass; typecheck, lint, and build clean.
+
+AC1 ✓ AC2 ✓ AC3 ✓ AC4 ✓ AC5 ✓ AC6 ✓
+
 ## Deferred decisions
 
 | Decision | Status | Needed by |

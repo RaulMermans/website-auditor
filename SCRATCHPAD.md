@@ -48,6 +48,10 @@ Archive or delete entries once resolved.
 
 ---
 
+## Shot 8 — Browser runtime fix (2026-04-19)
+
+Replaced `playwright` + `scripts/install-playwright.mjs` postinstall with `@sparticuz/chromium@^147` + `playwright-core@^1.59.1`. Root cause: bundled Playwright browser was compiled against glibc/libraries not present in Vercel Lambda; `@sparticuz/chromium` ships a Lambda-compatible binary that extracts to `/tmp` at runtime, solving the `libnspr4.so` error. `postinstall` script and install-playwright.mjs are gone. All 63 tests pass, build clean.
+
 ## Vercel-only pivot status (2026-04-19)
 
 **Implementation status: code path complete, operational smoke validation pending**

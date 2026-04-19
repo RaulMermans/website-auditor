@@ -1,4 +1,4 @@
-import type { Page } from "playwright";
+import type { Page } from "playwright-core";
 import type { AuditJobRepository } from "@/db/audits";
 import { auditJobRepository } from "@/db/audits";
 import type { StorageClient } from "@/server/contracts/storage";
@@ -171,14 +171,14 @@ function normalizeLaunchError(error: unknown): Error {
     return new Error(String(error));
   }
 
-  if (!/Executable doesn't exist|Cannot find module ['"]playwright['"]/i.test(error.message)) {
+  if (!/Executable doesn't exist|Cannot find module ['"](?:playwright-core|@sparticuz\/chromium)['"]/i.test(error.message)) {
     return error;
   }
 
   return new Error(
     [
       "Playwright Chromium is unavailable in this deployment.",
-      "Ensure the root install completed so `node scripts/install-playwright.mjs` could install Chromium under `node_modules/playwright-core/.local-browsers`.",
+      "Ensure @sparticuz/chromium and playwright-core are installed and the binary can be decompressed at runtime.",
       `Original error: ${error.message}`,
     ].join(" "),
     { cause: error }
@@ -187,14 +187,13 @@ function normalizeLaunchError(error: unknown): Error {
 
 async function launchBrowser(): Promise<BrowserSession> {
   try {
-    // Always set to 0 so Playwright resolves browsers from node_modules/playwright-core/.local-browsers
-    process.env.PLAYWRIGHT_BROWSERS_PATH = "0";
+    const { default: chromium } = await import("@sparticuz/chromium");
+    const { chromium: playwrightChromium } = await import("playwright-core");
 
-    const { chromium } = await import("playwright");
-    const browser = await chromium.launch({
+    const browser = await playwrightChromium.launch({
+      args: chromium.args,
+      executablePath: await chromium.executablePath(),
       headless: true,
-      // Required for Lambda/Vercel: no sandbox (runs as root) and no /dev/shm (Lambda's is tiny)
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
     });
     const context = await browser.newContext({
       viewport: { width: 1280, height: 800 },

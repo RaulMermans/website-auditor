@@ -3,9 +3,10 @@ import path from "path";
 
 const nextConfig: NextConfig = {
   experimental: {},
+  serverExternalPackages: ["playwright-core", "@sparticuz/chromium"],
   outputFileTracingRoot: path.join(__dirname),
   outputFileTracingIncludes: {
-    "/intake": ["./node_modules/playwright-core/.local-browsers/**/*"],
+    "/intake": ["./node_modules/@sparticuz/chromium/bin/**/*"],
   },
 };
 
