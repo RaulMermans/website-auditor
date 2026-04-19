@@ -24,6 +24,7 @@ Archive or delete entries once resolved.
 - Shot 3 adds the worker runtime, Playwright discovery, capture, and page_snapshots. The worker uses `tsx` as an isolated CLI script right now.
 - Operational smoke testing remains pending, so the MVP is not operationally validated yet.
 - Shot 4 can proceed against stored snapshot artifacts despite that, but runtime validation is still a later gate.
+- Shot 5 adds scoring and report view. Scores are computed from DB findings at render time; no storage reads. Operational smoke testing remains pending — the MVP is still not operationally validated.
 
 ---
 
