@@ -31,7 +31,7 @@ export default async function IntakePage({
       </h1>
       <p style={{ color: "#6b7280", marginBottom: 24 }}>
         Submit a single domain. This shot persists the canonical domain, creates an audit
-        run, and enqueues work for the worker boundary.
+        run, and schedules audit processing inside the Vercel app project.
       </p>
 
       <form

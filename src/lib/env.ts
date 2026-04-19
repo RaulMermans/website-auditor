@@ -12,10 +12,6 @@ const envSchema = z.object({
   STORAGE_ACCESS_KEY: z.string().optional(),
   STORAGE_SECRET_KEY: z.string().optional(),
 
-  // Worker
-  WORKER_ENDPOINT: z.string().url().optional(),
-  WORKER_SECRET: z.string().optional(),
-
   // LLM
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default("gemini-2.5-flash"),

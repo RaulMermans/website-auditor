@@ -1,11 +1,13 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { ZodError } from "zod";
 import {
   AuditJobEnqueueError,
   createAuditJob,
 } from "@/server/audits/create-audit-job";
+import { dispatchAuditRun } from "@/server/audits/dispatch-audit-run";
 
 function buildIntakeUrl(params: Record<string, string | undefined>) {
   const searchParams = new URLSearchParams();
@@ -26,6 +28,19 @@ export async function submitDomainAction(formData: FormData) {
 
   try {
     const result = await createAuditJob({ domain: rawDomain });
+
+    after(async () => {
+      await dispatchAuditRun({
+        jobId: result.jobId,
+        auditRunId: result.auditRun.id,
+        domain: result.targetDomain.domain,
+      }).catch((error) => {
+        console.error("[intake] audit processing failed", {
+          auditRunId: result.auditRun.id,
+          error,
+        });
+      });
+    });
 
     redirect(
       buildIntakeUrl({

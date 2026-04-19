@@ -19,9 +19,10 @@ Archive or delete entries once resolved.
 - Shot 2 decisions resolved: raw `pg` for Postgres access, `pg-boss` for queue dispatch.
 - Intake persists `target_domains` and `audit_runs` before enqueue; enqueue failure marks the run `failed`.
 - Shot 2.5 adds a disposable-DB integration proof: real migration + real persistence + real `pg-boss` enqueue via `TEST_DATABASE_URL`.
-- Worker boundary is structural: no Playwright in app runtime under any circumstances.
+- Vercel-only pivot: intake now schedules audit processing from inside the app project with `after(...)`.
+- External worker envs (`WORKER_ENDPOINT`, `WORKER_SECRET`) are removed from the app contract.
 - Evidence label discipline: every Finding must set label at creation time, not retroactively.
-- Shot 3 adds the worker runtime, Playwright discovery, capture, and page_snapshots. The worker uses `tsx` as an isolated CLI script right now.
+- Playwright capture, snapshot persistence, and deterministic analysis now run through app-side server modules.
 - Operational smoke testing remains pending, so the MVP is not operationally validated yet.
 - Shot 4 can proceed against stored snapshot artifacts despite that, but runtime validation is still a later gate.
 - Shot 5 adds scoring and report view. Scores are computed from DB findings at render time; no storage reads. Operational smoke testing remains pending — the MVP is still not operationally validated.
@@ -29,32 +30,26 @@ Archive or delete entries once resolved.
 
 ---
 
-## Ops smoke test findings (2026-04-18)
+## Vercel-only pivot status (2026-04-19)
 
-**Deploy-readiness: deploy-ready-with-fixes**
+**Implementation status: code path complete, operational smoke validation pending**
 
 ### Current assessment
-1. `scripts/smoke-dispatch-once.mjs` matches the current runtime contract:
-   it fetches one `audit.run` job from `pg-boss`, signs the raw JSON payload with HMAC, and posts it to `POST /capture`.
-2. App deploy path is Vercel-ready with defaults:
+1. App deploy path no longer depends on an external worker host, worker URL, or worker secret.
+2. Intake now creates the audit run, enqueues `audit.run`, and schedules processing inside the same Vercel project.
+3. Capture still persists `page_snapshots`, then deterministic analysis writes `page_evidence` and `findings`.
+4. App deploy path is still Vercel-ready with defaults:
    `DATABASE_URL` is required, `PG_BOSS_SCHEMA` and `NEXT_PUBLIC_APP_URL` are optional.
-3. Worker deploy path is manual but valid:
-   run a separate Node host with `DATABASE_URL` and `WORKER_SECRET`; current storage is local `.storage/`.
-4. `migrate:up` is repeatable against the same database with the current SQL files.
-5. `test:integration` still requires an explicit disposable `TEST_DATABASE_URL`; it was not runnable in this audit shell without that env.
+5. `migrate:up` is repeatable against the same database with the current SQL files.
+6. `test:integration` still requires an explicit disposable `TEST_DATABASE_URL`; it was not runnable in this audit shell without that env.
 
 ### Known gaps before production smoke test
-1. **Worker deployment is not automated in-repo**: there is no Dockerfile or provider config.
-2. **Storage is local FS only**: acceptable for a one-run smoke test, not for long-term multi-operator use.
-3. **No always-on queue consumer**: `smoke:dispatch-once` remains a manual bridge by design.
+1. **Playwright on deployed Vercel server execution is not yet validated**: the code path exists, but runtime compatibility still needs a real smoke run.
+2. **Storage is local FS only**: acceptable for local development, not a truthful long-term production artifact strategy on Vercel.
+3. **Request-scoped trigger is the current async mechanism**: there is no separate always-on consumer, so failed request-after execution still needs operational validation.
 
 ### App layer env required at Vercel runtime
 - `DATABASE_URL` — required; without it, intake action throws on first request
 - `PG_BOSS_SCHEMA` — optional; defaults to `pgboss`
 - `NEXT_PUBLIC_APP_URL` — optional; used for links only
-- `WORKER_SECRET` and `WORKER_ENDPOINT` are NOT needed by the Vercel app; only by `smoke:dispatch-once`
-
-### Worker env required at worker process startup
-- `DATABASE_URL` — required; worker rejects requests without it
-- `WORKER_SECRET` — required; HMAC validation fails without it
-- `PORT` — optional; defaults to 3001
+- `WORKER_SECRET` and `WORKER_ENDPOINT` are no longer part of the deployment contract

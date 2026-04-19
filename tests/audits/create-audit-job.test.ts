@@ -38,6 +38,8 @@ function createDeps() {
       name: "audit.run",
       payload: { auditRunId: "audit-run-1", domain: "example.com" },
     }),
+    complete: vi.fn().mockResolvedValue(undefined),
+    fail: vi.fn().mockResolvedValue(undefined),
   };
 
   return { auditJobs, queue };

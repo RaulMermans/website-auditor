@@ -22,10 +22,6 @@ npm run dev                  # http://localhost:3000
 | `npm run migrate:down` | Roll back the Postgres migrations using ambient env vars |
 | `npm run migrate:up:local` | Apply the Postgres migrations from `.env.local` |
 | `npm run migrate:down:local` | Roll back the Postgres migrations from `.env.local` |
-| `npm run worker:dev` | Start the Playwright worker from the root repo |
-| `npm run worker:build` | Build the worker package |
-| `npm run worker:start` | Start the built worker package |
-| `npm run smoke:dispatch-once` | Fetch one queued `audit.run` job and dispatch it to the worker |
 | `npm run typecheck` | TypeScript check (no emit) |
 | `npm test` | Run Vitest tests |
 | `npm run test:integration` | Run the real Shot 2 Postgres + `pg-boss` proof |
@@ -40,7 +36,7 @@ src/
   lib/          Shared: types, env validation, utilities
   server/       Orchestration: job creation, contracts, scoring
   db/           Raw pg client + audit repositories
-worker/         Separate Node.js Playwright process (see worker/README.md)
+worker/         Internal Playwright package retained for dependency/runtime packaging notes
 migrations/     Reversible SQL migrations (up + down)
 tests/          Unit and integration tests
 public/         Static assets
@@ -48,17 +44,17 @@ public/         Static assets
 
 ## Architecture decisions
 
-- **App runtime** (Next.js / Vercel): intake, job dispatch, report viewing.
-- **Worker runtime** (separate Node.js process): all Playwright browser work.
+- **App runtime** (Next.js / Vercel): intake, audit processing trigger, browser capture orchestration, report viewing.
+- **Processing path**: `submitDomainAction()` creates the audit run, enqueues `audit.run`, then schedules in-project processing with `after(...)`.
 - **Queue**: `pg-boss` behind `src/server/contracts/queue.ts`.
-- **Storage**: local FS provider in worker (dev-only MVP), interface at `src/server/contracts/storage.ts`.
+- **Storage**: local FS provider in the app runtime for now (dev-only MVP), interface at `src/server/contracts/storage.ts`.
 - **DB client / ORM**: raw `pg` client with raw SQL migrations in `migrations/`.
 - **Evidence labels**: every finding is `Measured | Observed | Inferred`. Never present Inferred as Measured.
 
 ## Not yet implemented
 
-- [x] Playwright worker
-- [x] Worker processing (discovery, capture)
+- [x] Playwright capture path
+- [x] In-project processing (discovery, capture, analysis)
 - [x] Deterministic evidence extraction + finding generation
 - [x] Scoring + report view (`/report/[auditRunId]`)
 - [ ] Real storage provider
@@ -67,32 +63,23 @@ public/         Static assets
 
 ## Shot 3 status
 
-- Worker exists as a separate package under `worker/` using Playwright.
-- Worker HTTP server (`npm run dev` in `worker/`) processes incoming `POST /capture` requests protected by HMAC.
+- Capture logic now runs through app-side server modules under `src/server/audits/`.
+- Intake schedules processing from inside the Vercel project; no external worker host is required.
 - Discover up to 5 priority pages (homepage, about, services, contact, content).
 - Stores page screenshots and HTML natively to `.storage/` artifact dir.
-- Persists `page_snapshots` and orchestrates status (`discovering` → `capturing` → `complete`).
+- Persists `page_snapshots` and orchestrates status (`discovering` → `capturing` → `analyzing` → `complete`).
 
 ## Deploy smoke test
 
-Current state is deploy-testable with one manual bridge: the app creates `audit.run` jobs in `pg-boss`, and
-`npm run smoke:dispatch-once` drains one queued job and calls the worker. There is not yet an always-on queue
-consumer in-repo.
+Current state is Vercel-only in code: the app creates `audit.run` jobs in `pg-boss` and schedules processing
+from the same request lifecycle with `after(...)`. There is no external worker URL, shared secret, or second host.
 
 App runtime envs:
 - Required: `DATABASE_URL`
 - Optional: `PG_BOSS_SCHEMA` (defaults to `pgboss`), `NEXT_PUBLIC_APP_URL`
 
-Worker runtime envs:
-- Required: `DATABASE_URL`, `WORKER_SECRET`
-- Optional: `PORT` (defaults to `3001`)
-
-Dispatch-shell envs:
-- Required: `DATABASE_URL`, `WORKER_ENDPOINT`, `WORKER_SECRET`
-- Optional: `PG_BOSS_SCHEMA` if not using the default `pgboss`
-
 Vercel defaults are sufficient for the app deploy. No custom build override or `vercel.json` is required by the current repo.
-The intake flow does not require a live worker to create an audit run; it only requires Postgres and `pg-boss` connectivity.
+The Vercel build must include the workspace dependencies because Playwright still lives under `worker/package.json`.
 
 1. Deploy the Next.js app to Vercel with `DATABASE_URL` set.
 2. Apply DB migrations against the production database:
@@ -101,40 +88,12 @@ The intake flow does not require a live worker to create an audit run; it only r
    DATABASE_URL=postgres://... npm run migrate:up
    ```
 
-3. Start the worker on a separate Node host from `worker/`.
-   The host must support Playwright and provide a writable filesystem for the current local `.storage/` artifacts path.
-
-   ```sh
-   cd worker
-   npm install
-   npm run build
-   DATABASE_URL=postgres://... \
-   WORKER_SECRET=... \
-   PORT=3001 \
-   npm run start
-   ```
-
-   Optional sanity check:
-
-   ```sh
-   curl http://127.0.0.1:3001/health
-   ```
-
-4. Submit a real domain on `/intake` in the Vercel app and capture the returned `auditRunId`.
-5. From a shell with production env vars, dispatch the queued job to the worker:
-
-   ```sh
-   DATABASE_URL=postgres://... \
-   WORKER_ENDPOINT=https://your-worker-host \
-   WORKER_SECRET=... \
-   npm run smoke:dispatch-once
-   ```
-
-6. Success signals:
+3. Submit a real domain on `/intake` in the Vercel app and capture the returned `auditRunId`.
+4. Success signals:
    - `/intake` shows `Audit job created.`
-   - `smoke:dispatch-once` prints `jobId`, request payload, and worker response JSON
-   - `audit_runs.status` moves from `pending` to `discovering`/`capturing` and finally `complete` or `failed`
-- `page_snapshots` contains rows for the processed run when the worker captured at least the homepage
+   - `audit_runs.status` moves from `pending` to `discovering`/`capturing`/`analyzing` and finally `complete` or `failed`
+   - `page_snapshots` contains rows for the processed run when capture succeeds
+   - `findings` exists for the run and `/report/[auditRunId]` renders deterministic output
 
 ## Shot 4 status
 
@@ -151,11 +110,11 @@ The intake flow does not require a live worker to create an audit run; it only r
 - No storage reads at report render time — findings are the only source of truth.
 - Operational smoke testing is still pending; the MVP is not operationally validated yet.
 
-7. Failure signals:
+5. Failure signals:
    - `/intake` redirects with a queueing error and `status=failed`
-   - `smoke:dispatch-once` reports no queued `audit.run` job
-   - worker `/capture` returns non-200, `401`, or `Missing DATABASE_URL`
-   - `audit_runs` remains `pending`, which means the manual bridge never drained the queue
+   - `audit_runs` remains `pending`, which means the request-scoped trigger did not run to completion
+   - `audit_runs` moves to `failed` with a Playwright/runtime error before snapshots are written
+   - `page_snapshots` is empty or `findings` never materialize for the run
 
 ## Shot 6 status
 
@@ -165,5 +124,11 @@ The intake flow does not require a live worker to create an audit run; it only r
 - `GEMINI_API_KEY` is optional. Missing key returns 503 from the enrich route and hides the enrichment section from the report page — base report is unaffected.
 - `GEMINI_MODEL` is optional and defaults to `gemini-2.5-flash`.
 - Operational smoke testing is still pending; the MVP is not operationally validated yet.
+
+## Validation note
+
+- Vercel-only processing is now the deployed architecture in code.
+- Operational smoke validation on a real Vercel deployment is still pending.
+- The biggest unresolved production risk is Playwright execution plus local filesystem artifact storage under Vercel server execution; the code path exists, but this has not yet been validated end to end.
 
 See `plan.md` for the milestone roadmap.

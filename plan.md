@@ -23,15 +23,17 @@ AC: user submits domain → AuditRun row in DB → job enqueued ✓
 
 AC: `npm run test:integration` proves migration + persist + enqueue on real Postgres ✓
 
-## Shot 3 — Worker: discovery + capture (complete)
+## Shot 3 — Capture pipeline pivoted to Vercel-only (complete in code, smoke validation pending)
 
-- Worker HTTP server (`worker/src/index.ts`)
+- External worker HTTP dispatch has been removed from the app runtime.
+- Intake still creates `audit.run` jobs, then schedules in-project processing via `after(...)`.
 - Playwright: homepage capture, priority page discovery (up to 5 pages)
-- Screenshots and HTML snapshots → blob storage
+- Screenshots and HTML snapshots → app-side storage contract
 - PageSnapshot rows persisted in DB
 - Homepage-only fallback if discovery fails
+- Real Vercel smoke validation is still pending, so Playwright execution under deployed server runtime is not yet operationally proven.
 
-AC: worker processes a real domain → snapshots in storage + DB ✓
+AC: app-side processing path exists in code; end-to-end Vercel smoke validation still pending
 
 ## Shot 4 — Evidence extraction + findings
 

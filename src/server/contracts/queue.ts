@@ -9,6 +9,8 @@ export interface QueueJob<TPayload extends object = Record<string, unknown>> {
 
 export interface QueueClient {
   enqueue<TPayload extends object>(name: string, payload: TPayload): Promise<QueueJob<TPayload>>;
+  complete(name: string, id: string, data?: object): Promise<void>;
+  fail(name: string, id: string, data?: object): Promise<void>;
 }
 
 declare global {
@@ -43,6 +45,24 @@ export const queueClient: QueueClient = {
     }
 
     return { id: jobId, name, payload };
+  },
+  async complete(name, id, data) {
+    const boss = await getPgBoss();
+    if (data) {
+      await boss.complete(name, id, data);
+      return;
+    }
+
+    await boss.complete(name, id);
+  },
+  async fail(name, id, data) {
+    const boss = await getPgBoss();
+    if (data) {
+      await boss.fail(name, id, data);
+      return;
+    }
+
+    await boss.fail(name, id);
   },
 };
 
