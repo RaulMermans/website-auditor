@@ -43,13 +43,15 @@ AC: worker processes a real domain → snapshots in storage + DB ✓
 
 AC: findings exist in DB for an audited domain, all labeled
 
-## Shot 5 — Scoring + report view
+## Shot 5 — Scoring + report view (complete)
 
-- Rubric entity + scorecard computation
-- `/report/[auditRunId]` page: findings, scores, recommendations
-- Quick wins list (high-impact / low-effort recommendations)
+- `scoreAuditByCategory`: per-category + overall deterministic scores from findings
+- `src/db/report.ts`: `ReportRepository` — loads audit run, domain, findings, computes scores
+- `/report/[auditRunId]` page: domain, status, homepage-only notice, overall score, category grid, findings grouped by category with evidence labels and recommendations
+- No storage reads at render time — findings are source of truth
+- Operational smoke test still pending; MVP is not operationally validated yet
 
-AC: shareable report URL with scored findings
+AC: shareable report URL with scored findings ✓
 
 ## Shot 6 — LLM enrichment + outreach asset
 

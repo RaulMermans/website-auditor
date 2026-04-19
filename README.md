@@ -60,8 +60,8 @@ public/         Static assets
 - [x] Playwright worker
 - [x] Worker processing (discovery, capture)
 - [x] Deterministic evidence extraction + finding generation
+- [x] Scoring + report view (`/report/[auditRunId]`)
 - [ ] Real storage provider
-- [ ] Dashboard and report UI
 - [ ] LLM enrichment layer
 - [ ] Auth / access control
 
@@ -142,6 +142,14 @@ The intake flow does not require a live worker to create an audit run; it only r
 - Findings stay rule-first and carry severity, confidence, and `Measured | Observed | Inferred` labels.
 - Homepage-only audit truth is preserved in generated finding copy and evidence refs.
 - Operational smoke testing is still pending, so the MVP is not operationally validated yet.
+
+## Shot 5 status
+
+- Findings drive deterministic per-category and overall scores (`scoreAuditByCategory`).
+- Report page at `/report/[auditRunId]` loads from DB: domain, run status, overall score, category score grid, findings grouped by category with evidence labels and recommendations.
+- Homepage-only audits display a scope notice at the top of the report.
+- No storage reads at report render time — findings are the only source of truth.
+- Operational smoke testing is still pending; the MVP is not operationally validated yet.
 
 7. Failure signals:
    - `/intake` redirects with a queueing error and `status=failed`

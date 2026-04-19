@@ -1,4 +1,4 @@
-import type { Finding, Scorecard } from "@/lib/types";
+import type { Finding, FindingCategory, Scorecard } from "@/lib/types";
 
 // Severity weights — rule-based, deterministic inputs only.
 const SEVERITY_WEIGHT: Record<Finding["severity"], number> = {
@@ -17,7 +17,45 @@ export interface ScoreAuditInput {
   findings: Pick<Finding, "id" | "severity">[];
 }
 
-// TODO: replace with rubric-driven scoring once rubric entities are in DB (Shot 2+)
+export const ALL_FINDING_CATEGORIES: FindingCategory[] = [
+  "performance",
+  "technical_seo",
+  "accessibility",
+  "ux_ui",
+  "messaging_content",
+  "conversion",
+  "trust_signals",
+  "mobile_experience",
+];
+
+export interface CategoryScores {
+  overall: number;
+  byCategory: Record<FindingCategory, number>;
+}
+
+export function scoreAuditByCategory(
+  findings: Pick<Finding, "id" | "severity" | "category">[]
+): CategoryScores {
+  const overallPenalty = findings.reduce(
+    (sum, f) => sum + (SEVERITY_WEIGHT[f.severity] ?? 0),
+    0
+  );
+
+  const byCategory = Object.fromEntries(
+    ALL_FINDING_CATEGORIES.map((cat) => {
+      const catPenalty = findings
+        .filter((f) => f.category === cat)
+        .reduce((sum, f) => sum + (SEVERITY_WEIGHT[f.severity] ?? 0), 0);
+      return [cat, Math.max(0, MAX_SCORE - catPenalty)];
+    })
+  ) as Record<FindingCategory, number>;
+
+  return {
+    overall: Math.max(0, MAX_SCORE - overallPenalty),
+    byCategory,
+  };
+}
+
 export function scoreAudit(input: ScoreAuditInput): Omit<Scorecard, "id" | "computedAt"> {
   const penalty = input.findings.reduce(
     (sum, f) => sum + (SEVERITY_WEIGHT[f.severity] ?? 0),
