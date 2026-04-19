@@ -24,6 +24,7 @@ Archive or delete entries once resolved.
 - Evidence label discipline: every Finding must set label at creation time, not retroactively.
 - Playwright capture, snapshot persistence, and deterministic analysis now run through app-side server modules.
 - Operational smoke testing remains pending, so the MVP is not operationally validated yet.
+- The production intake flow is currently failing at runtime, so deployed smoke validation remains unresolved.
 - Shot 4 can proceed against stored snapshot artifacts despite that, but runtime validation is still a later gate.
 - Shot 5 adds scoring and report view. Scores are computed from DB findings at render time; no storage reads. Operational smoke testing remains pending — the MVP is still not operationally validated.
 - Shot 6 adds LLM enrichment and outreach assets on top of deterministic report data. Enrichment is opt-in (POST /api/reports/[id]/enrich). GEMINI_API_KEY is optional; missing key degrades gracefully. Deterministic report is always source of truth. Operational smoke testing remains pending.
@@ -39,17 +40,20 @@ Archive or delete entries once resolved.
 2. Intake now creates the audit run, enqueues `audit.run`, and schedules processing inside the same Vercel project.
 3. Capture still persists `page_snapshots`, then deterministic analysis writes `page_evidence` and `findings`.
 4. App deploy path is still Vercel-ready with defaults:
-   `DATABASE_URL` is required, `PG_BOSS_SCHEMA` and `NEXT_PUBLIC_APP_URL` are optional.
+   `DATABASE_URL` is required; `PG_BOSS_SCHEMA`, `GEMINI_API_KEY`, `GEMINI_MODEL`, and `NEXT_PUBLIC_APP_URL` are part of the current app env contract.
 5. `migrate:up` is repeatable against the same database with the current SQL files.
 6. `test:integration` still requires an explicit disposable `TEST_DATABASE_URL`; it was not runnable in this audit shell without that env.
 
 ### Known gaps before production smoke test
-1. **Playwright on deployed Vercel server execution is not yet validated**: the code path exists, but runtime compatibility still needs a real smoke run.
-2. **Storage is local FS only**: acceptable for local development, not a truthful long-term production artifact strategy on Vercel.
-3. **Request-scoped trigger is the current async mechanism**: there is no separate always-on consumer, so failed request-after execution still needs operational validation.
+1. **Production intake currently fails at runtime**: no successful deployed smoke run has been recorded yet, and the issue remains unresolved.
+2. **Playwright on deployed Vercel server execution is not yet validated**: the code path exists, but runtime compatibility still needs a real smoke run.
+3. **Storage is local FS only**: acceptable for local development, not a truthful long-term production artifact strategy on Vercel.
+4. **Request-scoped trigger is the current async mechanism**: there is no separate always-on consumer, so failed request-after execution still needs operational validation.
 
 ### App layer env required at Vercel runtime
 - `DATABASE_URL` — required; without it, intake action throws on first request
 - `PG_BOSS_SCHEMA` — optional; defaults to `pgboss`
+- `GEMINI_API_KEY` — optional; enables enrichment generation when present
+- `GEMINI_MODEL` — optional; defaults to `gemini-2.5-flash`
 - `NEXT_PUBLIC_APP_URL` — optional; used for links only
 - `WORKER_SECRET` and `WORKER_ENDPOINT` are no longer part of the deployment contract

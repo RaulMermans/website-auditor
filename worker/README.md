@@ -1,6 +1,6 @@
 # Worker
 
-This directory is no longer a separate deployment target.
+This directory is a legacy/deprecated deployment target and is no longer required as separate production infrastructure.
 
 ## Current role
 

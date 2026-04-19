@@ -2,6 +2,13 @@
 
 Evidence-backed website audits. Rule-first, LLM-second. Fullstack Node.js + TypeScript on Vercel + Postgres.
 
+## Current status
+
+- Vercel-only processing is the intended architecture in code; intake triggers audit processing inside the app project.
+- Deterministic findings and scores remain the source of truth; Gemini enrichment is additive only.
+- MVP is near feature-complete, but operational smoke validation is still pending.
+- The production intake flow is currently failing at runtime, so end-to-end deployment validation remains unresolved.
+
 ## Local setup
 
 ```sh
@@ -36,7 +43,7 @@ src/
   lib/          Shared: types, env validation, utilities
   server/       Orchestration: job creation, contracts, scoring
   db/           Raw pg client + audit repositories
-worker/         Internal Playwright package retained for dependency/runtime packaging notes
+worker/         Legacy/internal Playwright package retained for dependency/runtime packaging notes
 migrations/     Reversible SQL migrations (up + down)
 tests/          Unit and integration tests
 public/         Static assets
@@ -69,27 +76,28 @@ public/         Static assets
 - Stores page screenshots and HTML natively to `.storage/` artifact dir.
 - Persists `page_snapshots` and orchestrates status (`discovering` → `capturing` → `analyzing` → `complete`).
 
-## Deploy smoke test
+## Deploy smoke test (pending)
 
 Current state is Vercel-only in code: the app creates `audit.run` jobs in `pg-boss` and schedules processing
 from the same request lifecycle with `after(...)`. There is no external worker URL, shared secret, or second host.
+This checklist is still pending, not a report of current success. The deployed intake flow is currently failing at runtime, so the end-to-end Vercel smoke pass remains unresolved.
 
 App runtime envs:
 - Required: `DATABASE_URL`
-- Optional: `PG_BOSS_SCHEMA` (defaults to `pgboss`), `NEXT_PUBLIC_APP_URL`
+- Optional: `PG_BOSS_SCHEMA` (defaults to `pgboss`), `GEMINI_API_KEY`, `GEMINI_MODEL` (defaults to `gemini-2.5-flash`), `NEXT_PUBLIC_APP_URL`
 
 Vercel defaults are sufficient for the app deploy. No custom build override or `vercel.json` is required by the current repo.
 The Vercel build must include the workspace dependencies because Playwright still lives under `worker/package.json`.
 
-1. Deploy the Next.js app to Vercel with `DATABASE_URL` set.
-2. Apply DB migrations against the production database:
+1. Ensure the Next.js app deployment has `DATABASE_URL` set.
+2. Ensure DB migrations are applied against the production database:
 
    ```sh
    DATABASE_URL=postgres://... npm run migrate:up
    ```
 
-3. Submit a real domain on `/intake` in the Vercel app and capture the returned `auditRunId`.
-4. Success signals:
+3. Once the runtime issue is resolved, submit a real domain on `/intake` in the Vercel app and capture the returned `auditRunId`.
+4. Expected success signals after the runtime issue is fixed:
    - `/intake` shows `Audit job created.`
    - `audit_runs.status` moves from `pending` to `discovering`/`capturing`/`analyzing` and finally `complete` or `failed`
    - `page_snapshots` contains rows for the processed run when capture succeeds
@@ -128,7 +136,9 @@ The Vercel build must include the workspace dependencies because Playwright stil
 ## Validation note
 
 - Vercel-only processing is now the deployed architecture in code.
+- MVP is near feature-complete, but not runtime-validated.
 - Operational smoke validation on a real Vercel deployment is still pending.
+- The production intake flow is currently failing at runtime and remains unresolved.
 - The biggest unresolved production risk is Playwright execution plus local filesystem artifact storage under Vercel server execution; the code path exists, but this has not yet been validated end to end.
 
 See `plan.md` for the milestone roadmap.

@@ -27,13 +27,14 @@ AC: `npm run test:integration` proves migration + persist + enqueue on real Post
 
 - External worker HTTP dispatch has been removed from the app runtime.
 - Intake still creates `audit.run` jobs, then schedules in-project processing via `after(...)`.
+- The production intake flow is currently failing at runtime, so the deploy smoke gate remains unresolved.
 - Playwright: homepage capture, priority page discovery (up to 5 pages)
 - Screenshots and HTML snapshots → app-side storage contract
 - PageSnapshot rows persisted in DB
 - Homepage-only fallback if discovery fails
 - Real Vercel smoke validation is still pending, so Playwright execution under deployed server runtime is not yet operationally proven.
 
-AC: app-side processing path exists in code; end-to-end Vercel smoke validation still pending
+AC: app-side processing path exists in code; production intake/runtime smoke validation still pending
 
 ## Shot 4 — Evidence extraction + findings
 

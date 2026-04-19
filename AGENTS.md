@@ -1,6 +1,6 @@
 # Project Overview
 
-Website Audit Agent is a fullstack Node/TypeScript system that accepts a domain and produces a credible, evidence-backed website audit for internal diagnosis, outbound personalization, and collaboration proposals. The product optimizes for trustworthiness, speed to usable audit, repeatability, clear commercial output, and minimal hallucination. Architecture: Next.js app on Vercel, Postgres, blob storage, async queue, and a separate Node.js Playwright worker for browser-heavy evidence collection.
+Website Audit Agent is a fullstack Node/TypeScript system that accepts a domain and produces a credible, evidence-backed website audit for internal diagnosis, outbound personalization, and collaboration proposals. The product optimizes for trustworthiness, speed to usable audit, repeatability, clear commercial output, and minimal hallucination. Architecture: Next.js app on Vercel, Postgres, async queue, artifact storage abstractions, and in-project Playwright-driven audit processing triggered from the app.
 
 Resolved setup:
 - Target: fullstack
@@ -13,12 +13,14 @@ Resolved setup:
 - Repo type: single-repo
 - Coverage target: 80% lines
 
+Current phase: MVP is near feature-complete in code, but operational smoke validation is still pending and the deployed intake flow is currently failing at runtime.
+
 # Goals
 
 - Ship an MVP that can audit at least one real public site end-to-end with evidence-backed findings.
 - Keep the pipeline rule-first and LLM-second so conclusions are grounded in stored evidence.
 - Produce commercially usable outputs: report, quick wins, strategic improvements, and outreach draft.
-- Decouple heavy browser execution from the web runtime.
+- Keep heavy browser execution off the interactive intake/reporting path.
 - Preserve repeatability through structured entities, stored artifacts, and deterministic scoring inputs.
 
 # Non-goals
@@ -37,12 +39,12 @@ Resolved setup:
 - Homepage-only audits must be explicitly labeled as homepage-only.
 - MVP audits cover up to 5 priority pages: homepage, about, services/product, contact/booking, and one representative content page.
 - If discovery fails, fall back to homepage-only mode instead of blocking completion.
-- Heavy browser work, screenshots, DOM extraction, and traces must run outside the main app runtime.
+- Heavy browser work, screenshots, DOM extraction, and traces must run through the server-side audit processing path, not client/UI flows.
 - No revenue-loss claims unless tied to a transparent estimation rule.
 
 # Codebase Map
 
-Repo shape: single-repo fullstack app with an internal worker boundary.
+Repo shape: single-repo fullstack app with in-project audit-processing modules and a retained legacy worker package.
 
 Expected layout:
 - `src/app/` — Next.js App Router pages, layouts, route handlers, report views
@@ -50,14 +52,14 @@ Expected layout:
 - `src/lib/` — shared utilities, validation, scoring helpers, queue client, storage helpers
 - `src/server/` — server-side orchestration, job creation, report assembly
 - `src/db/` — database access, entity mappers, persistence helpers
-- `worker/` — separate Node.js Playwright worker for discovery, capture, DOM extraction, screenshots, traces
+- `worker/` — legacy/internal Playwright package and archived separate-host notes; not a required production deployment target
 - `migrations/` — reversible SQL migrations for Postgres schema changes
 - `tests/` — unit, integration, and regression fixtures
 - `public/` — static assets for report/export UI
 
 Key configs:
 - `package.json` — dependency and script entrypoint
-- `tsconfig.json` — TypeScript settings for app and worker
+- `tsconfig.json` — TypeScript settings for the app and retained worker package
 - `next.config.*` — Next.js runtime and build configuration
 - `.env.example` — documented environment variable contract with no secrets
 - `.gitignore` — exclude local env files and generated artifacts
@@ -101,7 +103,7 @@ Standard loop:
 1. Plan the slice and list touched files.
 2. Make the smallest viable diff.
 3. Run tests for impacted paths.
-4. Check operator impact, worker impact, and artifact persistence impact.
+4. Check operator impact, audit-processing impact, and artifact persistence impact.
 5. Merge only when evidence handling, labels, and fallback behavior are preserved.
 
 Before acting:
@@ -131,11 +133,12 @@ Preferred commit shapes:
 - Greenfield single-repo implementation.
 - Fullstack Node.js + TypeScript stack with Next.js App Router.
 - Managed-cloud deployment on Vercel for the app/orchestration layer.
-- Separate Node.js worker process for Playwright execution.
+- Vercel-only app deployment is the intended production model; no external worker host is required.
 - Postgres is the system of record.
-- Blob/object storage is used for screenshots, HTML snapshots, and other artifacts.
+- Artifact storage currently uses a local filesystem provider in code; a production storage provider is still pending.
 - Queue abstraction is available and Vercel-compatible.
+- Gemini is the active enrichment provider.
+- Operational smoke validation is still pending, and the production intake flow is currently failing at runtime.
 - Sensitivity is set to none, but captured artifacts are still handled conservatively.
 - Default test target is 80% line coverage.
 - Commands assume broad greenfield scripts: `npm run dev`, `npm test`, `npm run build`.
-
