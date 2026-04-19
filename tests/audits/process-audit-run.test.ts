@@ -70,4 +70,34 @@ describe("processAuditRun", () => {
     });
     expect(result.errorMessage).toBe("analysis failed");
   });
+
+  it("marks the run failed if capture throws before returning a result", async () => {
+    const auditJobs = {
+      updateAuditRunStatus: vi.fn().mockResolvedValue(undefined),
+    };
+    const capture = vi.fn().mockRejectedValue(new Error("browser launch failed"));
+    const analyze = vi.fn();
+
+    const result = await processAuditRun(
+      {
+        auditRunId: "run-789",
+        domain: "example.com",
+      },
+      { auditJobs, capture, analyze }
+    );
+
+    expect(auditJobs.updateAuditRunStatus).toHaveBeenCalledWith({
+      auditRunId: "run-789",
+      status: "failed",
+      homepageOnly: true,
+      failureReason: "browser launch failed",
+    });
+    expect(analyze).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      auditRunId: "run-789",
+      pagesProcessed: 0,
+      homepageOnly: true,
+      errorMessage: "browser launch failed",
+    });
+  });
 });

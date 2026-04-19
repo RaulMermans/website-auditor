@@ -23,13 +23,15 @@ export async function processAuditRun(
   request: AuditCaptureRequest,
   deps: ProcessAuditRunDeps = defaultDeps
 ): Promise<AuditCaptureResult> {
-  const captureResult = await deps.capture(request);
-
-  if (captureResult.errorMessage) {
-    return captureResult;
-  }
+  let captureResult: AuditCaptureResult | undefined;
 
   try {
+    captureResult = await deps.capture(request);
+
+    if (captureResult.errorMessage) {
+      return captureResult;
+    }
+
     await deps.auditJobs.updateAuditRunStatus({
       auditRunId: request.auditRunId,
       status: "analyzing",
@@ -47,16 +49,19 @@ export async function processAuditRun(
     return captureResult;
   } catch (error) {
     const failureReason = error instanceof Error ? error.message : "Unknown error";
+    const homepageOnly = captureResult?.homepageOnly ?? true;
 
     await deps.auditJobs.updateAuditRunStatus({
       auditRunId: request.auditRunId,
       status: "failed",
-      homepageOnly: captureResult.homepageOnly,
+      homepageOnly,
       failureReason,
     });
 
     return {
-      ...captureResult,
+      auditRunId: captureResult?.auditRunId ?? request.auditRunId,
+      pagesProcessed: captureResult?.pagesProcessed ?? 0,
+      homepageOnly,
       errorMessage: failureReason,
     };
   }

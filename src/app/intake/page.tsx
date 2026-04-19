@@ -23,6 +23,7 @@ export default async function IntakePage({
   const auditRunId = getValue(params, "auditRunId");
   const success = getValue(params, "success") === "1";
   const error = getValue(params, "error");
+  const showError = Boolean(error) && !success;
 
   return (
     <main style={{ maxWidth: 640, margin: "80px auto", padding: "0 24px" }}>
@@ -102,7 +103,7 @@ export default async function IntakePage({
         </div>
       ) : null}
 
-      {error ? (
+      {showError ? (
         <div
           style={{
             marginTop: 24,
