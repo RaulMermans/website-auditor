@@ -25,31 +25,10 @@ function buildIntakeUrl(params: Record<string, string | undefined>) {
 
 export async function submitDomainAction(formData: FormData) {
   const rawDomain = String(formData.get("domain") ?? "");
+  let result: Awaited<ReturnType<typeof createAuditJob>>;
 
   try {
-    const result = await createAuditJob({ domain: rawDomain });
-
-    after(async () => {
-      await dispatchAuditRun({
-        jobId: result.jobId,
-        auditRunId: result.auditRun.id,
-        domain: result.targetDomain.domain,
-      }).catch((error) => {
-        console.error("[intake] audit processing failed", {
-          auditRunId: result.auditRun.id,
-          error,
-        });
-      });
-    });
-
-    redirect(
-      buildIntakeUrl({
-        success: "1",
-        domain: result.targetDomain.domain,
-        auditRunId: result.auditRun.id,
-        status: result.auditRun.status,
-      })
-    );
+    result = await createAuditJob({ domain: rawDomain });
   } catch (error) {
     if (error instanceof ZodError) {
       redirect(
@@ -78,4 +57,26 @@ export async function submitDomainAction(formData: FormData) {
       })
     );
   }
+
+  after(async () => {
+    await dispatchAuditRun({
+      jobId: result.jobId,
+      auditRunId: result.auditRun.id,
+      domain: result.targetDomain.domain,
+    }).catch((error) => {
+      console.error("[intake] audit processing failed", {
+        auditRunId: result.auditRun.id,
+        error,
+      });
+    });
+  });
+
+  redirect(
+    buildIntakeUrl({
+      success: "1",
+      domain: result.targetDomain.domain,
+      auditRunId: result.auditRun.id,
+      status: result.auditRun.status,
+    })
+  );
 }

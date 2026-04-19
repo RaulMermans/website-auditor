@@ -91,10 +91,14 @@ export default async function IntakePage({
             color: "#065f46",
           }}
         >
-          <p style={{ fontWeight: 700, marginBottom: 8 }}>Audit job created.</p>
+          <p style={{ fontWeight: 700, marginBottom: 8 }}>Audit job created and queued.</p>
           <p>Canonical domain: {domain}</p>
           <p>Audit run id: {auditRunId}</p>
-          <p>Status: {status}</p>
+          <p>Initial status: {status}</p>
+          <p style={{ marginTop: 8 }}>
+            Processing starts asynchronously after submission, so this status may stay pending
+            briefly before moving to discovering.
+          </p>
         </div>
       ) : null}
 
