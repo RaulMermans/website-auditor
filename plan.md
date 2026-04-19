@@ -56,8 +56,8 @@ AC: shareable report URL with scored findings ✓
 ## Shot 6 — LLM enrichment + outreach asset (complete)
 
 - `buildEnrichmentInput()` shapes deterministic findings/scores into compact LLM prompt input (pure)
-- `generateReportEnrichment()` calls Anthropic API → executive summary + quick wins; returns null if key missing
-- `generateOutreachAssets()` calls Anthropic API → cold email, collaboration angle, loom script; returns null if key missing
+- `generateReportEnrichment()` calls Gemini → executive summary + quick wins; returns null if key missing
+- `generateOutreachAssets()` calls Gemini → cold email, collaboration angle, loom script; returns null if key missing
 - `POST /api/reports/[auditRunId]/enrich` triggers generation and persists assets to `outreach_assets` table
 - Report page displays enriched summary and assets if present in DB; degrades gracefully if absent
 - Migration `0004` adds `outreach_assets` table with upsert-safe unique constraint

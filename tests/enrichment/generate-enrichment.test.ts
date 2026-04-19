@@ -1,7 +1,24 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { generateReportEnrichment } from "@/server/audits/generate-report-enrichment";
 import { generateOutreachAssets } from "@/server/audits/generate-outreach-assets";
 import type { EnrichmentPromptInput } from "@/server/audits/generate-report-enrichment";
+
+const { generateContentMock, constructorArgs } = vi.hoisted(() => ({
+  generateContentMock: vi.fn(),
+  constructorArgs: [] as unknown[],
+}));
+
+vi.mock("@google/genai", () => ({
+  GoogleGenAI: class {
+    models = {
+      generateContent: generateContentMock,
+    };
+
+    constructor(config: unknown) {
+      constructorArgs.push(config);
+    }
+  },
+}));
 
 function baseInput(overrides: Partial<EnrichmentPromptInput> = {}): EnrichmentPromptInput {
   return {
@@ -28,57 +45,135 @@ function baseInput(overrides: Partial<EnrichmentPromptInput> = {}): EnrichmentPr
 
 describe("generateReportEnrichment fallback", () => {
   let savedKey: string | undefined;
+  let savedModel: string | undefined;
 
   beforeEach(() => {
-    savedKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
+    savedKey = process.env.GEMINI_API_KEY;
+    savedModel = process.env.GEMINI_MODEL;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_MODEL;
+    generateContentMock.mockReset();
+    constructorArgs.length = 0;
   });
 
   afterEach(() => {
     if (savedKey !== undefined) {
-      process.env.ANTHROPIC_API_KEY = savedKey;
+      process.env.GEMINI_API_KEY = savedKey;
     } else {
-      delete process.env.ANTHROPIC_API_KEY;
+      delete process.env.GEMINI_API_KEY;
+    }
+
+    if (savedModel !== undefined) {
+      process.env.GEMINI_MODEL = savedModel;
+    } else {
+      delete process.env.GEMINI_MODEL;
     }
   });
 
-  it("returns null when ANTHROPIC_API_KEY is missing", async () => {
+  it("returns null when GEMINI_API_KEY is missing", async () => {
     const result = await generateReportEnrichment(baseInput());
     expect(result).toBeNull();
   });
 
-  it("does not throw when ANTHROPIC_API_KEY is missing", async () => {
+  it("does not throw when GEMINI_API_KEY is missing", async () => {
     await expect(generateReportEnrichment(baseInput())).resolves.not.toThrow();
+  });
+
+  it("uses the default Gemini model and parses JSON output", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    generateContentMock.mockResolvedValue({
+      text: JSON.stringify({
+        executiveSummary: "Grounded summary.",
+        quickWins: "Grounded quick wins.",
+      }),
+    });
+
+    const result = await generateReportEnrichment(baseInput());
+
+    expect(result).toEqual({
+      executiveSummary: "Grounded summary.",
+      quickWins: "Grounded quick wins.",
+    });
+    expect(constructorArgs[0]).toEqual({ apiKey: "test-key" });
+    expect(generateContentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gemini-2.5-flash",
+        config: expect.objectContaining({
+          responseMimeType: "application/json",
+        }),
+      })
+    );
   });
 });
 
 describe("generateOutreachAssets fallback", () => {
   let savedKey: string | undefined;
+  let savedModel: string | undefined;
 
   beforeEach(() => {
-    savedKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
+    savedKey = process.env.GEMINI_API_KEY;
+    savedModel = process.env.GEMINI_MODEL;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_MODEL;
+    generateContentMock.mockReset();
+    constructorArgs.length = 0;
   });
 
   afterEach(() => {
     if (savedKey !== undefined) {
-      process.env.ANTHROPIC_API_KEY = savedKey;
+      process.env.GEMINI_API_KEY = savedKey;
     } else {
-      delete process.env.ANTHROPIC_API_KEY;
+      delete process.env.GEMINI_API_KEY;
+    }
+
+    if (savedModel !== undefined) {
+      process.env.GEMINI_MODEL = savedModel;
+    } else {
+      delete process.env.GEMINI_MODEL;
     }
   });
 
-  it("returns null when ANTHROPIC_API_KEY is missing", async () => {
+  it("returns null when GEMINI_API_KEY is missing", async () => {
     const result = await generateOutreachAssets(baseInput());
     expect(result).toBeNull();
   });
 
-  it("does not throw when ANTHROPIC_API_KEY is missing", async () => {
+  it("does not throw when GEMINI_API_KEY is missing", async () => {
     await expect(generateOutreachAssets(baseInput())).resolves.not.toThrow();
   });
 
   it("handles homepage-only input without throwing", async () => {
     const result = await generateOutreachAssets(baseInput({ homepageOnly: true }));
     expect(result).toBeNull();
+  });
+
+  it("uses GEMINI_MODEL override and keeps homepage-only scope in the prompt", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    process.env.GEMINI_MODEL = "gemini-2.5-pro";
+    generateContentMock.mockResolvedValue({
+      text: JSON.stringify({
+        email: "Grounded email.",
+        collaboration: "Grounded collaboration.",
+        loomScript: "Grounded Loom script.",
+      }),
+    });
+
+    const result = await generateOutreachAssets(baseInput({ homepageOnly: true }));
+
+    expect(result).toEqual({
+      email: "Grounded email.",
+      collaboration: "Grounded collaboration.",
+      loomScript: "Grounded Loom script.",
+    });
+    expect(generateContentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gemini-2.5-pro",
+      })
+    );
+    expect(generateContentMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        contents: expect.stringContaining("homepage-only audit scope"),
+      })
+    );
   });
 });

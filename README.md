@@ -159,10 +159,11 @@ The intake flow does not require a live worker to create an audit run; it only r
 
 ## Shot 6 status
 
-- `POST /api/reports/[auditRunId]/enrich` loads persisted findings/scores and calls Anthropic API to produce: executive summary, quick wins, cold email draft, collaboration angle, and Loom script notes.
+- `POST /api/reports/[auditRunId]/enrich` loads persisted findings/scores and calls Gemini to produce: executive summary, quick wins, cold email draft, collaboration angle, and Loom script notes.
 - Generated assets are stored in `outreach_assets` (upsert-safe) and displayed in the report page when present.
 - Deterministic report remains source of truth. LLM enrichment is additive and opt-in.
-- `ANTHROPIC_API_KEY` is optional. Missing key returns 503 from the enrich route and hides the enrichment section from the report page — base report is unaffected.
+- `GEMINI_API_KEY` is optional. Missing key returns 503 from the enrich route and hides the enrichment section from the report page — base report is unaffected.
+- `GEMINI_MODEL` is optional and defaults to `gemini-2.5-flash`.
 - Operational smoke testing is still pending; the MVP is not operationally validated yet.
 
 See `plan.md` for the milestone roadmap.

@@ -16,14 +16,14 @@
     "worker:build": "npm --prefix worker run build",
     "worker:start": "npm --prefix worker run start",
     "smoke:dispatch-once": "node scripts/smoke-dispatch-once.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:integration": "node scripts/run-integration-tests.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.90.0",
+    "@google/genai": "^1.50.1",
     "next": "^15.0.0",
     "pg": "^8.13.1",
     "pg-boss": "^10.1.6",

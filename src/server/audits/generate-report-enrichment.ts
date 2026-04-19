@@ -52,6 +52,18 @@ export interface EnrichmentResult {
   quickWins: string;
 }
 
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+
+const REPORT_ENRICHMENT_SCHEMA = {
+  type: "object",
+  properties: {
+    executiveSummary: { type: "string" },
+    quickWins: { type: "string" },
+  },
+  required: ["executiveSummary", "quickWins"],
+  additionalProperties: false,
+};
+
 function stripJsonFence(text: string): string {
   return text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
 }
@@ -59,11 +71,12 @@ function stripJsonFence(text: string): string {
 export async function generateReportEnrichment(
   input: EnrichmentPromptInput
 ): Promise<EnrichmentResult | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return null;
 
-  const { default: Anthropic } = await import("@anthropic-ai/sdk");
-  const client = new Anthropic({ apiKey });
+  const model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
+  const { GoogleGenAI } = await import("@google/genai");
+  const client = new GoogleGenAI({ apiKey });
 
   const scopeLine = input.homepageOnly
     ? "Scope: homepage-only audit. Do not make whole-site claims."
@@ -94,13 +107,18 @@ Respond in this exact JSON format with no extra text:
 {"executiveSummary":"2-3 sentences grounded in the findings above","quickWins":"3-5 specific improvements derived from the recommendations above"}`;
 
   try {
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 512,
-      messages: [{ role: "user", content: prompt }],
+    const response = await client.models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        maxOutputTokens: 512,
+        responseMimeType: "application/json",
+        responseJsonSchema: REPORT_ENRICHMENT_SCHEMA,
+        temperature: 0.2,
+      },
     });
 
-    const raw = response.content[0]?.type === "text" ? response.content[0].text : "";
+    const raw = typeof response.text === "string" ? response.text : "";
     return JSON.parse(stripJsonFence(raw)) as EnrichmentResult;
   } catch {
     return null;

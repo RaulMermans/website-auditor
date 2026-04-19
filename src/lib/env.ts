@@ -17,7 +17,8 @@ const envSchema = z.object({
   WORKER_SECRET: z.string().optional(),
 
   // LLM
-  ANTHROPIC_API_KEY: z.string().optional(),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
 
   // App
   NEXT_PUBLIC_APP_URL: z.string().url().optional(),

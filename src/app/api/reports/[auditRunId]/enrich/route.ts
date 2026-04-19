@@ -24,7 +24,7 @@ export async function POST(
 
   if (!enrichment && !outreach) {
     return NextResponse.json(
-      { error: "LLM enrichment unavailable — ANTHROPIC_API_KEY not configured" },
+      { error: "LLM enrichment unavailable — GEMINI_API_KEY not configured" },
       { status: 503 }
     );
   }
