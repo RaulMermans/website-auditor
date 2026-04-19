@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 // Storage contract — provider TBD (e.g. Vercel Blob, AWS S3, R2).
 // All artifact reads/writes must go through this interface.
 // Raw storage URLs must never be exposed directly in the UI.
@@ -10,21 +13,40 @@ export interface StorageClient {
   presign(key: string, expiresInSeconds: number): Promise<string>;
 }
 
-// TODO: replace with real implementation before artifact persistence work
+const artifactsDir = path.join(process.cwd(), ".storage");
+
 export const storageClient: StorageClient = {
-  async put(key) {
-    console.warn("[storage] stub put — no real storage wired:", key);
+  async put(key, body) {
+    const filepath = path.join(artifactsDir, key);
+    await fs.mkdir(path.dirname(filepath), { recursive: true });
+    await fs.writeFile(filepath, body);
     return key;
   },
   async get(key) {
-    console.warn("[storage] stub get — no real storage wired:", key);
-    return null;
+    const filepath = path.join(artifactsDir, key);
+
+    try {
+      return await fs.readFile(filepath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return null;
+      }
+
+      throw error;
+    }
   },
   async delete(key) {
-    console.warn("[storage] stub delete — no real storage wired:", key);
+    const filepath = path.join(artifactsDir, key);
+
+    try {
+      await fs.unlink(filepath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
   },
   async presign(key) {
-    console.warn("[storage] stub presign — no real storage wired:", key);
     return `/artifacts/${key}`;
   },
 };

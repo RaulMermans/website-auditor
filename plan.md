@@ -39,6 +39,7 @@ AC: worker processes a real domain → snapshots in storage + DB ✓
 - PageEvidence rows persisted per rule
 - Finding generation: rule-based first pass
 - Evidence labels enforced (Measured / Observed / Inferred)
+- Operational smoke test still pending; MVP is not operationally validated yet, but Shot 4 may proceed on stored snapshot inputs.
 
 AC: findings exist in DB for an audited domain, all labeled
 
