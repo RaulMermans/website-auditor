@@ -13,7 +13,7 @@ Evidence-backed website audits. Rule-first, LLM-second. Fullstack Node.js + Type
 
 ```sh
 cp .env.example .env.local   # fill in real values
-npm install                  # installs Playwright Chromium hermetically via postinstall
+npm install                  # installs Playwright headless shell hermetically via postinstall
 npm run migrate:up:local     # apply all current Postgres migrations
 npm run dev                  # http://localhost:3000
 ```
@@ -87,7 +87,7 @@ App runtime envs:
 - Optional: `PG_BOSS_SCHEMA` (defaults to `pgboss`), `GEMINI_API_KEY`, `GEMINI_MODEL` (defaults to `gemini-2.5-flash`), `NEXT_PUBLIC_APP_URL`
 
 Vercel defaults are sufficient for the app deploy. No custom build override or `vercel.json` is required by the current repo.
-The root install now owns Playwright, and `npm install` runs `node scripts/install-playwright.mjs` to install Chromium hermetically under `node_modules/playwright-core/.local-browsers`.
+The root install now owns Playwright, and `npm install` runs `node scripts/install-playwright.mjs` to install only the Playwright Chromium headless shell under `node_modules/playwright-core/.local-browsers`.
 Do not disable install lifecycle scripts in Vercel, or the Chromium download step will be skipped.
 
 1. Ensure the Next.js app deployment has `DATABASE_URL` set.

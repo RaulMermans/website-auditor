@@ -4,7 +4,7 @@ import process from "node:process";
 
 const cliPath = path.join(process.cwd(), "node_modules", "playwright", "cli.js");
 
-const result = spawnSync(process.execPath, [cliPath, "install", "chromium"], {
+const result = spawnSync(process.execPath, [cliPath, "install", "--only-shell", "chromium"], {
   stdio: "inherit",
   env: {
     ...process.env,
