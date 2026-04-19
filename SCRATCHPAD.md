@@ -22,6 +22,8 @@ Archive or delete entries once resolved.
 - Worker boundary is structural: no Playwright in app runtime under any circumstances.
 - Evidence label discipline: every Finding must set label at creation time, not retroactively.
 - Shot 3 adds the worker runtime, Playwright discovery, capture, and page_snapshots. The worker uses `tsx` as an isolated CLI script right now.
+- Operational smoke testing remains pending, so the MVP is not operationally validated yet.
+- Shot 4 can proceed against stored snapshot artifacts despite that, but runtime validation is still a later gate.
 
 ---
 

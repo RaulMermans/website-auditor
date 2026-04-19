@@ -2,6 +2,17 @@
 // These are structural contracts — implementations live in src/db/ and src/server/.
 
 export type EvidenceLabel = "Measured" | "Observed" | "Inferred";
+export type FindingCategory =
+  | "performance"
+  | "technical_seo"
+  | "accessibility"
+  | "ux_ui"
+  | "messaging_content"
+  | "conversion"
+  | "trust_signals"
+  | "mobile_experience";
+export type FindingSeverity = "critical" | "high" | "medium" | "low" | "info";
+export type FindingConfidence = "high" | "medium" | "low";
 
 export type AuditStatus =
   | "pending"
@@ -55,22 +66,28 @@ export interface PageSnapshot {
 
 export interface PageEvidence {
   id: string;
-  snapshotId: string;
-  category: string;
+  auditRunId: string;
+  pageSnapshotId: string;
+  category: FindingCategory;
   key: string;
   value: unknown;
-  label: EvidenceLabel;
+  evidenceLevel: EvidenceLabel;
+  createdAt: Date;
 }
 
 export interface Finding {
   id: string;
   auditRunId: string;
-  category: string;
+  pageSnapshotId: string;
+  category: FindingCategory;
   title: string;
   description: string;
-  label: EvidenceLabel;
-  severity: "critical" | "high" | "medium" | "low" | "info";
-  evidenceIds: string[];
+  severity: FindingSeverity;
+  confidence: FindingConfidence;
+  evidenceLevel: EvidenceLabel;
+  evidenceRef: Record<string, unknown>;
+  recommendation: string;
+  createdAt: Date;
 }
 
 export interface Recommendation {

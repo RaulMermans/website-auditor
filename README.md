@@ -59,8 +59,8 @@ public/         Static assets
 
 - [x] Playwright worker
 - [x] Worker processing (discovery, capture)
+- [x] Deterministic evidence extraction + finding generation
 - [ ] Real storage provider
-- [ ] Audit pipeline (analysis)
 - [ ] Dashboard and report UI
 - [ ] LLM enrichment layer
 - [ ] Auth / access control
@@ -134,7 +134,14 @@ The intake flow does not require a live worker to create an audit run; it only r
    - `/intake` shows `Audit job created.`
    - `smoke:dispatch-once` prints `jobId`, request payload, and worker response JSON
    - `audit_runs.status` moves from `pending` to `discovering`/`capturing` and finally `complete` or `failed`
-   - `page_snapshots` contains rows for the processed run when the worker captured at least the homepage
+- `page_snapshots` contains rows for the processed run when the worker captured at least the homepage
+
+## Shot 4 status
+
+- Stored HTML snapshots can now be analyzed into deterministic `page_evidence` and `findings` rows.
+- Findings stay rule-first and carry severity, confidence, and `Measured | Observed | Inferred` labels.
+- Homepage-only audit truth is preserved in generated finding copy and evidence refs.
+- Operational smoke testing is still pending, so the MVP is not operationally validated yet.
 
 7. Failure signals:
    - `/intake` redirects with a queueing error and `status=failed`
