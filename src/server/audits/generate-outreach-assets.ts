@@ -1,3 +1,4 @@
+import { getEnv } from "@/lib/env";
 import type { EnrichmentPromptInput } from "./generate-report-enrichment";
 
 export interface OutreachAssetSet {
@@ -6,7 +7,10 @@ export interface OutreachAssetSet {
   loomScript: string;
 }
 
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+export type OutreachAssetsGenerationResult =
+  | { status: "disabled" }
+  | { status: "success"; data: OutreachAssetSet }
+  | { status: "error"; message: string };
 
 const OUTREACH_SCHEMA = {
   type: "object",
@@ -23,13 +27,16 @@ function stripJsonFence(text: string): string {
   return text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
 }
 
+function getProviderErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown Gemini provider/runtime failure";
+}
+
 export async function generateOutreachAssets(
   input: EnrichmentPromptInput
-): Promise<OutreachAssetSet | null> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
+): Promise<OutreachAssetsGenerationResult> {
+  const { GEMINI_API_KEY: apiKey, GEMINI_MODEL: model } = getEnv();
+  if (!apiKey) return { status: "disabled" };
 
-  const model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
   const { GoogleGenAI } = await import("@google/genai");
   const client = new GoogleGenAI({ apiKey });
 
@@ -62,8 +69,11 @@ Respond in this exact JSON format with no extra text:
     });
 
     const raw = typeof response.text === "string" ? response.text : "";
-    return JSON.parse(stripJsonFence(raw)) as OutreachAssetSet;
-  } catch {
-    return null;
+    return {
+      status: "success",
+      data: JSON.parse(stripJsonFence(raw)) as OutreachAssetSet,
+    };
+  } catch (error) {
+    return { status: "error", message: getProviderErrorMessage(error) };
   }
 }

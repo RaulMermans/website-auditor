@@ -35,13 +35,17 @@ function parseEnv() {
   return result.data;
 }
 
+export function getEnv() {
+  return parseEnv();
+}
+
 // Singleton — validated once at module load time.
-export const env = parseEnv();
+export const env = getEnv();
 
 export function getRequiredEnv<K extends keyof typeof env>(
   key: K
 ): NonNullable<(typeof env)[K]> {
-  const value = env[key];
+  const value = getEnv()[key];
 
   if (!value) {
     throw new Error(`Missing required environment variable: ${String(key)}`);

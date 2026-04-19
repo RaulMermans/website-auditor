@@ -22,28 +22,35 @@ export async function POST(
     generateOutreachAssets(input),
   ]);
 
-  if (!enrichment && !outreach) {
+  if (enrichment.status === "disabled" && outreach.status === "disabled") {
     return NextResponse.json(
       { error: "LLM enrichment unavailable — GEMINI_API_KEY not configured" },
       { status: 503 }
     );
   }
 
+  if (enrichment.status === "error" || outreach.status === "error") {
+    return NextResponse.json(
+      { error: "LLM enrichment failed — Gemini provider/runtime error" },
+      { status: 502 }
+    );
+  }
+
   const saved: string[] = [];
 
-  if (enrichment) {
+  if (enrichment.status === "success") {
     await Promise.all([
-      enrichmentRepository.saveAsset(auditRunId, "summary", enrichment.executiveSummary),
-      enrichmentRepository.saveAsset(auditRunId, "quick_wins", enrichment.quickWins),
+      enrichmentRepository.saveAsset(auditRunId, "summary", enrichment.data.executiveSummary),
+      enrichmentRepository.saveAsset(auditRunId, "quick_wins", enrichment.data.quickWins),
     ]);
     saved.push("summary", "quick_wins");
   }
 
-  if (outreach) {
+  if (outreach.status === "success") {
     await Promise.all([
-      enrichmentRepository.saveAsset(auditRunId, "email", outreach.email),
-      enrichmentRepository.saveAsset(auditRunId, "collaboration", outreach.collaboration),
-      enrichmentRepository.saveAsset(auditRunId, "loom_script", outreach.loomScript),
+      enrichmentRepository.saveAsset(auditRunId, "email", outreach.data.email),
+      enrichmentRepository.saveAsset(auditRunId, "collaboration", outreach.data.collaboration),
+      enrichmentRepository.saveAsset(auditRunId, "loom_script", outreach.data.loomScript),
     ]);
     saved.push("email", "collaboration", "loom_script");
   }

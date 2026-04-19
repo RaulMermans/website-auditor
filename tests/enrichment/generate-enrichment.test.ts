@@ -72,7 +72,7 @@ describe("generateReportEnrichment fallback", () => {
 
   it("returns null when GEMINI_API_KEY is missing", async () => {
     const result = await generateReportEnrichment(baseInput());
-    expect(result).toBeNull();
+    expect(result).toEqual({ status: "disabled" });
   });
 
   it("does not throw when GEMINI_API_KEY is missing", async () => {
@@ -91,8 +91,11 @@ describe("generateReportEnrichment fallback", () => {
     const result = await generateReportEnrichment(baseInput());
 
     expect(result).toEqual({
-      executiveSummary: "Grounded summary.",
-      quickWins: "Grounded quick wins.",
+      status: "success",
+      data: {
+        executiveSummary: "Grounded summary.",
+        quickWins: "Grounded quick wins.",
+      },
     });
     expect(constructorArgs[0]).toEqual({ apiKey: "test-key" });
     expect(generateContentMock).toHaveBeenCalledWith(
@@ -135,7 +138,7 @@ describe("generateOutreachAssets fallback", () => {
 
   it("returns null when GEMINI_API_KEY is missing", async () => {
     const result = await generateOutreachAssets(baseInput());
-    expect(result).toBeNull();
+    expect(result).toEqual({ status: "disabled" });
   });
 
   it("does not throw when GEMINI_API_KEY is missing", async () => {
@@ -144,7 +147,7 @@ describe("generateOutreachAssets fallback", () => {
 
   it("handles homepage-only input without throwing", async () => {
     const result = await generateOutreachAssets(baseInput({ homepageOnly: true }));
-    expect(result).toBeNull();
+    expect(result).toEqual({ status: "disabled" });
   });
 
   it("uses GEMINI_MODEL override and keeps homepage-only scope in the prompt", async () => {
@@ -161,9 +164,12 @@ describe("generateOutreachAssets fallback", () => {
     const result = await generateOutreachAssets(baseInput({ homepageOnly: true }));
 
     expect(result).toEqual({
-      email: "Grounded email.",
-      collaboration: "Grounded collaboration.",
-      loomScript: "Grounded Loom script.",
+      status: "success",
+      data: {
+        email: "Grounded email.",
+        collaboration: "Grounded collaboration.",
+        loomScript: "Grounded Loom script.",
+      },
     });
     expect(generateContentMock).toHaveBeenCalledWith(
       expect.objectContaining({
