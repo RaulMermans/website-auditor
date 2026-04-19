@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { reportRepository } from "@/db/report";
-import type { Finding, FindingCategory } from "@/lib/types";
+import { enrichmentRepository } from "@/db/enrichment";
+import type { Finding, FindingCategory, OutreachAsset } from "@/lib/types";
 import { ALL_FINDING_CATEGORIES } from "@/server/scoring/score-audit";
 
 const CATEGORY_LABELS: Record<FindingCategory, string> = {
@@ -40,11 +41,15 @@ export default async function ReportPage({
   params: Promise<{ auditRunId: string }>;
 }) {
   const { auditRunId } = await params;
-  const data = await reportRepository.getReportData(auditRunId);
+  const [data, enrichmentAssets] = await Promise.all([
+    reportRepository.getReportData(auditRunId),
+    enrichmentRepository.getAssetsForAuditRun(auditRunId).catch(() => [] as OutreachAsset[]),
+  ]);
 
   if (!data) notFound();
 
   const { auditRun, domain, findings, scores } = data;
+  const assetMap = Object.fromEntries(enrichmentAssets.map((a) => [a.type, a.content])) as Partial<Record<OutreachAsset["type"], string>>;
 
   const findingsByCategory = new Map<FindingCategory, Finding[]>();
   for (const finding of findings) {
@@ -176,6 +181,55 @@ export default async function ReportPage({
           })}
         </div>
       </div>
+
+      {(assetMap.summary || assetMap.quick_wins || assetMap.email || assetMap.collaboration || assetMap.loom_script) && (
+        <div style={{ marginBottom: 32 }}>
+          <h2 style={{ fontSize: "1.125rem", fontWeight: 600, marginBottom: 12 }}>
+            AI Enrichment
+          </h2>
+          <p style={{ fontSize: "0.75rem", color: "#9ca3af", marginBottom: 16 }}>
+            Generated from deterministic findings. No facts added beyond stored evidence.
+          </p>
+
+          {assetMap.summary && (
+            <div style={{ marginBottom: 16, padding: 16, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6 }}>
+              <h3 style={{ fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: 8 }}>Executive Summary</h3>
+              <p style={{ fontSize: "0.875rem", color: "#4b5563" }}>{assetMap.summary}</p>
+            </div>
+          )}
+
+          {assetMap.quick_wins && (
+            <div style={{ marginBottom: 16, padding: 16, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6 }}>
+              <h3 style={{ fontSize: "0.875rem", fontWeight: 600, color: "#166534", marginBottom: 8 }}>Quick Wins</h3>
+              <p style={{ fontSize: "0.875rem", color: "#166534", whiteSpace: "pre-wrap" }}>{assetMap.quick_wins}</p>
+            </div>
+          )}
+
+          {(assetMap.email || assetMap.collaboration || assetMap.loom_script) && (
+            <div style={{ padding: 16, background: "#fefce8", border: "1px solid #fde68a", borderRadius: 6 }}>
+              <h3 style={{ fontSize: "0.875rem", fontWeight: 600, color: "#713f12", marginBottom: 12 }}>Outreach Assets</h3>
+              {assetMap.email && (
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: "0.75rem", fontWeight: 600, color: "#92400e", marginBottom: 4 }}>Cold Email Draft</p>
+                  <p style={{ fontSize: "0.875rem", color: "#713f12", whiteSpace: "pre-wrap" }}>{assetMap.email}</p>
+                </div>
+              )}
+              {assetMap.collaboration && (
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: "0.75rem", fontWeight: 600, color: "#92400e", marginBottom: 4 }}>Collaboration Angle</p>
+                  <p style={{ fontSize: "0.875rem", color: "#713f12" }}>{assetMap.collaboration}</p>
+                </div>
+              )}
+              {assetMap.loom_script && (
+                <div>
+                  <p style={{ fontSize: "0.75rem", fontWeight: 600, color: "#92400e", marginBottom: 4 }}>Loom Script Notes</p>
+                  <p style={{ fontSize: "0.875rem", color: "#713f12", whiteSpace: "pre-wrap" }}>{assetMap.loom_script}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {findings.length === 0 ? (
         <p style={{ color: "#6b7280" }}>
