@@ -199,16 +199,17 @@ function normalizeLaunchError(error: unknown): Error {
 // preventing concurrent ETXTBSY when two requests hit the same warm Lambda.
 let _chromiumExecPathPromise: Promise<string> | null = null;
 
-function getChromiumExecutablePath(): Promise<string> {
+async function getChromiumExecutablePath(): Promise<string> {
   if (!_chromiumExecPathPromise) {
     console.log("[audit-capture] chromium: starting executable path resolution (first call)");
-    // Assignment is synchronous — no two callers can both enter this branch.
-    _chromiumExecPathPromise = import("@sparticuz/chromium")
-      .then(({ default: chromium }) => chromium.executablePath())
-      .then((p) => {
-        console.log(`[audit-capture] chromium: executable path ready: ${p}`);
-        return p;
-      });
+    _chromiumExecPathPromise = (async () => {
+      const { default: chromium } = await import("@sparticuz/chromium");
+      // Force minimal graphics for stability
+      chromium.setGraphicsMode = false; 
+      const p = await chromium.executablePath();
+      console.log(`[audit-capture] chromium: executable path resolved to: ${p}`);
+      return p;
+    })();
   } else {
     console.log("[audit-capture] chromium: reusing cached executable path promise");
   }
@@ -217,16 +218,20 @@ function getChromiumExecutablePath(): Promise<string> {
 
 async function launchBrowser(): Promise<BrowserSession> {
   try {
-    const [{ default: chromium }, { chromium: playwrightChromium }] = await Promise.all([
-      import("@sparticuz/chromium"),
-      import("playwright-core"),
-    ]);
-
     const executablePath = await getChromiumExecutablePath();
-    console.log(`[audit-capture] launching browser: ${executablePath}`);
+    const { default: chromium } = await import("@sparticuz/chromium");
+    const { chromium: playwrightChromium } = await import("playwright-core");
+
+    console.log("[audit-capture] launching browser...");
 
     const browser = await playwrightChromium.launch({
-      args: chromium.args,
+      args: [
+        ...chromium.args,
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+      ],
       executablePath,
       headless: true,
     });
@@ -237,6 +242,11 @@ async function launchBrowser(): Promise<BrowserSession> {
       viewport: { width: 1280, height: 800 },
       userAgent: "WebsiteAuditorAgent/1.0 (+https://example.com/bot)",
     });
+
+    // Set default timeouts for the entire context to avoid unexpected 30s hangs
+    context.setDefaultTimeout(45000);
+    context.setDefaultNavigationTimeout(45000);
+
     const page = await context.newPage();
 
     return {
@@ -247,6 +257,7 @@ async function launchBrowser(): Promise<BrowserSession> {
       },
     };
   } catch (error) {
+    console.error("[audit-capture] launch failed:", error);
     throw normalizeLaunchError(error);
   }
 }
@@ -316,12 +327,15 @@ export async function captureAuditRun(
 
         const currentUrl = session.page.url();
         const html = await session.page.content();
+        
+        console.log(`[audit-capture] taking screenshot: ${target.url}`);
         const screenshot = await session.page.screenshot({
           fullPage: true,
           type: "jpeg",
           quality: 80,
-          timeout: 60000,
+          timeout: 90000, // Increased from 60s to handle heavy pages
         });
+        console.log("[audit-capture] screenshot captured");
 
         const htmlStorageKey = await deps.storage.put(
           buildArtifactKey(auditRunId, target.type, currentUrl, "html"),
