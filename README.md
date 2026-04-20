@@ -88,7 +88,7 @@ App runtime envs:
 - Optional: `PG_BOSS_SCHEMA` (defaults to `pgboss`), `GEMINI_API_KEY`, `GEMINI_MODEL` (defaults to `gemini-2.5-flash`), `NEXT_PUBLIC_APP_URL`
 
 Vercel defaults are sufficient for the app deploy. No custom build override or `vercel.json` is required by the current repo.
-Browser capture uses `@sparticuz/chromium` (Lambda-compatible binary) and `playwright-core`. No `postinstall` step or browser download is required; `npm install` is sufficient for both local dev and Vercel.
+Browser capture uses `@sparticuz/chromium` (Lambda-compatible binary) and `playwright-core`. No `postinstall` step or browser download is required; `npm install` is sufficient for both local dev and Vercel. The `worker/` directory is legacy and is **not** a workspace — it is excluded from the root install to prevent the full `playwright` package from being installed and polluting `playwright-core/.local-browsers/`.
 
 1. Ensure the Next.js app deployment has `DATABASE_URL` set.
 2. Ensure DB migrations are applied against the production database:

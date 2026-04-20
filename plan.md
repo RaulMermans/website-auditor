@@ -91,6 +91,17 @@ AC: AC1 ✓ AC2 ✓ AC3 ✓ AC4 ✓ AC5 ✓ AC6 ✓ AC7 ✓ AC8 ✓ AC9 ✓ AC10
 
 AC1 ✓ AC2 ✓ AC3 ✓ AC4 ✓ AC5 ✓ AC6 ✓
 
+## Shot 9 — Remove stale Playwright workspace (complete)
+
+- `worker/` removed from root `package.json` `workspaces` array.
+- `playwright` (full package) no longer installed at root `node_modules` during build.
+- `node_modules/playwright-core/.local-browsers/` no longer populated; stale directory deleted.
+- Lockfile regenerated; worker entry marked `"extraneous": true` — Vercel `npm ci` skips it.
+- All 63 tests pass; typecheck, lint, and build clean.
+- **Must redeploy without cache** for the change to take effect on Vercel.
+
+AC: no `playwright` in root `node_modules`; no `.local-browsers/` on build; browser launch uses `@sparticuz/chromium` exclusively ✓
+
 ## Deferred decisions
 
 | Decision | Status | Needed by |
