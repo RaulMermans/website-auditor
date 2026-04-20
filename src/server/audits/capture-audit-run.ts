@@ -171,6 +171,16 @@ function normalizeLaunchError(error: unknown): Error {
     return new Error(String(error));
   }
 
+  if (/ETXTBSY/i.test(error.message)) {
+    return new Error(
+      [
+        "Chromium binary busy (ETXTBSY): concurrent launch attempted before extraction finished.",
+        `Original error: ${error.message}`,
+      ].join(" "),
+      { cause: error }
+    );
+  }
+
   if (!/Executable doesn't exist|Cannot find module ['"](?:playwright-core|@sparticuz\/chromium)['"]/i.test(error.message)) {
     return error;
   }
@@ -185,16 +195,44 @@ function normalizeLaunchError(error: unknown): Error {
   );
 }
 
+// Cached at module scope so the /tmp extraction runs at most once per process instance,
+// preventing concurrent ETXTBSY when two requests hit the same warm Lambda.
+let _chromiumExecPathPromise: Promise<string> | null = null;
+
+function getChromiumExecutablePath(): Promise<string> {
+  if (!_chromiumExecPathPromise) {
+    console.log("[audit-capture] chromium: starting executable path resolution (first call)");
+    // Assignment is synchronous — no two callers can both enter this branch.
+    _chromiumExecPathPromise = import("@sparticuz/chromium")
+      .then(({ default: chromium }) => chromium.executablePath())
+      .then((p) => {
+        console.log(`[audit-capture] chromium: executable path ready: ${p}`);
+        return p;
+      });
+  } else {
+    console.log("[audit-capture] chromium: reusing cached executable path promise");
+  }
+  return _chromiumExecPathPromise;
+}
+
 async function launchBrowser(): Promise<BrowserSession> {
   try {
-    const { default: chromium } = await import("@sparticuz/chromium");
-    const { chromium: playwrightChromium } = await import("playwright-core");
+    const [{ default: chromium }, { chromium: playwrightChromium }] = await Promise.all([
+      import("@sparticuz/chromium"),
+      import("playwright-core"),
+    ]);
+
+    const executablePath = await getChromiumExecutablePath();
+    console.log(`[audit-capture] launching browser: ${executablePath}`);
 
     const browser = await playwrightChromium.launch({
       args: chromium.args,
-      executablePath: await chromium.executablePath(),
+      executablePath,
       headless: true,
     });
+
+    console.log("[audit-capture] browser launched successfully");
+
     const context = await browser.newContext({
       viewport: { width: 1280, height: 800 },
       userAgent: "WebsiteAuditorAgent/1.0 (+https://example.com/bot)",
@@ -246,7 +284,7 @@ export async function captureAuditRun(
     session = await deps.launchBrowser();
 
     const response = await session.page.goto(baseUrl, {
-      waitUntil: "networkidle",
+      waitUntil: "load",
       timeout: 30000,
     });
 
@@ -269,7 +307,7 @@ export async function captureAuditRun(
       try {
         if (target.type !== "homepage") {
           await session.page.goto(target.url, {
-            waitUntil: "networkidle",
+            waitUntil: "load",
             timeout: 20000,
           });
         }
@@ -282,6 +320,7 @@ export async function captureAuditRun(
           fullPage: true,
           type: "jpeg",
           quality: 80,
+          timeout: 60000,
         });
 
         const htmlStorageKey = await deps.storage.put(
