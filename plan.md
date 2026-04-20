@@ -107,6 +107,6 @@ AC: no `playwright` in root `node_modules`; no `.local-browsers/` on build; brow
 | Decision | Status | Needed by |
 |---|---|---|
 | Queue provider | pg-boss | Resolved |
-| Storage provider | Local FS (dev) | Shot 3 (resolved for local dev) |
+| Storage provider | Local FS (dev) / /tmp (Vercel) | Shot 3 (resolved for Vercel & local) |
 | DB client / ORM | raw pg | Resolved |
 | Auth / access control | Deferred | Post-MVP |

@@ -13,7 +13,12 @@ export interface StorageClient {
   presign(key: string, expiresInSeconds: number): Promise<string>;
 }
 
-const artifactsDir = path.join(process.cwd(), ".storage");
+const isVercel = !!process.env.VERCEL;
+const artifactsDir = isVercel 
+  ? path.join("/tmp", "website-auditor") 
+  : path.join(process.cwd(), ".storage");
+
+console.log(`[Storage] Configured local storage adapter with root: ${artifactsDir}`);
 
 export const storageClient: StorageClient = {
   async put(key, body) {
