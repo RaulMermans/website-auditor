@@ -37,6 +37,13 @@ describe("trust signal evidence and findings", () => {
     expect(ev.contactInfo).toBe(true);
   });
 
+  it("emits contact_reassurance evidence with contact depth details", () => {
+    const html = `<html><body><a href="mailto:hello@example.com">Email</a><a href="/contact">Contact</a></body></html>`;
+    const result = extractPageArtifacts(RUN, HOMEPAGE, html);
+    const ev = getEvidence<{ contactOptions: number }>(result.pageEvidence, "contact_reassurance");
+    expect(ev.contactOptions).toBeGreaterThan(0);
+  });
+
   it("detects privacy link", () => {
     const html = `<html><body><a href="/privacy">Privacy Policy</a></body></html>`;
     const result = extractPageArtifacts(RUN, HOMEPAGE, html);
@@ -105,6 +112,19 @@ describe("CTA inventory evidence and findings", () => {
     const overloadFindings = getFindings(result.findings, "cta overload");
     expect(overloadFindings.length).toBeGreaterThan(0);
   });
+
+  it("emits competing CTA hierarchy finding when multiple distinct actions are present", () => {
+    const html = `
+      <html><body>
+        <button>Book a call</button>
+        <button>Get started</button>
+        <a href="/demo">Request demo</a>
+        <a href="/contact">Contact us</a>
+      </body></html>`;
+    const result = extractPageArtifacts(RUN, HOMEPAGE, html);
+    const competingFindings = getFindings(result.findings, "primary and secondary actions compete");
+    expect(competingFindings.length).toBeGreaterThan(0);
+  });
 });
 
 // ── Form friction ─────────────────────────────────────────────────────────────
@@ -163,15 +183,31 @@ describe("messaging quality evidence and findings", () => {
     expect(ev).toBeDefined();
   });
 
+  it("emits messaging_alignment evidence for richer narrative checks", () => {
+    const html = `
+      <html>
+        <head><title>Lead generation for home services</title></head>
+        <body>
+          <h1>We are a digital agency</h1>
+          <h2>SEO</h2>
+          <h2>PPC</h2>
+          <h2>Web Design</h2>
+        </body>
+      </html>`;
+    const result = extractPageArtifacts(RUN, HOMEPAGE, html);
+    const ev = getEvidence<{ titleAlignment: number }>(result.pageEvidence, "messaging_alignment");
+    expect(ev.titleAlignment).toBeLessThan(0.5);
+  });
+
   it("detects generic 'Welcome to our' intro on homepage", () => {
     const html = `<html><body><h1>Welcome to our agency</h1><p>We build websites.</p></body></html>`;
     const result = extractPageArtifacts(RUN, HOMEPAGE, html);
     const ev = getEvidence<{ genericIntroDetected: boolean }>(result.pageEvidence, "messaging_quality");
     expect(ev.genericIntroDetected).toBe(true);
 
-    const msgFindings = getFindings(result.findings, "generic hero");
+    const msgFindings = getFindings(result.findings, "value proposition");
     expect(msgFindings.length).toBeGreaterThan(0);
-    expect(msgFindings[0]).toMatchObject({ category: "messaging_content", severity: "medium" });
+    expect(msgFindings[0]).toMatchObject({ category: "messaging_content", severity: "high" });
   });
 
   it("detects 'We are a' generic intro", () => {
@@ -186,16 +222,34 @@ describe("messaging quality evidence and findings", () => {
     const result = extractPageArtifacts(RUN, HOMEPAGE, html);
     const ev = getEvidence<{ genericIntroDetected: boolean }>(result.pageEvidence, "messaging_quality");
     expect(ev.genericIntroDetected).toBe(false);
-    const msgFindings = getFindings(result.findings, "generic hero");
+    const msgFindings = getFindings(result.findings, "value proposition");
     expect(msgFindings).toHaveLength(0);
   });
 
-  it("does NOT emit generic-hero finding on non-homepage pages", () => {
+  it("does NOT emit weak-value-proposition finding on non-homepage pages", () => {
     const snap = { id: "snap-3", url: "https://example.com/about", pageType: "about" as const };
     const html = `<html><body><h1>Welcome to our company</h1></body></html>`;
     const result = extractPageArtifacts(RUN, snap, html);
-    const msgFindings = getFindings(result.findings, "generic hero");
+    const msgFindings = getFindings(result.findings, "value proposition");
     expect(msgFindings).toHaveLength(0);
+  });
+
+  it("emits offer-sprawl messaging finding when the homepage broadens too quickly", () => {
+    const headings = [
+      "SEO services",
+      "Paid ads",
+      "Web design",
+      "Brand strategy",
+      "Content marketing",
+      "Analytics",
+      "Sales enablement",
+    ]
+      .map((text) => `<h2>${text}</h2>`)
+      .join("");
+    const html = `<html><body><h1>Grow faster</h1>${headings}</body></html>`;
+    const result = extractPageArtifacts(RUN, HOMEPAGE, html);
+    const msgFindings = getFindings(result.findings, "too many themes");
+    expect(msgFindings.length).toBeGreaterThan(0);
   });
 });
 
@@ -223,6 +277,51 @@ describe("performance script count evidence and findings", () => {
     const result = extractPageArtifacts(RUN, HOMEPAGE, html);
     const perfFindings = getFindings(result.findings, "heavy script");
     expect(perfFindings.length).toBeGreaterThan(0);
-    expect(perfFindings[0]).toMatchObject({ category: "performance", severity: "low", evidenceLevel: "Measured" });
+    expect(perfFindings[0]).toMatchObject({ category: "performance", evidenceLevel: "Measured" });
+  });
+
+  it("emits asset_weight and page_complexity evidence for performance semantics", () => {
+    const scripts = Array.from({ length: 6 }, (_, i) => `<script src="https://cdn.example.com/s${i}.js"></script>`).join("");
+    const images = Array.from({ length: 12 }, (_, i) => `<img src="/img-${i}.jpg">`).join("");
+    const sections = Array.from({ length: 8 }, (_, i) => `<section><h2>Section ${i}</h2><p>${"copy ".repeat(40)}</p></section>`).join("");
+    const html = `<html><head>${scripts}<link rel="stylesheet" href="/a.css"><link rel="stylesheet" href="/b.css"><link rel="stylesheet" href="/c.css"><link rel="stylesheet" href="/d.css"><link rel="stylesheet" href="/e.css"></head><body>${images}${sections}</body></html>`;
+    const result = extractPageArtifacts(RUN, HOMEPAGE, html);
+    expect(getEvidence(result.pageEvidence, "asset_weight")).toBeDefined();
+    expect(getEvidence(result.pageEvidence, "page_complexity")).toBeDefined();
+  });
+});
+
+describe("ux/ui and mobile structural evidence", () => {
+  it("emits content_hierarchy and mobile_layout evidence", () => {
+    const html = `
+      <html>
+        <body>
+          <h1>Welcome to our agency</h1>
+          <button>Book now</button>
+          <button>Book now</button>
+          <button>See pricing</button>
+          ${Array.from({ length: 8 }, (_, i) => `<section><h2>Section ${i}</h2><p>${"copy ".repeat(40)}</p></section>`).join("")}
+        </body>
+      </html>`;
+    const result = extractPageArtifacts(RUN, HOMEPAGE, html);
+    expect(getEvidence(result.pageEvidence, "content_hierarchy")).toBeDefined();
+    expect(getEvidence(result.pageEvidence, "mobile_layout")).toBeDefined();
+  });
+
+  it("emits ux/ui findings for a busy homepage flow", () => {
+    const html = `
+      <html>
+        <body>
+          <h1>Welcome to our agency</h1>
+          <button>Book now</button>
+          <button>Book now</button>
+          <button>See pricing</button>
+          <form>${Array.from({ length: 7 }, () => `<input type="text">`).join("")}</form>
+          ${Array.from({ length: 8 }, (_, i) => `<section><h2>Section ${i}</h2><p>${"copy ".repeat(40)}</p></section>`).join("")}
+        </body>
+      </html>`;
+    const result = extractPageArtifacts(RUN, HOMEPAGE, html);
+    const uxFindings = result.findings.filter((finding) => finding.category === "ux_ui");
+    expect(uxFindings.length).toBeGreaterThan(0);
   });
 });

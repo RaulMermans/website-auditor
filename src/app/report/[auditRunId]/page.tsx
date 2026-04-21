@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import { reportRepository } from "@/db/report";
 import { enrichmentRepository } from "@/db/enrichment";
 import type { Finding, FindingCategory, OutreachAsset } from "@/lib/types";
-import { ALL_FINDING_CATEGORIES } from "@/server/scoring/score-audit";
 
 const CATEGORY_LABELS: Record<FindingCategory, string> = {
   performance: "Performance",
@@ -29,10 +28,56 @@ const EVIDENCE_COLORS: Record<Finding["evidenceLevel"], string> = {
   Inferred: "#9ca3af",
 };
 
+const REVIEW_STATE_STYLES = {
+  inspected_clean: {
+    background: "#f0fdf4",
+    border: "#86efac",
+    text: "#166534",
+  },
+  inspected_with_findings: {
+    background: "#fff7ed",
+    border: "#fdba74",
+    text: "#9a3412",
+  },
+  lightly_inspected: {
+    background: "#fffbeb",
+    border: "#fcd34d",
+    text: "#92400e",
+  },
+  insufficient_evidence: {
+    background: "#f8fafc",
+    border: "#cbd5e1",
+    text: "#475569",
+  },
+} as const;
+
 function scoreColor(score: number) {
   if (score >= 80) return "#16a34a";
   if (score >= 60) return "#d97706";
   return "#dc2626";
+}
+
+function getFindingSupportLabel(finding: Finding) {
+  const pageCount =
+    typeof finding.evidenceRef.pageCount === "number"
+      ? finding.evidenceRef.pageCount
+      : finding.evidenceRef.pageUrl
+        ? 1
+        : 0;
+  const evidenceKeyCount = Array.isArray(finding.evidenceRef.evidenceKeys)
+    ? finding.evidenceRef.evidenceKeys.length
+    : 0;
+  const parts: string[] = [];
+
+  if (pageCount > 0) {
+    parts.push(`${pageCount} page${pageCount !== 1 ? "s" : ""}`);
+  }
+
+  if (evidenceKeyCount > 0) {
+    parts.push(`${evidenceKeyCount} signal${evidenceKeyCount !== 1 ? "s" : ""}`);
+  }
+
+  return parts.join(" · ") || "Limited support";
 }
 
 export default async function ReportPage({
@@ -48,15 +93,19 @@ export default async function ReportPage({
 
   if (!data) notFound();
 
-  const { auditRun, domain, findings, topPriorities, scores } = data;
-  const assetMap = Object.fromEntries(enrichmentAssets.map((a) => [a.type, a.content])) as Partial<Record<OutreachAsset["type"], string>>;
-
-  const findingsByCategory = new Map<FindingCategory, Finding[]>();
-  for (const finding of findings) {
-    const list = findingsByCategory.get(finding.category) ?? [];
-    list.push(finding);
-    findingsByCategory.set(finding.category, list);
-  }
+  const { auditRun, domain, findings, topPriorities, scores, categoryReviews } = data;
+  const assetMap = Object.fromEntries(
+    enrichmentAssets.map((a) => [a.type, a.content])
+  ) as Partial<Record<OutreachAsset["type"], string>>;
+  const inspectedCleanCount = categoryReviews.filter(
+    (review) => review.reviewState === "inspected_clean"
+  ).length;
+  const lightlyInspectedCount = categoryReviews.filter(
+    (review) => review.reviewState === "lightly_inspected"
+  ).length;
+  const insufficientEvidenceCount = categoryReviews.filter(
+    (review) => review.reviewState === "insufficient_evidence"
+  ).length;
 
   return (
     <main style={{ maxWidth: 800, margin: "48px auto", padding: "0 24px" }}>
@@ -117,14 +166,63 @@ export default async function ReportPage({
         <div>
           <p style={{ fontWeight: 600, marginBottom: 4 }}>Overall score</p>
           <p style={{ color: "#6b7280", fontSize: "0.875rem" }}>
-            {findings.length} finding{findings.length !== 1 ? "s" : ""} across{" "}
-            {findingsByCategory.size} categor
-            {findingsByCategory.size !== 1 ? "ies" : "y"}. Score is
-            deterministic and coverage-aware: finding severity is weighted by
-            confidence, and lightly inspected categories do not receive an
-            automatic clean score.
+            {findings.length} finding{findings.length !== 1 ? "s" : ""} across the
+            current deterministic review. {inspectedCleanCount} categor
+            {inspectedCleanCount !== 1 ? "ies" : "y"} inspected clean,{" "}
+            {lightlyInspectedCount} lightly inspected, {insufficientEvidenceCount} with
+            insufficient evidence.
           </p>
         </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 12,
+          marginBottom: 32,
+        }}
+      >
+        {[
+          {
+            label: "Inspected Clean",
+            value: inspectedCleanCount,
+            background: "#f0fdf4",
+            border: "#86efac",
+            text: "#166534",
+          },
+          {
+            label: "Light Inspection",
+            value: lightlyInspectedCount,
+            background: "#fffbeb",
+            border: "#fcd34d",
+            text: "#92400e",
+          },
+          {
+            label: "Insufficient Evidence",
+            value: insufficientEvidenceCount,
+            background: "#f8fafc",
+            border: "#cbd5e1",
+            text: "#475569",
+          },
+        ].map((item) => (
+          <div
+            key={item.label}
+            style={{
+              padding: 16,
+              borderRadius: 8,
+              border: `1px solid ${item.border}`,
+              background: item.background,
+            }}
+          >
+            <div style={{ fontSize: "1.4rem", fontWeight: 700, color: item.text }}>
+              {item.value}
+            </div>
+            <div style={{ fontSize: "0.8rem", fontWeight: 600, color: item.text }}>
+              {item.label}
+            </div>
+          </div>
+        ))}
       </div>
 
       {topPriorities.length > 0 && (
@@ -134,6 +232,10 @@ export default async function ReportPage({
           >
             Top priorities
           </h2>
+          <p style={{ color: "#6b7280", fontSize: "0.875rem", marginBottom: 12 }}>
+            Curated shortlist of the strongest, most distinct issues surfaced in the
+            captured audit evidence.
+          </p>
           <div
             style={{
               display: "grid",
@@ -174,16 +276,59 @@ export default async function ReportPage({
                       fontWeight: 700,
                       padding: "2px 6px",
                       borderRadius: 4,
+                      background: "#eff6ff",
+                      color: "#1d4ed8",
+                    }}
+                  >
+                    {CATEGORY_LABELS[finding.category]}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "0.75rem",
+                      fontWeight: 700,
+                      padding: "2px 6px",
+                      borderRadius: 4,
                       background: SEVERITY_COLORS[finding.severity] + "1a",
                       color: SEVERITY_COLORS[finding.severity],
                     }}
                   >
                     {finding.severity.toUpperCase()}
                   </span>
+                  <span
+                    style={{
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                      background:
+                        EVIDENCE_COLORS[finding.evidenceLevel] + "1a",
+                      color: EVIDENCE_COLORS[finding.evidenceLevel],
+                    }}
+                  >
+                    {finding.evidenceLevel} · {finding.confidence}
+                  </span>
                   <span style={{ fontWeight: 600 }}>{finding.title}</span>
                 </div>
-                <p style={{ fontSize: "0.875rem", color: "#4b5563" }}>
-                  {finding.recommendation}
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#6b7280",
+                    marginBottom: 8,
+                  }}
+                >
+                  Support: {getFindingSupportLabel(finding)}
+                </p>
+                <p
+                  style={{
+                    fontSize: "0.875rem",
+                    color: "#4b5563",
+                    marginBottom: 8,
+                  }}
+                >
+                  {finding.description}
+                </p>
+                <p style={{ fontSize: "0.875rem", color: "#065f46" }}>
+                  <strong>Recommendation:</strong> {finding.recommendation}
                 </p>
               </div>
             ))}
@@ -204,24 +349,21 @@ export default async function ReportPage({
             gap: 12,
           }}
         >
-          {ALL_FINDING_CATEGORIES.map((cat) => {
-            const score = scores.byCategory[cat];
-            const count = findingsByCategory.get(cat)?.length ?? 0;
-            const inspection = scores.inspectionSummaryByCategory[cat];
-            const isInspected = inspection.status !== "not_inspected";
+          {categoryReviews.map((review) => {
+            const isInspected = review.score !== null;
             const inspectionLabel =
-              inspection.status === "not_inspected"
-                ? "Not inspected"
-                : inspection.status === "lightly_inspected"
-                  ? count === 0
+              review.reviewState === "insufficient_evidence"
+                ? "Insufficient evidence"
+                : review.reviewState === "lightly_inspected"
+                  ? review.findingCount === 0
                     ? "Light inspection"
-                    : `${count} finding${count !== 1 ? "s" : ""} · light inspection`
-                  : count === 0
-                    ? "No findings"
-                    : `${count} finding${count !== 1 ? "s" : ""}`;
+                    : `${review.findingCount} finding${review.findingCount !== 1 ? "s" : ""} · light inspection`
+                  : review.findingCount === 0
+                    ? "Inspected clean"
+                    : `${review.findingCount} finding${review.findingCount !== 1 ? "s" : ""}`;
             return (
               <div
-                key={cat}
+                key={review.category}
                 style={{
                   padding: "14px 16px",
                   background: "#fff",
@@ -234,11 +376,11 @@ export default async function ReportPage({
                   style={{
                     fontWeight: 700,
                     fontSize: "1.25rem",
-                    color: isInspected ? scoreColor(score) : "#9ca3af",
+                    color: isInspected ? scoreColor(review.score ?? 0) : "#9ca3af",
                     marginBottom: 4,
                   }}
                 >
-                  {isInspected ? score : "—"}
+                  {isInspected ? review.score : "—"}
                 </div>
                 <div
                   style={{
@@ -248,7 +390,7 @@ export default async function ReportPage({
                     marginBottom: 2,
                   }}
                 >
-                  {CATEGORY_LABELS[cat]}
+                  {CATEGORY_LABELS[review.category]}
                 </div>
                 <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
                   {inspectionLabel}
@@ -308,27 +450,26 @@ export default async function ReportPage({
         </div>
       )}
 
-      {findings.length === 0 ? (
-        <p style={{ color: "#6b7280" }}>
-          No findings generated for this audit run.
-        </p>
-      ) : (
-        <div>
-          <h2
-            style={{
-              fontSize: "1.125rem",
-              fontWeight: 600,
-              marginBottom: 16,
-            }}
-          >
-            Findings
-          </h2>
-          {ALL_FINDING_CATEGORIES.filter((cat) =>
-            findingsByCategory.has(cat)
-          ).map((cat) => {
-            const catFindings = findingsByCategory.get(cat)!;
-            return (
-              <div key={cat} style={{ marginBottom: 24 }}>
+      <div>
+        <h2
+          style={{
+            fontSize: "1.125rem",
+            fontWeight: 600,
+            marginBottom: 16,
+          }}
+        >
+          Category review
+        </h2>
+        {findings.length === 0 && (
+          <p style={{ color: "#6b7280", marginBottom: 16 }}>
+            No prioritized findings were generated, but the category coverage states
+            below still show what was inspected versus what had limited evidence.
+          </p>
+        )}
+        {categoryReviews.map((review) => {
+          const reviewStyle = REVIEW_STATE_STYLES[review.reviewState];
+          return (
+            <div key={review.category} style={{ marginBottom: 24 }}>
                 <h3
                   style={{
                     fontSize: "1rem",
@@ -339,9 +480,33 @@ export default async function ReportPage({
                     borderBottom: "1px solid #f3f4f6",
                   }}
                 >
-                  {CATEGORY_LABELS[cat]}
+                  {CATEGORY_LABELS[review.category]}
                 </h3>
-                {catFindings.map((finding) => (
+                <div
+                  style={{
+                    marginBottom: 12,
+                    padding: 14,
+                    borderRadius: 6,
+                    border: `1px solid ${reviewStyle.border}`,
+                    background: reviewStyle.background,
+                  }}
+                >
+                  <p
+                    style={{
+                      fontSize: "0.8rem",
+                      fontWeight: 700,
+                      color: reviewStyle.text,
+                      marginBottom: 4,
+                    }}
+                  >
+                    {review.headline}
+                    {review.score !== null ? ` · ${review.score}/100` : ""}
+                  </p>
+                  <p style={{ fontSize: "0.875rem", color: reviewStyle.text }}>
+                    {review.summary}
+                  </p>
+                </div>
+                {review.findings.map((finding) => (
                   <div
                     key={finding.id}
                     style={{
@@ -389,11 +554,33 @@ export default async function ReportPage({
                         {finding.evidenceLevel}
                       </span>
                       <span
+                        style={{
+                          fontSize: "0.7rem",
+                          fontWeight: 600,
+                          padding: "2px 6px",
+                          borderRadius: 4,
+                          background: "#f3f4f6",
+                          color: "#4b5563",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {finding.confidence} confidence
+                      </span>
+                      <span
                         style={{ fontWeight: 600, fontSize: "0.9rem", flex: 1 }}
                       >
                         {finding.title}
                       </span>
                     </div>
+                    <p
+                      style={{
+                        fontSize: "0.75rem",
+                        color: "#6b7280",
+                        marginBottom: 8,
+                      }}
+                    >
+                      Support: {getFindingSupportLabel(finding)}
+                    </p>
                     <p
                       style={{
                         color: "#4b5563",
@@ -416,11 +603,10 @@ export default async function ReportPage({
                     </p>
                   </div>
                 ))}
-              </div>
-            );
-          })}
-        </div>
-      )}
+            </div>
+          );
+        })}
+      </div>
     </main>
   );
 }

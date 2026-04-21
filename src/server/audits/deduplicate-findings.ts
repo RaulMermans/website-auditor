@@ -33,11 +33,23 @@ const TITLE_PATTERNS = [
   { pattern: /weak next-step conversion path|no clear next step/i, key: "weak_next_step_conversion_path" },
   { pattern: /placeholder|staging copy/i, key: "placeholder_copy_visible" },
   { pattern: /trust signal density/i, key: "low_trust_signal_density" },
+  { pattern: /proof layer still feels thin|thin social proof/i, key: "thin_social_proof_layer" },
+  { pattern: /contact clarity is weak/i, key: "weak_contact_clarity" },
+  { pattern: /reassurance is thin/i, key: "missing_reassurance_near_conversion" },
   { pattern: /repeated cta/i, key: "repeated_cta_labels" },
+  { pattern: /primary and secondary actions compete/i, key: "competing_cta_hierarchy" },
   { pattern: /cta overload/i, key: "cta_overload" },
   { pattern: /long form/i, key: "long_form_friction" },
+  { pattern: /form adds friction/i, key: "form_usability_friction" },
+  { pattern: /high friction conversion path/i, key: "high_friction_only_path" },
+  { pattern: /value proposition is still too generic/i, key: "weak_value_proposition" },
+  { pattern: /too many themes before one offer is clear/i, key: "offer_sprawl" },
+  { pattern: /hero promise and downstream sections feel loosely connected/i, key: "headline_section_mismatch" },
   { pattern: /generic hero/i, key: "generic_hero_messaging" },
+  { pattern: /dense on mobile|mobile form|mobile.*heavy/i, key: "mobile_friction" },
+  { pattern: /section hierarchy|page is visually busy|homepage flow/i, key: "ux_flow" },
   { pattern: /heavy script/i, key: "heavy_script_loading" },
+  { pattern: /asset mix is likely to slow|rendering overhead/i, key: "performance_complexity" },
 ];
 
 function normalizeText(value: string): string {

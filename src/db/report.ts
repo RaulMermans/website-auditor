@@ -9,10 +9,15 @@ import type {
   FindingSeverity,
 } from "@/lib/types";
 import {
+  ALL_FINDING_CATEGORIES,
   scoreAuditByCategory,
   type CategoryScores,
+  type InspectionSummary,
 } from "@/server/scoring/score-audit";
-import { prioritizeFindings } from "@/server/audits/prioritize-findings";
+import {
+  prioritizeFindings,
+  selectTopPriorityFindings,
+} from "@/server/audits/prioritize-findings";
 
 interface AuditRunWithDomainRow {
   id: string;
@@ -59,10 +64,28 @@ export interface ReportData {
   findings: Finding[];
   topPriorities: Finding[];
   scores: CategoryScores;
+  categoryReviews: ReportCategoryReview[];
 }
 
 export interface ReportRepository {
   getReportData(auditRunId: string): Promise<ReportData | null>;
+}
+
+export interface ReportCategoryReview {
+  category: FindingCategory;
+  score: number | null;
+  findingCount: number;
+  findings: Finding[];
+  inspectionStatus: InspectionSummary["status"];
+  observedChecks: number;
+  expectedChecks: number;
+  reviewState:
+    | "inspected_clean"
+    | "inspected_with_findings"
+    | "lightly_inspected"
+    | "insufficient_evidence";
+  headline: string;
+  summary: string;
 }
 
 function mapAuditRun(row: AuditRunWithDomainRow): AuditRun {
@@ -94,6 +117,90 @@ function mapFinding(row: FindingRow): Finding {
     recommendation: row.recommendation,
     createdAt: row.created_at,
   };
+}
+
+function buildCategoryReview(
+  category: FindingCategory,
+  findings: Finding[],
+  scores: CategoryScores
+): ReportCategoryReview {
+  const inspection = scores.inspectionSummaryByCategory[category];
+  const observedChecks = inspection.observedKeys.length;
+  const expectedChecks = inspection.expectedKeys.length;
+
+  if (inspection.status === "not_inspected") {
+    return {
+      category,
+      score: null,
+      findingCount: findings.length,
+      findings,
+      inspectionStatus: inspection.status,
+      observedChecks,
+      expectedChecks,
+      reviewState: "insufficient_evidence",
+      headline: "Insufficient evidence",
+      summary:
+        "This category was not meaningfully inspected in the current deterministic pass. Absence of findings here should not be read as a clean result.",
+    };
+  }
+
+  if (inspection.status === "lightly_inspected") {
+    return {
+      category,
+      score: scores.byCategory[category],
+      findingCount: findings.length,
+      findings,
+      inspectionStatus: inspection.status,
+      observedChecks,
+      expectedChecks,
+      reviewState: "lightly_inspected",
+      headline: findings.length > 0 ? "Light inspection with issues" : "Light inspection only",
+      summary:
+        findings.length > 0
+          ? `This category surfaced ${findings.length} finding${findings.length !== 1 ? "s" : ""}, but only ${observedChecks}/${expectedChecks} deterministic checks were covered.`
+          : `Only ${observedChecks}/${expectedChecks} deterministic checks were covered here, so the category should not be treated as fully clear.`,
+    };
+  }
+
+  if (findings.length === 0) {
+    return {
+      category,
+      score: scores.byCategory[category],
+      findingCount: 0,
+      findings,
+      inspectionStatus: inspection.status,
+      observedChecks,
+      expectedChecks,
+      reviewState: "inspected_clean",
+      headline: "Inspected and currently clean",
+      summary:
+        `No issues surfaced across ${observedChecks}/${expectedChecks} deterministic checks in this category during the current pass.`,
+    };
+  }
+
+  return {
+    category,
+    score: scores.byCategory[category],
+    findingCount: findings.length,
+    findings,
+    inspectionStatus: inspection.status,
+    observedChecks,
+    expectedChecks,
+    reviewState: "inspected_with_findings",
+    headline: `${findings.length} prioritized finding${findings.length !== 1 ? "s" : ""}`,
+    summary:
+      `These findings are supported by ${observedChecks}/${expectedChecks} deterministic checks in this category.`,
+  };
+}
+
+export function buildCategoryReviews(
+  findings: Finding[],
+  scores: CategoryScores
+): ReportCategoryReview[] {
+  return ALL_FINDING_CATEGORIES.map((category) => {
+    const categoryFindings = findings.filter((finding) => finding.category === category);
+    return buildCategoryReview(category, categoryFindings, scores);
+  });
 }
 
 export async function listRecentAuditRuns(limit = 50): Promise<AuditRunListItem[]> {
@@ -201,16 +308,19 @@ export const reportRepository: ReportRepository = {
         return acc;
       }, {});
       const prioritizedFindings = prioritizeFindings(findings);
+      const scores = scoreAuditByCategory(prioritizedFindings, {
+        inspectionKeysByCategory,
+      });
+      const categoryReviews = buildCategoryReviews(prioritizedFindings, scores);
 
       return {
         auditRunId,
         domain: runRow.domain,
         auditRun: mapAuditRun(runRow),
         findings: prioritizedFindings,
-        topPriorities: prioritizedFindings.slice(0, 5),
-        scores: scoreAuditByCategory(prioritizedFindings, {
-          inspectionKeysByCategory,
-        }),
+        topPriorities: selectTopPriorityFindings(prioritizedFindings, 5),
+        scores,
+        categoryReviews,
       };
     });
   },

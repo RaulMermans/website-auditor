@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { buildCategoryReviews, type ReportData } from "@/db/report";
 import { buildEnrichmentInput } from "@/server/audits/generate-report-enrichment";
-import type { ReportData } from "@/db/report";
 import type { Finding, AuditRun } from "@/lib/types";
-import { scoreAuditByCategory } from "@/server/scoring/score-audit";
+import { CATEGORY_EXPECTED_KEYS, scoreAuditByCategory } from "@/server/scoring/score-audit";
 
 function makeRun(homepageOnly: boolean): AuditRun {
   return {
@@ -34,13 +34,20 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
 }
 
 function makeReportData(findings: Finding[], homepageOnly = false): ReportData {
+  const scores = scoreAuditByCategory(findings, {
+    inspectionKeysByCategory: {
+      technical_seo: CATEGORY_EXPECTED_KEYS.technical_seo,
+      accessibility: CATEGORY_EXPECTED_KEYS.accessibility,
+    },
+  });
   return {
     auditRunId: "run-1",
     domain: "example.com",
     auditRun: makeRun(homepageOnly),
     findings,
     topPriorities: findings.slice(0, 5),
-    scores: scoreAuditByCategory(findings),
+    scores,
+    categoryReviews: buildCategoryReviews(findings, scores),
   };
 }
 
@@ -48,7 +55,7 @@ describe("buildEnrichmentInput", () => {
   it("sets domain and scores from report data", () => {
     const input = buildEnrichmentInput(makeReportData([]));
     expect(input.domain).toBe("example.com");
-    expect(input.overallScore).toBe(95);
+    expect(input.overallScore).toBe(88);
   });
 
   it("passes homepage_only flag through", () => {
@@ -105,9 +112,28 @@ describe("buildEnrichmentInput", () => {
     expect(input.findingSummaries[0].evidenceLevel).toBe("Inferred");
   });
 
+  it("includes confidence and support details for top priorities", () => {
+    const findings = [
+      makeFinding({
+        confidence: "low",
+        evidenceRef: { pageCount: 2, evidenceKeys: ["messaging_quality", "messaging_alignment"] },
+      }),
+    ];
+    const input = buildEnrichmentInput(makeReportData(findings));
+    expect(input.findingSummaries[0].confidence).toBe("low");
+    expect(input.findingSummaries[0].support).toContain("2 pages");
+    expect(input.findingSummaries[0].support).toContain("2 evidence signals");
+  });
+
   it("returns empty summaries when there are no findings", () => {
     const input = buildEnrichmentInput(makeReportData([]));
     expect(input.findingSummaries).toHaveLength(0);
     expect(input.topRecommendations).toHaveLength(0);
+  });
+
+  it("surfaces insufficient-evidence categories from report semantics", () => {
+    const input = buildEnrichmentInput(makeReportData([]));
+    expect(input.insufficientEvidenceCategories).toContain("ux_ui");
+    expect(input.categoryReviewSummaries?.length).toBeGreaterThan(0);
   });
 });

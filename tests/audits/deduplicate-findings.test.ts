@@ -135,4 +135,40 @@ describe("deduplicateFindings", () => {
       evidenceLevel: "Measured",
     });
   });
+
+  it("still merges stronger evaluator output when the same root issue appears on multiple captured pages", () => {
+    const result = deduplicateFindings([
+      makeFinding({
+        category: "messaging_content",
+        title: "Homepage value proposition is still too generic above the fold",
+        description: "The hero copy stays broad.",
+        severity: "high",
+        evidenceRef: {
+          pageUrl: "https://example.com/",
+          pageType: "homepage",
+          issueType: "weak_value_proposition",
+          evidenceKeys: ["messaging_quality", "messaging_alignment"],
+          businessImpact: "high",
+        },
+      }),
+      makeFinding({
+        pageSnapshotId: "snap-2",
+        category: "messaging_content",
+        title: "Homepage value proposition is still too generic above the fold",
+        description: "The hero copy stays broad.",
+        severity: "medium",
+        evidenceRef: {
+          pageUrl: "https://example.com/services",
+          pageType: "services",
+          issueType: "weak_value_proposition",
+          evidenceKeys: ["messaging_quality", "messaging_alignment"],
+          businessImpact: "high",
+        },
+      }),
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].severity).toBe("high");
+    expect((result[0].evidenceRef as Record<string, unknown>).pageCount).toBe(2);
+  });
 });

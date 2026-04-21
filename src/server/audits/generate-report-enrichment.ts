@@ -9,21 +9,51 @@ export interface EnrichmentPromptInput {
   categoryScores: Record<FindingCategory, number>;
   inspectedCategories?: FindingCategory[];
   lightlyInspectedCategories?: FindingCategory[];
+  insufficientEvidenceCategories?: FindingCategory[];
+  categoryReviewSummaries?: string[];
   findingSummaries: Array<{
     category: string;
     severity: string;
     title: string;
     evidenceLevel: string;
+    confidence: string;
+    support: string;
   }>;
   topRecommendations: string[];
+}
+
+function describeFindingSupport(finding: ReportData["findings"][number]) {
+  const pageCount =
+    typeof finding.evidenceRef.pageCount === "number"
+      ? finding.evidenceRef.pageCount
+      : finding.evidenceRef.pageUrl
+        ? 1
+        : 0;
+  const evidenceKeyCount = Array.isArray(finding.evidenceRef.evidenceKeys)
+    ? finding.evidenceRef.evidenceKeys.length
+    : 0;
+  const parts: string[] = [];
+
+  if (pageCount > 0) {
+    parts.push(`${pageCount} page${pageCount !== 1 ? "s" : ""}`);
+  }
+
+  if (evidenceKeyCount > 0) {
+    parts.push(`${evidenceKeyCount} evidence signal${evidenceKeyCount !== 1 ? "s" : ""}`);
+  }
+
+  return parts.join(" · ") || "single-page signal";
 }
 
 export function buildEnrichmentInput(data: ReportData): EnrichmentPromptInput {
   const prioritized = data.topPriorities.length > 0 ? data.topPriorities : data.findings;
   const top = prioritized.slice(0, 10);
-  const lightlyInspectedCategories = Object.entries(data.scores.inspectionSummaryByCategory)
-    .filter(([, summary]) => summary.status === "lightly_inspected")
-    .map(([category]) => category as FindingCategory);
+  const lightlyInspectedCategories = data.categoryReviews
+    .filter((review) => review.inspectionStatus === "lightly_inspected")
+    .map((review) => review.category);
+  const insufficientEvidenceCategories = data.categoryReviews
+    .filter((review) => review.inspectionStatus === "not_inspected")
+    .map((review) => review.category);
 
   return {
     domain: data.domain,
@@ -32,11 +62,17 @@ export function buildEnrichmentInput(data: ReportData): EnrichmentPromptInput {
     categoryScores: data.scores.byCategory,
     inspectedCategories: data.scores.inspectedCategories,
     lightlyInspectedCategories,
+    insufficientEvidenceCategories,
+    categoryReviewSummaries: data.categoryReviews.map(
+      (review) => `${review.category}: ${review.headline}`
+    ),
     findingSummaries: top.map((f) => ({
       category: f.category,
       severity: f.severity,
       title: f.title,
       evidenceLevel: f.evidenceLevel,
+      confidence: f.confidence,
+      support: describeFindingSupport(f),
     })),
     topRecommendations: prioritized
       .filter((f) => f.severity === "critical" || f.severity === "high" || f.severity === "medium")
@@ -91,7 +127,7 @@ export async function generateReportEnrichment(
     "messaging_content", "conversion", "trust_signals", "mobile_experience",
   ];
   const inspectedSet = input.inspectedCategories ?? ALL_CATEGORIES;
-  const uninspected = ALL_CATEGORIES.filter((c) => !inspectedSet.includes(c));
+  const uninspected = input.insufficientEvidenceCategories ?? ALL_CATEGORIES.filter((c) => !inspectedSet.includes(c));
   const coverageLine =
     uninspected.length > 0
       ? `NOT inspected (insufficient evidence — do not comment on these): ${uninspected.join(", ")}`
@@ -102,8 +138,15 @@ export async function generateReportEnrichment(
       : "";
 
   const findingLines = input.findingSummaries
-    .map((f) => `- [${f.severity.toUpperCase()}/${f.evidenceLevel}] ${f.category}: ${f.title}`)
+    .map(
+      (f) =>
+        `- [${f.severity.toUpperCase()}/${f.evidenceLevel}/${f.confidence} confidence] ${f.category}: ${f.title} (${f.support})`
+    )
     .join("\n");
+  const categoryReviewLines =
+    input.categoryReviewSummaries && input.categoryReviewSummaries.length > 0
+      ? input.categoryReviewSummaries.map((line) => `- ${line}`).join("\n")
+      : "None";
 
   const recLines =
     input.topRecommendations.length > 0
@@ -119,6 +162,7 @@ RULES:
 4. Do not speculate about categories not in the findings list.
 5. Keep the executive summary to 2-3 sentences maximum.
 6. Quick wins must reference specific issues from the findings, not generic advice.
+7. If evidence is light or insufficient for a category, be explicit about that limitation instead of implying a clean bill of health.
 
 Domain: ${input.domain}
 ${scopeLine}
@@ -126,7 +170,10 @@ Overall score: ${input.overallScore}/100
 ${coverageLine}
 ${lightlyInspectedLine}
 
-Top priorities (already deduplicated and ordered):
+Category review states:
+${categoryReviewLines}
+
+Top priorities (already deduplicated, distinct, and ordered):
 ${findingLines}
 
 Priority recommendations:

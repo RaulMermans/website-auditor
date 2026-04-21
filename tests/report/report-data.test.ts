@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ReportData, ReportRepository } from "@/db/report";
-import { scoreAuditByCategory } from "@/server/scoring/score-audit";
+import {
+  buildCategoryReviews,
+  type ReportData,
+  type ReportRepository,
+} from "@/db/report";
+import {
+  CATEGORY_EXPECTED_KEYS,
+  scoreAuditByCategory,
+} from "@/server/scoring/score-audit";
 
 const now = new Date("2026-04-19T10:00:00.000Z");
 
@@ -36,6 +43,13 @@ function makeReportData(overrides: Partial<ReportData> = {}): ReportData {
       createdAt: now,
     },
   ];
+  const scores = scoreAuditByCategory(findings, {
+    inspectionKeysByCategory: {
+      technical_seo: CATEGORY_EXPECTED_KEYS.technical_seo,
+      accessibility: CATEGORY_EXPECTED_KEYS.accessibility,
+      conversion: ["cta_present", "cta_inventory"],
+    },
+  });
 
   return {
     auditRunId: "run-1",
@@ -43,7 +57,8 @@ function makeReportData(overrides: Partial<ReportData> = {}): ReportData {
     auditRun: makeAuditRun(),
     findings,
     topPriorities: findings,
-    scores: scoreAuditByCategory(findings),
+    scores,
+    categoryReviews: buildCategoryReviews(findings, scores),
     ...overrides,
   };
 }
@@ -72,21 +87,65 @@ describe("ReportRepository interface", () => {
 describe("report data scores consistency", () => {
   it("overall score matches findings penalty", () => {
     const data = makeReportData();
-    expect(data.scores.overall).toBe(93);
+    expect(data.scores.overall).toBe(79);
   });
 
   it("category score reflects findings in that category only", () => {
     const data = makeReportData();
     expect(data.scores.byCategory.technical_seo).toBe(83);
     expect(data.scores.byCategory.accessibility).toBe(95);
-    expect(data.scores.byCategory.conversion).toBe(95);
+    expect(data.scores.byCategory.conversion).toBeLessThan(95);
   });
 
   it("scores are re-computable deterministically from findings", () => {
     const data = makeReportData();
-    const recomputed = scoreAuditByCategory(data.findings);
+    const recomputed = scoreAuditByCategory(data.findings, {
+      inspectionKeysByCategory: {
+        technical_seo: CATEGORY_EXPECTED_KEYS.technical_seo,
+        accessibility: CATEGORY_EXPECTED_KEYS.accessibility,
+        conversion: ["cta_present", "cta_inventory"],
+      },
+    });
     expect(recomputed.overall).toBe(data.scores.overall);
     expect(recomputed.byCategory).toEqual(data.scores.byCategory);
+  });
+});
+
+describe("report category review semantics", () => {
+  it("distinguishes inspected clean, lightly inspected, and insufficient-evidence states", () => {
+    const scores = scoreAuditByCategory(
+      [
+        {
+          id: "f1",
+          severity: "high",
+          category: "technical_seo",
+          confidence: "high",
+          evidenceLevel: "Measured",
+        },
+      ],
+      {
+        inspectionKeysByCategory: {
+          technical_seo: CATEGORY_EXPECTED_KEYS.technical_seo,
+          accessibility: CATEGORY_EXPECTED_KEYS.accessibility,
+          conversion: ["cta_present", "cta_inventory"],
+        },
+      }
+    );
+
+    const reviews = buildCategoryReviews(makeReportData().findings, scores);
+
+    expect(reviews.find((review) => review.category === "technical_seo")?.reviewState).toBe(
+      "inspected_with_findings"
+    );
+    expect(reviews.find((review) => review.category === "accessibility")?.reviewState).toBe(
+      "inspected_clean"
+    );
+    expect(reviews.find((review) => review.category === "conversion")?.reviewState).toBe(
+      "lightly_inspected"
+    );
+    expect(reviews.find((review) => review.category === "ux_ui")?.reviewState).toBe(
+      "insufficient_evidence"
+    );
   });
 });
 

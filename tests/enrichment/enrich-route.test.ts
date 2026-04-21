@@ -39,6 +39,39 @@ vi.mock("@/server/audits/generate-outreach-assets", () => ({
 import { POST } from "@/app/api/reports/[auditRunId]/enrich/route";
 
 function createReportData(): ReportData {
+  const scores = {
+    overall: 75,
+    byCategory: {
+      performance: 80,
+      technical_seo: 70,
+      accessibility: 90,
+      ux_ui: 0,
+      messaging_content: 95,
+      conversion: 95,
+      trust_signals: 95,
+      mobile_experience: 95,
+    },
+    inspectedCategories: [
+      "performance",
+      "technical_seo",
+      "accessibility",
+      "messaging_content",
+      "conversion",
+      "trust_signals",
+      "mobile_experience",
+    ],
+    inspectionSummaryByCategory: {
+      performance: { status: "inspected", depth: 1, observedKeys: ["script_count"], expectedKeys: ["script_count"] },
+      technical_seo: { status: "inspected", depth: 1, observedKeys: ["title"], expectedKeys: ["title"] },
+      accessibility: { status: "inspected", depth: 1, observedKeys: ["image_count"], expectedKeys: ["image_count"] },
+      ux_ui: { status: "not_inspected", depth: 0, observedKeys: [], expectedKeys: [] },
+      messaging_content: { status: "inspected", depth: 1, observedKeys: ["page_text_flags"], expectedKeys: ["page_text_flags"] },
+      conversion: { status: "inspected", depth: 1, observedKeys: ["cta_present"], expectedKeys: ["cta_present"] },
+      trust_signals: { status: "inspected", depth: 1, observedKeys: ["trust_signals"], expectedKeys: ["trust_signals"] },
+      mobile_experience: { status: "inspected", depth: 1, observedKeys: ["viewport_meta_present"], expectedKeys: ["viewport_meta_present"] },
+    },
+  } as ReportData["scores"];
+
   return {
     auditRunId: "run-123",
     domain: "example.com",
@@ -55,38 +88,8 @@ function createReportData(): ReportData {
     },
     findings: [],
     topPriorities: [],
-    scores: {
-      overall: 75,
-      byCategory: {
-        performance: 80,
-        technical_seo: 70,
-        accessibility: 90,
-        ux_ui: 0,
-        messaging_content: 95,
-        conversion: 95,
-        trust_signals: 95,
-        mobile_experience: 95,
-      },
-      inspectedCategories: [
-        "performance",
-        "technical_seo",
-        "accessibility",
-        "messaging_content",
-        "conversion",
-        "trust_signals",
-        "mobile_experience",
-      ],
-      inspectionSummaryByCategory: {
-        performance: { status: "inspected", depth: 1, observedKeys: ["script_count"], expectedKeys: ["script_count"] },
-        technical_seo: { status: "inspected", depth: 1, observedKeys: ["title"], expectedKeys: ["title"] },
-        accessibility: { status: "inspected", depth: 1, observedKeys: ["image_count"], expectedKeys: ["image_count"] },
-        ux_ui: { status: "not_inspected", depth: 0, observedKeys: [], expectedKeys: [] },
-        messaging_content: { status: "inspected", depth: 1, observedKeys: ["page_text_flags"], expectedKeys: ["page_text_flags"] },
-        conversion: { status: "inspected", depth: 1, observedKeys: ["cta_present"], expectedKeys: ["cta_present"] },
-        trust_signals: { status: "inspected", depth: 1, observedKeys: ["trust_signals"], expectedKeys: ["trust_signals"] },
-        mobile_experience: { status: "inspected", depth: 1, observedKeys: ["viewport_meta_present"], expectedKeys: ["viewport_meta_present"] },
-      },
-    },
+    scores,
+    categoryReviews: [],
   };
 }
 
@@ -108,6 +111,8 @@ describe("POST /api/reports/[auditRunId]/enrich", () => {
         mobile_experience: 95,
       },
       lightlyInspectedCategories: [],
+      insufficientEvidenceCategories: ["ux_ui"],
+      categoryReviewSummaries: ["ux_ui: Insufficient evidence"],
       findingSummaries: [],
       topRecommendations: [],
     });

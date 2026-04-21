@@ -41,15 +41,28 @@ export async function generateOutreachAssets(
   const client = new GoogleGenAI({ apiKey });
 
   const scopeLine = input.homepageOnly ? " (homepage-only audit scope)" : "";
+  const insufficientLine =
+    input.insufficientEvidenceCategories && input.insufficientEvidenceCategories.length > 0
+      ? `Do not comment on these insufficient-evidence categories: ${input.insufficientEvidenceCategories.join(", ")}`
+      : "";
+  const lightlyInspectedLine =
+    input.lightlyInspectedCategories && input.lightlyInspectedCategories.length > 0
+      ? `Treat these as limited-evidence categories and avoid overclaiming: ${input.lightlyInspectedCategories.join(", ")}`
+      : "";
   const issueLine = input.findingSummaries
     .slice(0, 5)
-    .map((f) => `- ${f.title}`)
+    .map(
+      (f) =>
+        `- [${f.evidenceLevel}/${f.confidence} confidence] ${f.title} (${f.support})`
+    )
     .join("\n");
 
   const prompt = `You are a B2B outreach specialist. Write short, specific outreach assets for a web audit engagement. Base copy ONLY on the audit data below — no invented metrics or revenue claims.
 
 Domain: ${input.domain}${scopeLine}
 Overall score: ${input.overallScore}/100
+${insufficientLine}
+${lightlyInspectedLine}
 Top issues:
 ${issueLine || "No significant issues found."}
 

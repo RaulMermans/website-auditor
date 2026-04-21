@@ -5,9 +5,11 @@ import type {
 import type { CreateFindingInput, CreatePageEvidenceInput } from "@/db/analysis";
 import { runSpecialistEvaluators } from "@/server/audits/evaluators";
 import type {
+  AssetWeightMetrics,
   CTAInventoryMetrics,
   FormFrictionMetrics,
   MessagingQualityMetrics,
+  PageStructureMetrics,
   ParsedPageMetrics,
   SpecialistFindingDraft,
   TrustSignalMetrics,
@@ -46,6 +48,34 @@ const PLACEHOLDER_PATTERNS = [
   { pattern: "under construction", flag: "under_construction" },
 ];
 
+const VALUE_CUE_PATTERNS = [
+  /\b(increase|grow|reduce|cut|save|improve|boost|scale|automate|convert|streamline|simplify)\b/gi,
+  /\b(leads?|pipeline|revenue|sales?|bookings?|appointments?|customers?|clients?|patients?|demos?)\b/gi,
+  /\b(faster|quicker|easier|without|less|more)\b/gi,
+  /\b\d+\s*(%|percent|days?|weeks?|months?|hours?|minutes?)\b/gi,
+];
+
+const OFFER_CUE_PATTERNS = [
+  /\b(services?|solutions?|capabilities|expertise|offerings)\b/gi,
+  /\bfor\b/gi,
+  /[,&/]/g,
+];
+
+const ALIGNMENT_STOPWORDS = new Set([
+  "and",
+  "are",
+  "for",
+  "from",
+  "into",
+  "our",
+  "that",
+  "the",
+  "this",
+  "with",
+  "your",
+  "you",
+]);
+
 export interface ExtractedPageArtifacts {
   pageEvidence: CreatePageEvidenceInput[];
   findings: CreateFindingInput[];
@@ -62,6 +92,41 @@ function normalizeWhitespace(value: string | null | undefined) {
 
 function stripTags(value: string) {
   return normalizeWhitespace(value.replace(/<[^>]+>/g, " "));
+}
+
+function countWords(value: string) {
+  return normalizeWhitespace(value).split(" ").filter(Boolean).length;
+}
+
+function normalizeKeywordText(value: string) {
+  return normalizeWhitespace(value).toLowerCase().replace(/[^a-z0-9 ]/g, " ");
+}
+
+function tokenizeForAlignment(value: string) {
+  return [...new Set(
+    normalizeKeywordText(value)
+      .split(" ")
+      .filter((token) => token.length > 2 && !ALIGNMENT_STOPWORDS.has(token))
+  )];
+}
+
+function getTokenOverlap(left: string, right: string) {
+  const leftTokens = tokenizeForAlignment(left);
+  const rightTokens = new Set(tokenizeForAlignment(right));
+
+  if (leftTokens.length === 0 || rightTokens.size === 0) {
+    return 0;
+  }
+
+  const overlap = leftTokens.filter((token) => rightTokens.has(token)).length;
+  return overlap / new Set([...leftTokens, ...rightTokens]).size;
+}
+
+function countCueMatches(text: string, patterns: RegExp[]) {
+  return patterns.reduce((sum, pattern) => {
+    const regex = new RegExp(pattern.source, pattern.flags);
+    return sum + (text.match(regex)?.length ?? 0);
+  }, 0);
 }
 
 function parseAttributes(rawTag: string) {
@@ -194,8 +259,22 @@ function detectTrustSignals(html: string): TrustSignalMetrics {
     /href="tel:/i.test(html) ||
     /\+?1?[-.\s]?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/.test(html);
 
+  const emailContact =
+    /href="mailto:/i.test(html) ||
+    /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(html);
+
+  const addressInfo =
+    /\b\d{1,5}\s+[A-Za-z0-9.\- ]+\s+(street|st|avenue|ave|road|rd|boulevard|blvd|suite|ste|floor|fl)\b/i
+      .test(html);
+
+  const contactPageLink =
+    /<a[^>]+href="[^"]*(contact|book|consult|schedule|call)[^"]*"[^>]*>/i.test(html);
+
   const privacyLink =
     /<a[^>]*>[^<]*(privacy|terms)[^<]*<\/a>/i.test(html);
+
+  const termsLink =
+    /<a[^>]*>[^<]*terms[^<]*<\/a>/i.test(html);
 
   const certifications =
     /\bcertified\b/i.test(html) ||
@@ -203,10 +282,49 @@ function detectTrustSignals(html: string): TrustSignalMetrics {
     /\bISO\b/.test(html) ||
     /award.{0,20}winning/i.test(html);
 
-  const signals = [testimonials, socialProof, logoBlock, guarantee, contactInfo, privacyLink, certifications];
+  const caseStudies =
+    /\b(case stud(y|ies)|success stor(y|ies)|customer stor(y|ies)|results?)\b/i.test(html);
+
+  const proofPoints = [testimonials, socialProof, logoBlock, certifications, caseStudies].filter(
+    Boolean
+  ).length;
+  const reassuranceSignals = [guarantee, privacyLink, termsLink].filter(Boolean).length;
+  const contactOptions = [contactInfo, emailContact, addressInfo, contactPageLink].filter(Boolean)
+    .length;
+  const signals = [
+    testimonials,
+    socialProof,
+    logoBlock,
+    guarantee,
+    contactInfo,
+    emailContact,
+    addressInfo,
+    contactPageLink,
+    privacyLink,
+    termsLink,
+    certifications,
+    caseStudies,
+  ];
   const density = signals.filter(Boolean).length;
 
-  return { testimonials, socialProof, logoBlock, guarantee, contactInfo, privacyLink, certifications, density };
+  return {
+    testimonials,
+    socialProof,
+    logoBlock,
+    guarantee,
+    contactInfo,
+    emailContact,
+    addressInfo,
+    contactPageLink,
+    privacyLink,
+    termsLink,
+    certifications,
+    caseStudies,
+    density,
+    proofPoints,
+    reassuranceSignals,
+    contactOptions,
+  };
 }
 
 function buildCtaInventory(
@@ -235,7 +353,7 @@ function buildCtaInventory(
   const hasDuplicates = Array.from(lowerCounts.values()).some((c) => c >= 3);
   const unique = [...new Set(ctaItems)].slice(0, 10);
 
-  return { count: ctaItems.length, texts: unique, hasDuplicates };
+  return { count: ctaItems.length, texts: unique, hasDuplicates, uniqueCount: unique.length };
 }
 
 function detectFormFriction(html: string): FormFrictionMetrics {
@@ -257,17 +375,134 @@ function detectFormFriction(html: string): FormFrictionMetrics {
   };
 }
 
-function detectMessagingQuality(html: string): MessagingQualityMetrics {
+function detectMessagingQuality(
+  html: string,
+  titleText: string,
+  metaDescription: string | null
+): MessagingQualityMetrics {
   const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   const bodyText = bodyMatch ? stripTags(bodyMatch[1]) : stripTags(html);
   const trimmed = bodyText.replace(/\s+/g, " ").trim();
-  const hero = trimmed.slice(0, 400);
+  const h1Texts = findElementsWithContent(html, "h1").map((item) => item.text).filter(Boolean);
+  const h2Texts = findElementsWithContent(html, "h2").map((item) => item.text).filter(Boolean);
+  const heroHeading = normalizeWhitespace(h1Texts[0]);
+  const heroSource = normalizeWhitespace(heroHeading || trimmed.slice(0, 220));
+  const normalizedH2 = h2Texts
+    .map((text) => normalizeKeywordText(text).trim())
+    .filter(Boolean);
+  const headingCounts = normalizedH2.reduce<Map<string, number>>((acc, heading) => {
+    acc.set(heading, (acc.get(heading) ?? 0) + 1);
+    return acc;
+  }, new Map());
+  const duplicateHeadingCount = Array.from(headingCounts.values()).reduce(
+    (sum, count) => sum + Math.max(0, count - 1),
+    0
+  );
+  const alignmentSource = [titleText, metaDescription ?? ""].join(" ");
+  const hero = heroSource || trimmed.slice(0, 400);
 
   const genericIntroDetected = GENERIC_INTRO_PATTERNS.some((pat) => pat.test(hero));
 
   return {
     genericIntroDetected,
-    heroTextLength: trimmed.length,
+    heroTextLength: heroSource.length,
+    heroHeading: heroHeading || null,
+    heroWordCount: countWords(heroSource),
+    h2Count: h2Texts.length,
+    duplicateHeadingCount,
+    valueCueCount: countCueMatches(heroSource, VALUE_CUE_PATTERNS),
+    offerCueCount: countCueMatches(h2Texts.join(" "), OFFER_CUE_PATTERNS) + (h2Texts.length >= 6 ? 1 : 0),
+    titleAlignment: getTokenOverlap(heroSource, alignmentSource),
+  };
+}
+
+function detectPageStructure(html: string): PageStructureMetrics {
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const bodyHtml = bodyMatch?.[1] ?? html;
+  const h2Texts = findElementsWithContent(bodyHtml, "h2").map((item) => item.text).filter(Boolean);
+  const h3Texts = findElementsWithContent(bodyHtml, "h3").map((item) => item.text).filter(Boolean);
+  const normalizedHeadings = [...h2Texts, ...h3Texts]
+    .map((text) => normalizeKeywordText(text).trim())
+    .filter(Boolean);
+  const headingCounts = normalizedHeadings.reduce<Map<string, number>>((acc, heading) => {
+    acc.set(heading, (acc.get(heading) ?? 0) + 1);
+    return acc;
+  }, new Map());
+  const duplicateHeadingCount = Array.from(headingCounts.values()).reduce(
+    (sum, count) => sum + Math.max(0, count - 1),
+    0
+  );
+  const paragraphs = findElementsWithContent(bodyHtml, "p");
+  const longParagraphCount = paragraphs.filter(
+    (paragraph) => paragraph.text.length >= 160 || countWords(paragraph.text) >= 24
+  ).length;
+  const sectionCount = Math.max(
+    (bodyHtml.match(/<(section|article)\b/gi) ?? []).length,
+    h2Texts.length
+  );
+  const introHtml = bodyHtml.slice(0, 4000);
+  const introButtons = findElementsWithContent(introHtml, "button");
+  const introAnchors = findElementsWithContent(introHtml, "a");
+  const introInputButtons = findStartTags(introHtml, "input").filter((tag) =>
+    ["button", "submit"].includes((tag.attrs.type ?? "").toLowerCase())
+  );
+  const introCtas = buildCtaInventory(introButtons, introAnchors, introInputButtons);
+
+  return {
+    sectionCount,
+    headingCount: h2Texts.length + h3Texts.length,
+    duplicateHeadingCount,
+    longParagraphCount,
+    denseIntroCtas: introCtas.count,
+    denseIntroButtons:
+      (introHtml.match(/<button\b/gi) ?? []).length + introInputButtons.length,
+    denseIntroHeadings: (introHtml.match(/<h[1-3]\b/gi) ?? []).length,
+    denseIntroFieldCount: detectFormFriction(introHtml).fieldCount,
+    domElementCount: (bodyHtml.match(/<[a-z][a-z0-9-]*\b[^>]*>/gi) ?? []).length,
+  };
+}
+
+function detectAssetWeight(
+  pageUrl: string,
+  html: string,
+  images: TagMatch[]
+): AssetWeightMetrics {
+  const stylesheetCount = findStartTags(html, "link").filter((tag) =>
+    (tag.attrs.rel ?? "")
+      .toLowerCase()
+      .split(/\s+/)
+      .includes("stylesheet")
+  ).length;
+  const inlineStyleBlockCount = (html.match(/<style\b/gi) ?? []).length;
+  const scriptTags = findStartTags(html, "script");
+  let thirdPartyScriptCount = 0;
+
+  for (const scriptTag of scriptTags) {
+    const src = normalizeWhitespace(scriptTag.attrs.src);
+    if (!src) {
+      continue;
+    }
+
+    const resolved = resolveLink(pageUrl, src);
+    if (!resolved) {
+      continue;
+    }
+
+    if (resolved.hostname !== new URL(pageUrl).hostname) {
+      thirdPartyScriptCount += 1;
+    }
+  }
+
+  const eagerImageCount = images.filter(
+    (image) => normalizeWhitespace(image.attrs.loading).toLowerCase() !== "lazy"
+  ).length;
+
+  return {
+    stylesheetCount,
+    inlineStyleBlockCount,
+    thirdPartyScriptCount,
+    eagerImageCount,
+    imageCount: images.length,
   };
 }
 
@@ -333,7 +568,9 @@ function parseMetrics(snapshot: Pick<PageSnapshot, "url">, html: string): Parsed
   const trustSignals = detectTrustSignals(html);
   const ctaInventory = buildCtaInventory(buttons, anchors, inputButtons);
   const formFriction = detectFormFriction(html);
-  const messagingQuality = detectMessagingQuality(html);
+  const messagingQuality = detectMessagingQuality(html, titleText, metaDescription);
+  const pageStructure = detectPageStructure(html);
+  const assetWeight = detectAssetWeight(snapshot.url, html, images);
   const scriptCount = (html.match(/<script\b/gi) ?? []).length;
 
   return {
@@ -367,6 +604,8 @@ function parseMetrics(snapshot: Pick<PageSnapshot, "url">, html: string): Parsed
     ctaInventory,
     formFriction,
     messagingQuality,
+    pageStructure,
+    assetWeight,
     scriptCount,
   };
 }
@@ -376,6 +615,56 @@ function buildPageEvidence(
   pageSnapshotId: string,
   metrics: ParsedPageMetrics
 ): CreatePageEvidenceInput[] {
+  const messagingAlignment = {
+    titleAlignment: metrics.messagingQuality.titleAlignment,
+    h2Count: metrics.messagingQuality.h2Count,
+    duplicateHeadingCount: metrics.messagingQuality.duplicateHeadingCount,
+    valueCueCount: metrics.messagingQuality.valueCueCount,
+    offerCueCount: metrics.messagingQuality.offerCueCount,
+  };
+  const contactReassurance = {
+    contactOptions: metrics.trustSignals.contactOptions,
+    proofPoints: metrics.trustSignals.proofPoints,
+    reassuranceSignals: metrics.trustSignals.reassuranceSignals,
+    density: metrics.trustSignals.density,
+  };
+  const conversionPath = {
+    ctaCount: metrics.ctaInventory.count,
+    uniqueCtaCount: metrics.ctaInventory.uniqueCount,
+    repeatedCtaLabels: metrics.ctaInventory.hasDuplicates,
+    formPresent: metrics.formPresent,
+    formFieldCount: metrics.formFriction.fieldCount,
+    requiredFieldCount: metrics.formFriction.requiredCount,
+    lowFrictionPathAvailable: metrics.ctaInventory.count > 0,
+  };
+  const contentHierarchy = {
+    sectionCount: metrics.pageStructure.sectionCount,
+    headingCount: metrics.pageStructure.headingCount,
+    duplicateHeadingCount: metrics.pageStructure.duplicateHeadingCount,
+    longParagraphCount: metrics.pageStructure.longParagraphCount,
+  };
+  const conversionAreaClutter = {
+    ctaCount: metrics.ctaInventory.count,
+    buttonCount: metrics.buttonCount,
+    denseIntroCtas: metrics.pageStructure.denseIntroCtas,
+    denseIntroButtons: metrics.pageStructure.denseIntroButtons,
+    denseIntroFieldCount: metrics.pageStructure.denseIntroFieldCount,
+  };
+  const mobileLayout = {
+    sectionCount: metrics.pageStructure.sectionCount,
+    longParagraphCount: metrics.pageStructure.longParagraphCount,
+    denseIntroCtas: metrics.pageStructure.denseIntroCtas,
+    denseIntroButtons: metrics.pageStructure.denseIntroButtons,
+    denseIntroHeadings: metrics.pageStructure.denseIntroHeadings,
+    denseIntroFieldCount: metrics.pageStructure.denseIntroFieldCount,
+  };
+  const pageComplexity = {
+    domElementCount: metrics.pageStructure.domElementCount,
+    sectionCount: metrics.pageStructure.sectionCount,
+    buttonCount: metrics.buttonCount,
+    formFieldCount: metrics.formFriction.fieldCount,
+  };
+
   return [
     {
       auditRunId,
@@ -508,6 +797,14 @@ function buildPageEvidence(
     {
       auditRunId,
       pageSnapshotId,
+      category: "trust_signals",
+      key: "contact_reassurance",
+      value: contactReassurance,
+      evidenceLevel: "Observed",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
       category: "conversion",
       key: "cta_inventory",
       value: metrics.ctaInventory,
@@ -524,6 +821,14 @@ function buildPageEvidence(
     {
       auditRunId,
       pageSnapshotId,
+      category: "conversion",
+      key: "conversion_path",
+      value: conversionPath,
+      evidenceLevel: "Observed",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
       category: "messaging_content",
       key: "messaging_quality",
       value: metrics.messagingQuality,
@@ -532,9 +837,57 @@ function buildPageEvidence(
     {
       auditRunId,
       pageSnapshotId,
+      category: "messaging_content",
+      key: "messaging_alignment",
+      value: messagingAlignment,
+      evidenceLevel: "Observed",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "ux_ui",
+      key: "content_hierarchy",
+      value: contentHierarchy,
+      evidenceLevel: "Observed",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "ux_ui",
+      key: "conversion_area_clutter",
+      value: conversionAreaClutter,
+      evidenceLevel: "Observed",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "mobile_experience",
+      key: "mobile_layout",
+      value: mobileLayout,
+      evidenceLevel: "Observed",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
       category: "performance",
       key: "script_count",
       value: metrics.scriptCount,
+      evidenceLevel: "Measured",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "performance",
+      key: "asset_weight",
+      value: metrics.assetWeight,
+      evidenceLevel: "Measured",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "performance",
+      key: "page_complexity",
+      value: pageComplexity,
       evidenceLevel: "Measured",
     },
   ];
@@ -565,6 +918,7 @@ function buildFinding(
     evidenceRef: {
       pageUrl: snapshot.url,
       pageType: snapshot.pageType,
+      pageCount: 1,
       scope: auditRun.homepageOnly ? "homepage_only" : "captured_pages",
       evidenceKeys: draft.evidenceKeys,
       issueType: draft.issueType,

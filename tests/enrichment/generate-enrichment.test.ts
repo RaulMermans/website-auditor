@@ -36,8 +36,17 @@ function baseInput(overrides: Partial<EnrichmentPromptInput> = {}): EnrichmentPr
       mobile_experience: 95,
     },
     lightlyInspectedCategories: [],
+    insufficientEvidenceCategories: ["ux_ui"],
+    categoryReviewSummaries: ["ux_ui: Insufficient evidence"],
     findingSummaries: [
-      { category: "technical_seo", severity: "high", title: "Missing meta description", evidenceLevel: "Measured" },
+      {
+        category: "technical_seo",
+        severity: "high",
+        title: "Missing meta description",
+        evidenceLevel: "Measured",
+        confidence: "high",
+        support: "1 page · 1 evidence signal",
+      },
     ],
     topRecommendations: ["Add a meta description to every page."],
     ...overrides,
@@ -105,6 +114,29 @@ describe("generateReportEnrichment fallback", () => {
         config: expect.objectContaining({
           responseMimeType: "application/json",
         }),
+      })
+    );
+  });
+
+  it("includes coverage limits and support detail in the prompt", async () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    generateContentMock.mockResolvedValue({
+      text: JSON.stringify({
+        executiveSummary: "Grounded summary.",
+        quickWins: "Grounded quick wins.",
+      }),
+    });
+
+    await generateReportEnrichment(baseInput());
+
+    expect(generateContentMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        contents: expect.stringContaining("NOT inspected (insufficient evidence"),
+      })
+    );
+    expect(generateContentMock.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        contents: expect.stringContaining("1 page · 1 evidence signal"),
       })
     );
   });

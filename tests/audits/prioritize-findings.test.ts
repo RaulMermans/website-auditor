@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getPriorityScore, prioritizeFindings } from "@/server/audits/prioritize-findings";
+import {
+  getPriorityScore,
+  prioritizeFindings,
+  selectTopPriorityFindings,
+} from "@/server/audits/prioritize-findings";
 import type { Finding } from "@/lib/types";
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
@@ -84,5 +88,119 @@ describe("prioritizeFindings", () => {
     ]);
 
     expect(findings.map((finding) => finding.id)).toEqual(["a", "b"]);
+  });
+
+  it("favors homepage clarity and conversion issues over lower-impact supporting issues", () => {
+    const homepageConversion = makeFinding({
+      id: "homepage-conversion",
+      category: "conversion",
+      title: "Primary and secondary actions compete for attention",
+      severity: "high",
+      confidence: "high",
+      evidenceLevel: "Observed",
+      evidenceRef: {
+        issueType: "competing_cta_hierarchy",
+        businessImpact: "high",
+        pageType: "homepage",
+        pageCount: 1,
+        evidenceKeys: ["cta_inventory", "conversion_path"],
+      },
+    });
+    const homepageMessaging = makeFinding({
+      id: "homepage-messaging",
+      category: "messaging_content",
+      title: "Homepage value proposition is still too generic above the fold",
+      severity: "high",
+      confidence: "medium",
+      evidenceLevel: "Observed",
+      evidenceRef: {
+        issueType: "weak_value_proposition",
+        businessImpact: "high",
+        pageType: "homepage",
+        pageCount: 1,
+        evidenceKeys: ["messaging_quality", "messaging_alignment"],
+      },
+    });
+    const technicalHygiene = makeFinding({
+      id: "technical",
+      category: "technical_seo",
+      title: "Missing meta description",
+      severity: "medium",
+      confidence: "high",
+      evidenceLevel: "Measured",
+      evidenceRef: {
+        issueType: "missing_meta_description",
+        businessImpact: "medium",
+        pageType: "content",
+        pageCount: 3,
+        evidenceKeys: ["meta_description"],
+      },
+    });
+
+    expect(
+      prioritizeFindings([technicalHygiene, homepageConversion, homepageMessaging]).map(
+        (finding) => finding.id
+      )
+    ).toEqual(["homepage-conversion", "homepage-messaging", "technical"]);
+  });
+
+  it("selects a more distinct top-priority shortlist instead of stacking the same theme", () => {
+    const findings = [
+      makeFinding({
+        id: "conv-1",
+        category: "conversion",
+        title: "Primary and secondary actions compete for attention",
+        severity: "high",
+        evidenceRef: {
+          issueType: "competing_cta_hierarchy",
+          businessImpact: "high",
+          pageType: "homepage",
+          pageCount: 1,
+          evidenceKeys: ["cta_inventory", "conversion_path"],
+        },
+      }),
+      makeFinding({
+        id: "conv-2",
+        category: "conversion",
+        title: "CTA overload may dilute primary conversion focus",
+        severity: "medium",
+        evidenceRef: {
+          issueType: "cta_overload",
+          businessImpact: "high",
+          pageType: "homepage",
+          pageCount: 1,
+          evidenceKeys: ["cta_inventory", "conversion_path"],
+        },
+      }),
+      makeFinding({
+        id: "trust",
+        category: "trust_signals",
+        title: "Low trust signal density on key conversion page",
+        severity: "medium",
+        evidenceRef: {
+          issueType: "low_trust_signal_density",
+          businessImpact: "high",
+          pageType: "homepage",
+          pageCount: 1,
+          evidenceKeys: ["trust_signals", "contact_reassurance"],
+        },
+      }),
+      makeFinding({
+        id: "message",
+        category: "messaging_content",
+        title: "Homepage value proposition is still too generic above the fold",
+        severity: "medium",
+        evidenceRef: {
+          issueType: "weak_value_proposition",
+          businessImpact: "high",
+          pageType: "homepage",
+          pageCount: 1,
+          evidenceKeys: ["messaging_quality", "messaging_alignment"],
+        },
+      }),
+    ];
+
+    const shortlist = selectTopPriorityFindings(findings, 3);
+    expect(shortlist.map((finding) => finding.id)).toEqual(["conv-1", "message", "trust"]);
   });
 });

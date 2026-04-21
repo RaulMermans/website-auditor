@@ -48,7 +48,7 @@ describe("scoreAuditByCategory", () => {
     expect(result.overall).toBe(95);
     expect(result.byCategory.technical_seo).toBe(95);
     expect(result.byCategory.accessibility).toBe(95);
-    expect(result.byCategory.ux_ui).toBe(0);
+    expect(result.byCategory.ux_ui).toBe(95);
   });
 
   it("penalizes only the affected inspected category", () => {
@@ -61,7 +61,7 @@ describe("scoreAuditByCategory", () => {
         evidenceLevel: "Measured",
       },
     ]);
-    expect(result.overall).toBe(93);
+    expect(result.overall).toBe(94);
     expect(result.byCategory.technical_seo).toBe(83);
     expect(result.byCategory.accessibility).toBe(95);
   });
@@ -90,6 +90,7 @@ describe("scoreAuditByCategory", () => {
     expect(result.inspectedCategories).toContain("technical_seo");
     expect(result.inspectedCategories).not.toContain("performance");
     expect(result.inspectionSummaryByCategory.performance.status).toBe("not_inspected");
+    expect(result.inspectionSummaryByCategory.ux_ui.status).toBe("not_inspected");
   });
 
   it("weights confidence and evidence strength inside the same category", () => {

@@ -44,7 +44,7 @@ export const ALL_FINDING_CATEGORIES: FindingCategory[] = [
 ];
 
 export const CATEGORY_EXPECTED_KEYS: Record<FindingCategory, string[]> = {
-  performance: ["script_count"],
+  performance: ["script_count", "asset_weight", "page_complexity"],
   technical_seo: [
     "title",
     "meta_description",
@@ -56,11 +56,18 @@ export const CATEGORY_EXPECTED_KEYS: Record<FindingCategory, string[]> = {
     "heading_structure",
   ],
   accessibility: ["image_count", "missing_alt_count"],
-  ux_ui: [],
-  messaging_content: ["page_text_flags", "messaging_quality"],
-  conversion: ["form_present", "cta_present", "button_count", "cta_inventory", "form_friction"],
-  trust_signals: ["trust_signals"],
-  mobile_experience: ["viewport_meta_present"],
+  ux_ui: ["content_hierarchy", "conversion_area_clutter"],
+  messaging_content: ["page_text_flags", "messaging_quality", "messaging_alignment"],
+  conversion: [
+    "form_present",
+    "cta_present",
+    "button_count",
+    "cta_inventory",
+    "form_friction",
+    "conversion_path",
+  ],
+  trust_signals: ["trust_signals", "contact_reassurance"],
+  mobile_experience: ["viewport_meta_present", "mobile_layout"],
 };
 
 export interface InspectionSummary {

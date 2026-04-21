@@ -36,13 +36,54 @@ const BASE_METRICS: ParsedPageMetrics = {
     logoBlock: false,
     guarantee: false,
     contactInfo: true,
+    emailContact: true,
+    addressInfo: false,
+    contactPageLink: true,
     privacyLink: true,
+    termsLink: true,
     certifications: false,
+    caseStudies: false,
     density: 4,
+    proofPoints: 2,
+    reassuranceSignals: 2,
+    contactOptions: 3,
   },
-  ctaInventory: { count: 2, texts: ["Book a call", "Contact us"], hasDuplicates: false },
+  ctaInventory: {
+    count: 2,
+    texts: ["Book a call", "Contact us"],
+    hasDuplicates: false,
+    uniqueCount: 2,
+  },
   formFriction: { fieldCount: 3, hasLabels: true, requiredCount: 1 },
-  messagingQuality: { genericIntroDetected: false, heroTextLength: 120 },
+  messagingQuality: {
+    genericIntroDetected: false,
+    heroTextLength: 120,
+    heroHeading: "Double qualified leads for local services teams",
+    heroWordCount: 7,
+    h2Count: 3,
+    duplicateHeadingCount: 0,
+    valueCueCount: 2,
+    offerCueCount: 1,
+    titleAlignment: 0.6,
+  },
+  pageStructure: {
+    sectionCount: 4,
+    headingCount: 4,
+    duplicateHeadingCount: 0,
+    longParagraphCount: 1,
+    denseIntroCtas: 1,
+    denseIntroButtons: 2,
+    denseIntroHeadings: 2,
+    denseIntroFieldCount: 1,
+    domElementCount: 180,
+  },
+  assetWeight: {
+    stylesheetCount: 2,
+    inlineStyleBlockCount: 1,
+    thirdPartyScriptCount: 1,
+    eagerImageCount: 1,
+    imageCount: 1,
+  },
   scriptCount: 4,
 };
 
@@ -93,7 +134,12 @@ describe("specialist evaluators", () => {
     const findings = evaluateMessagingContent(
       makeContext({
         textFlags: ["coming_soon"],
-        messagingQuality: { genericIntroDetected: true, heroTextLength: 80 },
+        messagingQuality: {
+          ...BASE_METRICS.messagingQuality,
+          genericIntroDetected: true,
+          heroTextLength: 80,
+          titleAlignment: 0.1,
+        },
       })
     );
     expect(findings.length).toBeGreaterThan(0);
@@ -110,6 +156,7 @@ describe("specialist evaluators", () => {
           count: 7,
           texts: ["Book", "Book", "Book", "Demo"],
           hasDuplicates: true,
+          uniqueCount: 3,
         },
       })
     );
@@ -126,33 +173,91 @@ describe("specialist evaluators", () => {
           logoBlock: false,
           guarantee: false,
           contactInfo: true,
+          emailContact: false,
+          addressInfo: false,
+          contactPageLink: false,
           privacyLink: false,
+          termsLink: false,
           certifications: false,
+          caseStudies: false,
           density: 1,
+          proofPoints: 0,
+          reassuranceSignals: 0,
+          contactOptions: 1,
         },
       })
     );
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.category).toBe("trust_signals");
+    expect(findings.length).toBeGreaterThan(0);
+    expect(findings.every((finding) => finding.category === "trust_signals")).toBe(true);
   });
 
   it("mobile evaluator emits only mobile findings", () => {
     const findings = evaluateMobileExperience(
-      makeContext({ viewportMetaPresent: false })
+      makeContext({
+        viewportMetaPresent: false,
+        pageStructure: {
+          ...BASE_METRICS.pageStructure,
+          denseIntroCtas: 3,
+          denseIntroButtons: 5,
+        },
+      })
     );
-    expect(findings).toHaveLength(1);
+    expect(findings.length).toBeGreaterThan(0);
     expect(findings[0]?.category).toBe("mobile_experience");
   });
 
   it("performance evaluator emits only performance findings", () => {
     const findings = evaluatePerformance(
-      makeContext({ scriptCount: 16 })
+      makeContext({
+        scriptCount: 16,
+        assetWeight: {
+          ...BASE_METRICS.assetWeight,
+          thirdPartyScriptCount: 5,
+          stylesheetCount: 5,
+          eagerImageCount: 10,
+          imageCount: 18,
+        },
+        pageStructure: {
+          ...BASE_METRICS.pageStructure,
+          domElementCount: 720,
+          sectionCount: 9,
+        },
+        buttonCount: 8,
+      })
     );
-    expect(findings).toHaveLength(1);
+    expect(findings.length).toBeGreaterThan(0);
     expect(findings[0]?.category).toBe("performance");
   });
 
-  it("ux/ui evaluator stays deterministic and returns no unsupported DOM-only findings", () => {
+  it("ux/ui evaluator stays deterministic and uses structural evidence for dense pages", () => {
+    const findings = evaluateUxUi(
+      makeContext({
+        formPresent: true,
+        ctaInventory: {
+          count: 5,
+          texts: ["Book now", "Book now", "Get started"],
+          hasDuplicates: false,
+          uniqueCount: 3,
+        },
+        pageStructure: {
+          ...BASE_METRICS.pageStructure,
+          sectionCount: 9,
+          longParagraphCount: 4,
+          denseIntroCtas: 3,
+          denseIntroButtons: 5,
+        },
+        trustSignals: {
+          ...BASE_METRICS.trustSignals,
+          density: 2,
+        },
+      })
+    );
+
+    expect(findings.length).toBeGreaterThan(0);
+    expect(findings.every((finding) => finding.category === "ux_ui")).toBe(true);
+  });
+
+  it("clean structural metrics do not force ux/ui findings", () => {
     expect(evaluateUxUi(makeContext())).toEqual([]);
   });
 });

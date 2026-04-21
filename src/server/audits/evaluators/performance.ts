@@ -1,24 +1,70 @@
-import type { SpecialistEvaluator } from "./types";
+import type { SpecialistEvaluator, SpecialistFindingDraft } from "./types";
 
 export const evaluatePerformance: SpecialistEvaluator = ({ metrics }) => {
-  if (metrics.scriptCount <= 15) {
-    return [];
-  }
+  const drafts: SpecialistFindingDraft[] = [];
 
-  return [
-    {
+  if (metrics.scriptCount > 12 || metrics.assetWeight.thirdPartyScriptCount >= 4) {
+    drafts.push({
       category: "performance",
       issueType: "heavy_script_loading",
       title: "Heavy script loading may delay page responsiveness",
       description:
-        `The captured HTML includes ${metrics.scriptCount} script elements. High script counts are a leading indicator of render-blocking load issues and slow Time to Interactive, particularly on mobile connections.`,
+        metrics.assetWeight.thirdPartyScriptCount >= 4
+          ? `The captured HTML includes ${metrics.scriptCount} script elements, with ${metrics.assetWeight.thirdPartyScriptCount} loading from third-party origins. That is a strong indicator of slower render and interaction on weaker connections.`
+          : `The captured HTML includes ${metrics.scriptCount} script elements. High script counts are a strong indicator of delayed render and interaction, especially on mobile connections.`,
+      severity: metrics.scriptCount > 20 ? "medium" : "low",
+      confidence: "high",
+      evidenceLevel: "Measured",
+      evidenceKeys: ["script_count", "asset_weight"],
+      recommendation:
+        "Reduce third-party tags, defer non-critical scripts, and enforce a tighter script budget for the page.",
+      businessImpact: "medium",
+    });
+  }
+
+  if (
+    metrics.assetWeight.stylesheetCount >= 5 ||
+    metrics.assetWeight.eagerImageCount >= 10 ||
+    metrics.assetWeight.imageCount >= 18
+  ) {
+    drafts.push({
+      category: "performance",
+      issueType: "heavy_asset_mix",
+      title: "The page asset mix is likely to slow initial rendering",
+      description:
+        `The captured page carries ${metrics.assetWeight.stylesheetCount} stylesheet references, ${metrics.assetWeight.imageCount} images, and ${metrics.assetWeight.eagerImageCount} images without lazy-loading hints. Those are leading indicators of slower first render and heavier mobile payloads.`,
+      severity:
+        metrics.assetWeight.imageCount >= 24 || metrics.assetWeight.eagerImageCount >= 14
+          ? "medium"
+          : "low",
+      confidence: "medium",
+      evidenceLevel: "Measured",
+      evidenceKeys: ["asset_weight", "page_complexity"],
+      recommendation:
+        "Trim decorative assets, lazy-load non-critical images, and tighten the CSS/image budget for the page.",
+      businessImpact: "medium",
+    });
+  }
+
+  if (
+    metrics.pageStructure.domElementCount >= 650 ||
+    (metrics.pageStructure.sectionCount >= 8 && metrics.buttonCount >= 8)
+  ) {
+    drafts.push({
+      category: "performance",
+      issueType: "complex_render_path",
+      title: "Page complexity is likely to create rendering overhead",
+      description:
+        `The captured DOM contains roughly ${metrics.pageStructure.domElementCount} elements across ${metrics.pageStructure.sectionCount} sections. That level of page complexity can create slower layout and paint work even when Core Web Vitals were not directly measured in this audit.`,
       severity: "low",
       confidence: "medium",
       evidenceLevel: "Measured",
-      evidenceKeys: ["script_count"],
+      evidenceKeys: ["page_complexity", "asset_weight"],
       recommendation:
-        "Audit and defer non-critical scripts, consolidate third-party tags, and set a script budget to improve load performance.",
+        "Simplify dense sections, reduce unnecessary wrappers, and keep interactive regions lighter so the page has less work to render.",
       businessImpact: "medium",
-    },
-  ];
+    });
+  }
+
+  return drafts;
 };
