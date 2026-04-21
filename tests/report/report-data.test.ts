@@ -42,6 +42,7 @@ function makeReportData(overrides: Partial<ReportData> = {}): ReportData {
     domain: "example.com",
     auditRun: makeAuditRun(),
     findings,
+    topPriorities: findings,
     scores: scoreAuditByCategory(findings),
     ...overrides,
   };
@@ -71,15 +72,14 @@ describe("ReportRepository interface", () => {
 describe("report data scores consistency", () => {
   it("overall score matches findings penalty", () => {
     const data = makeReportData();
-    // 1 high finding = 10 penalty → score 90
-    expect(data.scores.overall).toBe(90);
+    expect(data.scores.overall).toBe(93);
   });
 
   it("category score reflects findings in that category only", () => {
     const data = makeReportData();
-    expect(data.scores.byCategory.technical_seo).toBe(90);
-    expect(data.scores.byCategory.accessibility).toBe(100);
-    expect(data.scores.byCategory.conversion).toBe(100);
+    expect(data.scores.byCategory.technical_seo).toBe(83);
+    expect(data.scores.byCategory.accessibility).toBe(95);
+    expect(data.scores.byCategory.conversion).toBe(95);
   });
 
   it("scores are re-computable deterministically from findings", () => {

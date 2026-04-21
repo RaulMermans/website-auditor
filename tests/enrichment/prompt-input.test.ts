@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildEnrichmentInput } from "@/server/audits/generate-report-enrichment";
 import type { ReportData } from "@/db/report";
 import type { Finding, AuditRun } from "@/lib/types";
+import { scoreAuditByCategory } from "@/server/scoring/score-audit";
 
 function makeRun(homepageOnly: boolean): AuditRun {
   return {
@@ -38,19 +39,8 @@ function makeReportData(findings: Finding[], homepageOnly = false): ReportData {
     domain: "example.com",
     auditRun: makeRun(homepageOnly),
     findings,
-    scores: {
-      overall: 80,
-      byCategory: {
-        performance: 100,
-        technical_seo: 90,
-        accessibility: 100,
-        ux_ui: 100,
-        messaging_content: 100,
-        conversion: 100,
-        trust_signals: 100,
-        mobile_experience: 100,
-      },
-    },
+    topPriorities: findings.slice(0, 5),
+    scores: scoreAuditByCategory(findings),
   };
 }
 
@@ -58,7 +48,7 @@ describe("buildEnrichmentInput", () => {
   it("sets domain and scores from report data", () => {
     const input = buildEnrichmentInput(makeReportData([]));
     expect(input.domain).toBe("example.com");
-    expect(input.overallScore).toBe(80);
+    expect(input.overallScore).toBe(95);
   });
 
   it("passes homepage_only flag through", () => {
@@ -70,17 +60,23 @@ describe("buildEnrichmentInput", () => {
     const findings = Array.from({ length: 15 }, (_, i) =>
       makeFinding({ id: `f-${i}`, title: `Issue ${i}` })
     );
-    const input = buildEnrichmentInput(makeReportData(findings));
+    const input = buildEnrichmentInput({
+      ...makeReportData(findings),
+      topPriorities: findings,
+    });
     expect(input.findingSummaries.length).toBeLessThanOrEqual(10);
   });
 
-  it("sorts findings by severity (critical first)", () => {
+  it("uses prioritized findings order from report data", () => {
     const findings = [
       makeFinding({ id: "1", severity: "low" }),
       makeFinding({ id: "2", severity: "critical" }),
       makeFinding({ id: "3", severity: "high" }),
     ];
-    const input = buildEnrichmentInput(makeReportData(findings));
+    const input = buildEnrichmentInput({
+      ...makeReportData(findings),
+      topPriorities: [findings[1], findings[2], findings[0]],
+    });
     expect(input.findingSummaries[0].severity).toBe("critical");
     expect(input.findingSummaries[1].severity).toBe("high");
   });
@@ -94,7 +90,7 @@ describe("buildEnrichmentInput", () => {
     const input = buildEnrichmentInput(makeReportData(findings));
     expect(input.topRecommendations).toContain("Fix critical");
     expect(input.topRecommendations).toContain("Fix high");
-    expect(input.topRecommendations).not.toContain("Fix medium");
+    expect(input.topRecommendations).toContain("Fix medium");
   });
 
   it("topRecommendations is empty when no critical/high findings", () => {

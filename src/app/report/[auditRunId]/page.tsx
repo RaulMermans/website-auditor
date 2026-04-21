@@ -48,7 +48,7 @@ export default async function ReportPage({
 
   if (!data) notFound();
 
-  const { auditRun, domain, findings, scores } = data;
+  const { auditRun, domain, findings, topPriorities, scores } = data;
   const assetMap = Object.fromEntries(enrichmentAssets.map((a) => [a.type, a.content])) as Partial<Record<OutreachAsset["type"], string>>;
 
   const findingsByCategory = new Map<FindingCategory, Finding[]>();
@@ -120,10 +120,76 @@ export default async function ReportPage({
             {findings.length} finding{findings.length !== 1 ? "s" : ""} across{" "}
             {findingsByCategory.size} categor
             {findingsByCategory.size !== 1 ? "ies" : "y"}. Score is
-            deterministic: 100 minus severity penalties from stored findings.
+            deterministic and coverage-aware: finding severity is weighted by
+            confidence, and lightly inspected categories do not receive an
+            automatic clean score.
           </p>
         </div>
       </div>
+
+      {topPriorities.length > 0 && (
+        <div style={{ marginBottom: 32 }}>
+          <h2
+            style={{ fontSize: "1.125rem", fontWeight: 600, marginBottom: 12 }}
+          >
+            Top priorities
+          </h2>
+          <div
+            style={{
+              display: "grid",
+              gap: 12,
+            }}
+          >
+            {topPriorities.map((finding, index) => (
+              <div
+                key={`${finding.id}-priority`}
+                style={{
+                  padding: 16,
+                  background: "#fff",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 6,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: "0.75rem",
+                      fontWeight: 700,
+                      color: "#6b7280",
+                    }}
+                  >
+                    #{index + 1}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "0.75rem",
+                      fontWeight: 700,
+                      padding: "2px 6px",
+                      borderRadius: 4,
+                      background: SEVERITY_COLORS[finding.severity] + "1a",
+                      color: SEVERITY_COLORS[finding.severity],
+                    }}
+                  >
+                    {finding.severity.toUpperCase()}
+                  </span>
+                  <span style={{ fontWeight: 600 }}>{finding.title}</span>
+                </div>
+                <p style={{ fontSize: "0.875rem", color: "#4b5563" }}>
+                  {finding.recommendation}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={{ marginBottom: 32 }}>
         <h2
@@ -141,7 +207,18 @@ export default async function ReportPage({
           {ALL_FINDING_CATEGORIES.map((cat) => {
             const score = scores.byCategory[cat];
             const count = findingsByCategory.get(cat)?.length ?? 0;
-            const isInspected = !scores.inspectedCategories || scores.inspectedCategories.includes(cat);
+            const inspection = scores.inspectionSummaryByCategory[cat];
+            const isInspected = inspection.status !== "not_inspected";
+            const inspectionLabel =
+              inspection.status === "not_inspected"
+                ? "Not inspected"
+                : inspection.status === "lightly_inspected"
+                  ? count === 0
+                    ? "Light inspection"
+                    : `${count} finding${count !== 1 ? "s" : ""} · light inspection`
+                  : count === 0
+                    ? "No findings"
+                    : `${count} finding${count !== 1 ? "s" : ""}`;
             return (
               <div
                 key={cat}
@@ -174,11 +251,7 @@ export default async function ReportPage({
                   {CATEGORY_LABELS[cat]}
                 </div>
                 <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
-                  {!isInspected
-                    ? "Not inspected"
-                    : count === 0
-                      ? "No findings"
-                      : `${count} finding${count !== 1 ? "s" : ""}`}
+                  {inspectionLabel}
                 </div>
               </div>
             );

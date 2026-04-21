@@ -1,12 +1,17 @@
 import type {
   AuditRun,
-  EvidenceLabel,
-  FindingCategory,
-  FindingConfidence,
-  FindingSeverity,
   PageSnapshot,
 } from "@/lib/types";
 import type { CreateFindingInput, CreatePageEvidenceInput } from "@/db/analysis";
+import { runSpecialistEvaluators } from "@/server/audits/evaluators";
+import type {
+  CTAInventoryMetrics,
+  FormFrictionMetrics,
+  MessagingQualityMetrics,
+  ParsedPageMetrics,
+  SpecialistFindingDraft,
+  TrustSignalMetrics,
+} from "@/server/audits/evaluators/types";
 
 const GENERIC_INTRO_PATTERNS = [
   /^welcome to (our|the|my)\b/i,
@@ -46,74 +51,9 @@ export interface ExtractedPageArtifacts {
   findings: CreateFindingInput[];
 }
 
-interface TrustSignalMetrics {
-  testimonials: boolean;
-  socialProof: boolean;
-  logoBlock: boolean;
-  guarantee: boolean;
-  contactInfo: boolean;
-  privacyLink: boolean;
-  certifications: boolean;
-  density: number;
-}
-
-interface CTAInventoryMetrics {
-  count: number;
-  texts: string[];
-  hasDuplicates: boolean;
-}
-
-interface FormFrictionMetrics {
-  fieldCount: number;
-  hasLabels: boolean;
-  requiredCount: number;
-}
-
-interface MessagingQualityMetrics {
-  genericIntroDetected: boolean;
-  heroTextLength: number;
-}
-
-interface ParsedPageMetrics {
-  title: { present: boolean; text: string | null };
-  metaDescription: { present: boolean; content: string | null };
-  h1Count: number;
-  imageCount: number;
-  missingAltCount: number;
-  internalLinkCount: number;
-  externalLinkCount: number;
-  formPresent: boolean;
-  ctaPresent: boolean;
-  buttonCount: number;
-  canonicalPresent: boolean;
-  robotsMeta: { present: boolean; content: string | null; noindex: boolean; nofollow: boolean };
-  viewportMetaPresent: boolean;
-  headingStructure: {
-    counts: Record<"h1" | "h2" | "h3" | "h4" | "h5" | "h6", number>;
-    hints: string[];
-  };
-  textFlags: string[];
-  trustSignals: TrustSignalMetrics;
-  ctaInventory: CTAInventoryMetrics;
-  formFriction: FormFrictionMetrics;
-  messagingQuality: MessagingQualityMetrics;
-  scriptCount: number;
-}
-
 interface TagMatch {
   raw: string;
   attrs: Record<string, string>;
-}
-
-interface ScopedFindingDraft {
-  category: FindingCategory;
-  title: string;
-  description: string;
-  severity: FindingSeverity;
-  confidence: FindingConfidence;
-  evidenceLevel: EvidenceLabel;
-  evidenceKeys: string[];
-  recommendation: string;
 }
 
 function normalizeWhitespace(value: string | null | undefined) {
@@ -611,7 +551,7 @@ function scopeText(auditRun: Pick<AuditRun, "homepageOnly">, text: string) {
 function buildFinding(
   auditRun: Pick<AuditRun, "id" | "homepageOnly">,
   snapshot: Pick<PageSnapshot, "id" | "url" | "pageType">,
-  draft: ScopedFindingDraft
+  draft: SpecialistFindingDraft
 ): CreateFindingInput {
   return {
     auditRunId: auditRun.id,
@@ -627,281 +567,11 @@ function buildFinding(
       pageType: snapshot.pageType,
       scope: auditRun.homepageOnly ? "homepage_only" : "captured_pages",
       evidenceKeys: draft.evidenceKeys,
+      issueType: draft.issueType,
+      businessImpact: draft.businessImpact,
     },
     recommendation: scopeText(auditRun, draft.recommendation),
   };
-}
-
-function buildFindingDrafts(
-  snapshot: Pick<PageSnapshot, "url" | "pageType">,
-  metrics: ParsedPageMetrics
-): ScopedFindingDraft[] {
-  const drafts: ScopedFindingDraft[] = [];
-
-  if (!metrics.title.present) {
-    drafts.push({
-      category: "technical_seo",
-      title: "Missing page title",
-      description:
-        "The captured HTML does not include a non-empty <title> tag, so the page lacks a basic search and browser label.",
-      severity: "high",
-      confidence: "high",
-      evidenceLevel: "Measured",
-      evidenceKeys: ["title"],
-      recommendation: "Add a unique, descriptive <title> tag for this captured page.",
-    });
-  }
-
-  if (!metrics.metaDescription.present) {
-    drafts.push({
-      category: "technical_seo",
-      title: "Missing meta description",
-      description:
-        "No meta description was detected in the captured HTML, which leaves search snippets and social previews without a curated summary.",
-      severity: "medium",
-      confidence: "high",
-      evidenceLevel: "Measured",
-      evidenceKeys: ["meta_description"],
-      recommendation: "Add a concise meta description that matches the page intent and content.",
-    });
-  }
-
-  if (!metrics.canonicalPresent) {
-    drafts.push({
-      category: "technical_seo",
-      title: "Missing canonical tag",
-      description:
-        "The captured page does not expose a canonical link tag, so preferred indexing signals are missing from the stored snapshot.",
-      severity: "medium",
-      confidence: "high",
-      evidenceLevel: "Measured",
-      evidenceKeys: ["canonical_present"],
-      recommendation: "Add a rel=canonical tag that points to the preferred public URL for this page.",
-    });
-  }
-
-  if (metrics.robotsMeta.noindex) {
-    drafts.push({
-      category: "technical_seo",
-      title: "Robots meta requests noindex",
-      description:
-        "The captured robots meta tag includes a noindex-style directive, which can remove this page from search results.",
-      severity: "high",
-      confidence: "high",
-      evidenceLevel: "Measured",
-      evidenceKeys: ["robots_meta"],
-      recommendation: "Confirm the robots directive is intentional before shipping it on a public page.",
-    });
-  }
-
-  if (metrics.h1Count === 0) {
-    drafts.push({
-      category: "technical_seo",
-      title: "No H1 heading detected",
-      description:
-        "The stored HTML does not contain an H1 heading, so the page is missing its primary visible content label.",
-      severity: "medium",
-      confidence: "high",
-      evidenceLevel: "Measured",
-      evidenceKeys: ["h1_count", "heading_structure"],
-      recommendation: "Add one clear H1 that matches the main topic of the captured page.",
-    });
-  }
-
-  if (metrics.h1Count > 1) {
-    drafts.push({
-      category: "technical_seo",
-      title: "Multiple H1 headings detected",
-      description:
-        "More than one H1 heading was found in the captured HTML, which can dilute the primary page hierarchy.",
-      severity: "low",
-      confidence: "high",
-      evidenceLevel: "Measured",
-      evidenceKeys: ["h1_count", "heading_structure"],
-      recommendation: "Reduce the page to a single primary H1 and demote the remaining headings.",
-    });
-  }
-
-  if (metrics.headingStructure.hints.some((hint) => hint.startsWith("skipped_"))) {
-    drafts.push({
-      category: "technical_seo",
-      title: "Heading levels skip in the captured structure",
-      description:
-        "The stored heading outline jumps levels, which weakens the content hierarchy exposed in the captured DOM.",
-      severity: "low",
-      confidence: "medium",
-      evidenceLevel: "Measured",
-      evidenceKeys: ["heading_structure"],
-      recommendation: "Tighten the heading order so sections move through levels without skipping.",
-    });
-  }
-
-  if (metrics.imageCount > 0 && metrics.missingAltCount > 0) {
-    drafts.push({
-      category: "accessibility",
-      title: "Images missing alt text",
-      description:
-        "The captured HTML includes image elements without usable alt attributes, which reduces screen-reader context and fallback text quality.",
-      severity:
-        metrics.missingAltCount >= 3 || metrics.missingAltCount === metrics.imageCount
-          ? "high"
-          : "medium",
-      confidence: "high",
-      evidenceLevel: "Measured",
-      evidenceKeys: ["image_count", "missing_alt_count"],
-      recommendation: "Add meaningful alt text for informative images and empty alt text only for decorative ones.",
-    });
-  }
-
-  if (!metrics.viewportMetaPresent) {
-    drafts.push({
-      category: "mobile_experience",
-      title: "Missing viewport meta tag",
-      description:
-        "The captured HTML does not include a viewport meta tag, which removes a standard mobile scaling instruction from the page.",
-      severity: "high",
-      confidence: "high",
-      evidenceLevel: "Measured",
-      evidenceKeys: ["viewport_meta_present"],
-      recommendation: "Add a standard viewport meta tag so mobile browsers scale the page correctly.",
-    });
-  }
-
-  if (!metrics.ctaPresent && !metrics.formPresent) {
-    const shouldFlagConversion =
-      snapshot.pageType === "homepage" ||
-      snapshot.pageType === "services" ||
-      snapshot.pageType === "contact" ||
-      snapshot.pageType === "content";
-
-    if (shouldFlagConversion) {
-      drafts.push({
-        category: "conversion",
-        title: "Weak next-step conversion path on captured page",
-        description:
-          "Based on the captured DOM, the page may not present a clear next step because no standard CTA/button heuristic or form was detected.",
-        severity: snapshot.pageType === "contact" ? "high" : "medium",
-        confidence: "medium",
-        evidenceLevel: "Inferred",
-        evidenceKeys: ["cta_present", "form_present", "button_count"],
-        recommendation:
-          "Add one clear next-step action for this page, such as a contact CTA, booking path, or request form.",
-      });
-    }
-  }
-
-  if (metrics.textFlags.length > 0) {
-    drafts.push({
-      category: "messaging_content",
-      title: "Placeholder or staging copy is visible",
-      description:
-        "The captured page text includes placeholder or staging language, which is directly visible in the stored browser evidence.",
-      severity: metrics.textFlags.includes("under_construction") ? "high" : "medium",
-      confidence: "high",
-      evidenceLevel: "Observed",
-      evidenceKeys: ["page_text_flags"],
-      recommendation:
-        "Replace placeholder or staging copy with production messaging before using this page in audits or outreach.",
-    });
-  }
-
-  // Trust signals
-  const trustKeyPages: typeof snapshot.pageType[] = ["homepage", "services", "contact"];
-  if (trustKeyPages.includes(snapshot.pageType) && metrics.trustSignals.density <= 1) {
-    drafts.push({
-      category: "trust_signals",
-      title: "Low trust signal density on key conversion page",
-      description:
-        "The captured page shows at most one trust indicator (testimonials, social proof, logo block, guarantee, contact info, privacy link, or certifications). Visitors on key pages typically need multiple credibility signals to proceed.",
-      severity: "medium",
-      confidence: "medium",
-      evidenceLevel: "Observed",
-      evidenceKeys: ["trust_signals"],
-      recommendation:
-        "Add at least 2-3 trust signals to this page: real customer testimonials, logo block of known clients, or a satisfaction guarantee.",
-    });
-  }
-
-  // CTA issues
-  if (metrics.ctaInventory.hasDuplicates && metrics.ctaInventory.count >= 3) {
-    drafts.push({
-      category: "conversion",
-      title: "Repeated CTA labels may reduce conversion clarity",
-      description:
-        "Three or more CTAs on the captured page share the same label text. Identical CTA labels spread across different sections signal repetition without hierarchy, which can reduce click-through focus.",
-      severity: "low",
-      confidence: "high",
-      evidenceLevel: "Observed",
-      evidenceKeys: ["cta_inventory"],
-      recommendation:
-        "Differentiate CTA labels by context (e.g., 'Book a call' vs 'See pricing') so each action has a distinct purpose.",
-    });
-  }
-
-  if (metrics.ctaInventory.count > 6) {
-    drafts.push({
-      category: "conversion",
-      title: "CTA overload may dilute primary conversion focus",
-      description:
-        `The captured page contains ${metrics.ctaInventory.count} CTA-pattern elements. Overloading a page with competing calls-to-action fragments visitor attention and weakens the primary conversion path.`,
-      severity: "low",
-      confidence: "medium",
-      evidenceLevel: "Observed",
-      evidenceKeys: ["cta_inventory"],
-      recommendation:
-        "Identify the single highest-value action for this page and reduce secondary CTAs to supporting roles.",
-    });
-  }
-
-  // Form friction
-  if (metrics.formPresent && metrics.formFriction.fieldCount > 6) {
-    drafts.push({
-      category: "conversion",
-      title: "Long form may create conversion friction",
-      description:
-        `The captured form contains ${metrics.formFriction.fieldCount} visible input fields. Forms with more than 6 fields have measurably higher abandonment rates, especially for first-contact pages.`,
-      severity: "medium",
-      confidence: "medium",
-      evidenceLevel: "Observed",
-      evidenceKeys: ["form_friction", "form_present"],
-      recommendation:
-        "Reduce the form to the minimum fields needed for the first step. Move additional qualification questions to a follow-up.",
-    });
-  }
-
-  // Messaging quality
-  if (snapshot.pageType === "homepage" && metrics.messagingQuality.genericIntroDetected) {
-    drafts.push({
-      category: "messaging_content",
-      title: "Generic hero messaging obscures value proposition",
-      description:
-        "The homepage hero text begins with a generic introductory phrase ('Welcome to', 'We are', 'Our company'). Generic intros waste the above-fold position that should state a clear, differentiated outcome for the visitor.",
-      severity: "medium",
-      confidence: "medium",
-      evidenceLevel: "Observed",
-      evidenceKeys: ["messaging_quality"],
-      recommendation:
-        "Rewrite the hero opening to lead with the outcome or transformation the visitor gets, not a description of the business.",
-    });
-  }
-
-  // Performance hint
-  if (metrics.scriptCount > 15) {
-    drafts.push({
-      category: "performance",
-      title: "Heavy script loading may delay page responsiveness",
-      description:
-        `The captured HTML includes ${metrics.scriptCount} script elements. High script counts are a leading indicator of render-blocking load issues and slow Time to Interactive, particularly on mobile connections.`,
-      severity: "low",
-      confidence: "medium",
-      evidenceLevel: "Measured",
-      evidenceKeys: ["script_count"],
-      recommendation:
-        "Audit and defer non-critical scripts, consolidate third-party tags, and set a script budget to improve load performance.",
-    });
-  }
-
-  return drafts;
 }
 
 export function extractPageArtifacts(
@@ -911,7 +581,7 @@ export function extractPageArtifacts(
 ): ExtractedPageArtifacts {
   const metrics = parseMetrics(snapshot, html);
   const pageEvidence = buildPageEvidence(auditRun.id, snapshot.id, metrics);
-  const findings = buildFindingDrafts(snapshot, metrics).map((draft) =>
+  const findings = runSpecialistEvaluators({ snapshot, metrics }).map((draft) =>
     buildFinding(auditRun, snapshot, draft)
   );
 

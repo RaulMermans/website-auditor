@@ -123,3 +123,27 @@ Synthesis         generate-report-enrichment.ts   LLM downstream of deterministi
 - Vercel smoke run for end-to-end validation
 - Real blob storage provider for production artifacts
 - `ux_ui` category has no heuristics yet
+
+---
+
+## Shot 11 — Multi-specialist judgment pass (2026-04-21)
+
+### What changed
+1. Split finding logic into explicit evaluator modules under `src/server/audits/evaluators/`.
+2. Added `prioritize-findings.ts` so report/enrichment inputs use a stable top-issues ordering instead of ad hoc severity sorting.
+3. Strengthened deduplication to merge by deterministic issue fingerprint, not just normalized title. Merged findings now accumulate page URLs, page types, evidence keys, and the strongest representative severity/confidence.
+4. Reworked scoring to use inspection depth plus finding confidence/evidence strength. Categories now resolve to `not_inspected`, `lightly_inspected`, or `inspected`, and scores cap below 100 even when no issues are found.
+5. Report data now includes `topPriorities` and inspection summaries; the report page surfaces both.
+6. Removed confirmed stale duplicate `* 2` files across source, tests, docs, and migrations.
+
+### Verification
+- `npm install` ✓
+- `npm run lint` ✓
+- `npm run typecheck` ✓
+- `npm test` ✓
+- `npm run test:coverage` ✓
+- `npm run build` ✓
+
+### Notes
+- `ux_ui` remains a deliberate no-op evaluator for now because the current deterministic evidence set is DOM-first, not visual-layout aware.
+- During verification, `npm run typecheck` initially failed because `.next/types/` contained stale numbered duplicates (`validator 5.ts`, `routes.d 10.ts`, etc.). Cleaning those generated artifacts and rerunning `next typegen` resolved the issue without changing product code.

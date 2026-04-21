@@ -102,30 +102,32 @@ AC1 ✓ AC2 ✓ AC3 ✓ AC4 ✓ AC5 ✓ AC6 ✓
 
 AC: no `playwright` in root `node_modules`; no `.local-browsers/` on build; browser launch uses `@sparticuz/chromium` exclusively ✓
 
-## Shot 10 — Agentic audit quality upgrade (in progress)
+## Shot 10 — Multi-specialist audit judgment pass (complete)
 
-Upgrade from structural linter to senior-auditor system. No pipeline rebuild — quality, judgment, and honesty improvements only.
+Upgrade from heuristic bundle to explicit specialist workflow. No runtime/deployment redesign — only judgment structure, prioritization, dedup depth, and scoring honesty.
 
-- `deduplicate-findings.ts`: collapses same-(category, title) findings across pages into one with merged evidence refs.
-- `extract-page-evidence.ts`: added trust signal, CTA inventory, form friction, messaging quality, and performance script count heuristics. All produce evidence items that mark categories as "inspected".
-- `score-audit.ts`: `CategoryScores` gains `inspectedCategories`; uninspected categories render as "—" not 100.
-- `db/report.ts`: loads distinct evidence categories to pass as `inspectedCategories` to scoring.
-- `generate-report-enrichment.ts`: stronger synthesis prompt — no repetition, evidence labels, scope limits, no invented claims.
-- Report page: "Not inspected" label on uninspected category cards.
-- 25+ new tests covering dedup, trust/CTA/form/messaging heuristics, scoring coverage.
+- `src/server/audits/evaluators/*`: split deterministic findings into eight specialist modules: technical SEO, accessibility, messaging/content, conversion, trust signals, UX/UI, mobile experience, and performance.
+- `extract-page-evidence.ts`: keeps structured evidence extraction centralized, then hands parsed metrics to the evaluator modules instead of a mixed rule block.
+- `deduplicate-findings.ts`: now fingerprints issues by `issueType`/semantic fallback, merges page URLs/page types/evidence keys, and keeps the strongest representative finding.
+- `prioritize-findings.ts`: adds deterministic ranking using severity, confidence, evidence strength, business impact, and page spread.
+- `score-audit.ts`: replaces the old 100-minus-penalties behavior with capped, inspection-aware scoring. Categories now distinguish `not_inspected`, `lightly_inspected`, and `inspected`; no-finding categories no longer default to 100.
+- `db/report.ts` + report page: report data now carries prioritized top issues and inspection summaries; the report surfaces top priorities and "Light inspection" vs "Not inspected".
+- `generate-report-enrichment.ts`: enrichment input now uses prioritized findings and inspection status so downstream LLM output stays aligned with deterministic judgment.
+- Duplicate `* 2` source/test/doc/migration files were removed where they were clearly stale or redundant.
+- Verification: `npm install`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:coverage`, and `npm run build` all pass.
 
-AC1 ✓ workflow steps visible in code
-AC2 ✓ deduplication implemented and tested
-AC3 ✓ trust/conversion/messaging/performance findings added
-AC4 ✓ scoring shows "—" for uninspected categories
-AC5 ✓ all specialist evaluators are deterministic
-AC6 ✓ LLM synthesis uses stronger constrained prompt
-AC7 ✓ report shows "Not inspected" instead of false 100
-AC8 ✓ 25+ new tests
-AC9 pending (lint/typecheck/test/build)
-AC10 ✓ SCRATCHPAD.md and plan.md updated
+AC1 ✓ specialist evaluators split by category
+AC2 ✓ finding generation coordinated through evaluator modules
+AC3 ✓ stable deterministic prioritization layer added
+AC4 ✓ scoring is inspection-aware and no longer defaults to perfect
+AC5 ✓ deduplication stronger than normalized title matching
+AC6 ✓ obvious redundant duplicate files cleaned up
+AC7 ✓ report/enrichment flow still works with new structure
+AC8 ✓ tests cover evaluators, prioritization, dedup, and scoring semantics
+AC9 ✓ lint/typecheck/test/coverage/build pass
+AC10 ✓ plan.md and SCRATCHPAD.md updated
 
-Remaining runtime validation debt: Vercel smoke run; real storage provider; ux_ui category uninspected.
+Remaining runtime validation debt: live Vercel smoke run, real artifact storage provider, and future visual evidence for `ux_ui`.
 
 ## Deferred decisions
 

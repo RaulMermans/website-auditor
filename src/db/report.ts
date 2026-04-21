@@ -12,6 +12,7 @@ import {
   scoreAuditByCategory,
   type CategoryScores,
 } from "@/server/scoring/score-audit";
+import { prioritizeFindings } from "@/server/audits/prioritize-findings";
 
 interface AuditRunWithDomainRow {
   id: string;
@@ -56,6 +57,7 @@ export interface ReportData {
   domain: string;
   auditRun: AuditRun;
   findings: Finding[];
+  topPriorities: Finding[];
   scores: CategoryScores;
 }
 
@@ -184,21 +186,31 @@ export const reportRepository: ReportRepository = {
 
       const findings = findingsResult.rows.map(mapFinding);
 
-      const evidenceCatResult = await client.query<{ category: FindingCategory }>(
-        `SELECT DISTINCT category FROM page_evidence WHERE audit_run_id = $1`,
+      const evidenceResult = await client.query<{ category: FindingCategory; key: string }>(
+        `SELECT category, key FROM page_evidence WHERE audit_run_id = $1`,
         [auditRunId]
       );
-      const evidenceCategories = evidenceCatResult.rows.map((r) => r.category);
+      const inspectionKeysByCategory = evidenceResult.rows.reduce<
+        Partial<Record<FindingCategory, string[]>>
+      >((acc, row) => {
+        const keys = acc[row.category] ?? [];
+        if (!keys.includes(row.key)) {
+          keys.push(row.key);
+        }
+        acc[row.category] = keys;
+        return acc;
+      }, {});
+      const prioritizedFindings = prioritizeFindings(findings);
 
       return {
         auditRunId,
         domain: runRow.domain,
         auditRun: mapAuditRun(runRow),
-        findings,
-        scores: scoreAuditByCategory(
-          findings,
-          evidenceCategories.length > 0 ? evidenceCategories : undefined
-        ),
+        findings: prioritizedFindings,
+        topPriorities: prioritizedFindings.slice(0, 5),
+        scores: scoreAuditByCategory(prioritizedFindings, {
+          inspectionKeysByCategory,
+        }),
       };
     });
   },

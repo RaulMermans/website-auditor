@@ -8,6 +8,7 @@ export interface EnrichmentPromptInput {
   overallScore: number;
   categoryScores: Record<FindingCategory, number>;
   inspectedCategories?: FindingCategory[];
+  lightlyInspectedCategories?: FindingCategory[];
   findingSummaries: Array<{
     category: string;
     severity: string;
@@ -17,19 +18,12 @@ export interface EnrichmentPromptInput {
   topRecommendations: string[];
 }
 
-const SEVERITY_ORDER: Record<string, number> = {
-  critical: 0,
-  high: 1,
-  medium: 2,
-  low: 3,
-  info: 4,
-};
-
 export function buildEnrichmentInput(data: ReportData): EnrichmentPromptInput {
-  const sorted = [...data.findings].sort(
-    (a, b) => (SEVERITY_ORDER[a.severity] ?? 4) - (SEVERITY_ORDER[b.severity] ?? 4)
-  );
-  const top = sorted.slice(0, 10);
+  const prioritized = data.topPriorities.length > 0 ? data.topPriorities : data.findings;
+  const top = prioritized.slice(0, 10);
+  const lightlyInspectedCategories = Object.entries(data.scores.inspectionSummaryByCategory)
+    .filter(([, summary]) => summary.status === "lightly_inspected")
+    .map(([category]) => category as FindingCategory);
 
   return {
     domain: data.domain,
@@ -37,14 +31,15 @@ export function buildEnrichmentInput(data: ReportData): EnrichmentPromptInput {
     overallScore: data.scores.overall,
     categoryScores: data.scores.byCategory,
     inspectedCategories: data.scores.inspectedCategories,
+    lightlyInspectedCategories,
     findingSummaries: top.map((f) => ({
       category: f.category,
       severity: f.severity,
       title: f.title,
       evidenceLevel: f.evidenceLevel,
     })),
-    topRecommendations: sorted
-      .filter((f) => f.severity === "critical" || f.severity === "high")
+    topRecommendations: prioritized
+      .filter((f) => f.severity === "critical" || f.severity === "high" || f.severity === "medium")
       .slice(0, 5)
       .map((f) => f.recommendation),
   };
@@ -101,6 +96,10 @@ export async function generateReportEnrichment(
     uninspected.length > 0
       ? `NOT inspected (insufficient evidence — do not comment on these): ${uninspected.join(", ")}`
       : "";
+  const lightlyInspectedLine =
+    input.lightlyInspectedCategories && input.lightlyInspectedCategories.length > 0
+      ? `Lightly inspected (limited evidence — be cautious about certainty): ${input.lightlyInspectedCategories.join(", ")}`
+      : "";
 
   const findingLines = input.findingSummaries
     .map((f) => `- [${f.severity.toUpperCase()}/${f.evidenceLevel}] ${f.category}: ${f.title}`)
@@ -125,8 +124,9 @@ Domain: ${input.domain}
 ${scopeLine}
 Overall score: ${input.overallScore}/100
 ${coverageLine}
+${lightlyInspectedLine}
 
-Top findings (all deduplicated):
+Top priorities (already deduplicated and ordered):
 ${findingLines}
 
 Priority recommendations:
