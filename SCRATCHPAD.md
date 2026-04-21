@@ -147,3 +147,17 @@ Synthesis         generate-report-enrichment.ts   LLM downstream of deterministi
 ### Notes
 - `ux_ui` remains a deliberate no-op evaluator for now because the current deterministic evidence set is DOM-first, not visual-layout aware.
 - During verification, `npm run typecheck` initially failed because `.next/types/` contained stale numbered duplicates (`validator 5.ts`, `routes.d 10.ts`, etc.). Cleaning those generated artifacts and rerunning `next typegen` resolved the issue without changing product code.
+
+## Shot 12 — Full report professionalization pass (2026-04-21)
+
+### What changed
+1. Added `src/server/audits/build-full-report.ts` to assemble a deterministic, client-readable report structure from existing findings, top priorities, scores, and inspection states.
+2. Added `/report/[auditRunId]/full` as a long-form document route with executive summary, top priorities, score summary, category review, strategic readout, recommended next actions, and appendix/evidence notes.
+3. Added `src/lib/report-presentation.ts` so both report routes share display helpers like category labels, score colors, support labels, and homepage-prefix stripping.
+4. Tightened evaluator descriptions/recommendations for sharper, more professional stored finding copy without changing detection logic.
+5. Added tests for full-report assembly and full-report route rendering.
+
+### Notes
+- Full report copy is deterministic. It summarizes and frames existing findings; it does not create new issues.
+- Homepage-only scope remains explicit at the report level, but repeated `Homepage-only audit:` prefixes are stripped from rendered finding text for readability.
+- Existing runtime/deployment architecture was left unchanged in this pass.

@@ -1,32 +1,16 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { reportRepository } from "@/db/report";
 import { enrichmentRepository } from "@/db/enrichment";
-import type { Finding, FindingCategory, OutreachAsset } from "@/lib/types";
-
-const CATEGORY_LABELS: Record<FindingCategory, string> = {
-  performance: "Performance",
-  technical_seo: "Technical SEO",
-  accessibility: "Accessibility",
-  ux_ui: "UX / UI",
-  messaging_content: "Messaging & Content",
-  conversion: "Conversion",
-  trust_signals: "Trust Signals",
-  mobile_experience: "Mobile Experience",
-};
-
-const SEVERITY_COLORS: Record<Finding["severity"], string> = {
-  critical: "#dc2626",
-  high: "#ea580c",
-  medium: "#d97706",
-  low: "#65a30d",
-  info: "#6b7280",
-};
-
-const EVIDENCE_COLORS: Record<Finding["evidenceLevel"], string> = {
-  Measured: "#0284c7",
-  Observed: "#7c3aed",
-  Inferred: "#9ca3af",
-};
+import type { OutreachAsset } from "@/lib/types";
+import {
+  CATEGORY_LABELS,
+  EVIDENCE_COLORS,
+  getFindingSupportLabel,
+  scoreColor,
+  SEVERITY_COLORS,
+  stripHomepageScopePrefix,
+} from "@/lib/report-presentation";
 
 const REVIEW_STATE_STYLES = {
   inspected_clean: {
@@ -50,35 +34,6 @@ const REVIEW_STATE_STYLES = {
     text: "#475569",
   },
 } as const;
-
-function scoreColor(score: number) {
-  if (score >= 80) return "#16a34a";
-  if (score >= 60) return "#d97706";
-  return "#dc2626";
-}
-
-function getFindingSupportLabel(finding: Finding) {
-  const pageCount =
-    typeof finding.evidenceRef.pageCount === "number"
-      ? finding.evidenceRef.pageCount
-      : finding.evidenceRef.pageUrl
-        ? 1
-        : 0;
-  const evidenceKeyCount = Array.isArray(finding.evidenceRef.evidenceKeys)
-    ? finding.evidenceRef.evidenceKeys.length
-    : 0;
-  const parts: string[] = [];
-
-  if (pageCount > 0) {
-    parts.push(`${pageCount} page${pageCount !== 1 ? "s" : ""}`);
-  }
-
-  if (evidenceKeyCount > 0) {
-    parts.push(`${evidenceKeyCount} signal${evidenceKeyCount !== 1 ? "s" : ""}`);
-  }
-
-  return parts.join(" · ") || "Limited support";
-}
 
 export default async function ReportPage({
   params,
@@ -119,6 +74,19 @@ export default async function ReportPage({
             ? ` · Completed: ${new Date(auditRun.completedAt).toLocaleString()}`
             : ""}
         </p>
+        <div style={{ display: "flex", gap: 12, marginTop: 16, flexWrap: "wrap" }}>
+          <Link
+            href={`/report/${auditRunId}/full`}
+            style={{
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              color: "#1d4ed8",
+              textDecoration: "none",
+            }}
+          >
+            Read full report
+          </Link>
+        </div>
 
         {auditRun.homepageOnly && (
           <div
@@ -307,7 +275,9 @@ export default async function ReportPage({
                   >
                     {finding.evidenceLevel} · {finding.confidence}
                   </span>
-                  <span style={{ fontWeight: 600 }}>{finding.title}</span>
+                  <span style={{ fontWeight: 600 }}>
+                    {stripHomepageScopePrefix(finding.title)}
+                  </span>
                 </div>
                 <p
                   style={{
@@ -325,10 +295,10 @@ export default async function ReportPage({
                     marginBottom: 8,
                   }}
                 >
-                  {finding.description}
+                  {stripHomepageScopePrefix(finding.description)}
                 </p>
                 <p style={{ fontSize: "0.875rem", color: "#065f46" }}>
-                  <strong>Recommendation:</strong> {finding.recommendation}
+                  <strong>Recommendation:</strong> {stripHomepageScopePrefix(finding.recommendation)}
                 </p>
               </div>
             ))}
@@ -569,7 +539,7 @@ export default async function ReportPage({
                       <span
                         style={{ fontWeight: 600, fontSize: "0.9rem", flex: 1 }}
                       >
-                        {finding.title}
+                        {stripHomepageScopePrefix(finding.title)}
                       </span>
                     </div>
                     <p
@@ -588,7 +558,7 @@ export default async function ReportPage({
                         marginBottom: 8,
                       }}
                     >
-                      {finding.description}
+                      {stripHomepageScopePrefix(finding.description)}
                     </p>
                     <p
                       style={{
@@ -599,7 +569,7 @@ export default async function ReportPage({
                         borderRadius: 4,
                       }}
                     >
-                      <strong>Recommendation:</strong> {finding.recommendation}
+                      <strong>Recommendation:</strong> {stripHomepageScopePrefix(finding.recommendation)}
                     </p>
                   </div>
                 ))}

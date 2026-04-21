@@ -18,7 +18,8 @@ export const evaluateMobileExperience: SpecialistEvaluator = ({ snapshot, metric
       confidence: "high",
       evidenceLevel: "Measured",
       evidenceKeys: ["viewport_meta_present"],
-      recommendation: "Add a standard viewport meta tag so mobile browsers scale the page correctly.",
+      recommendation:
+        "Add a standard viewport meta tag so mobile browsers scale the page correctly on first load.",
       businessImpact: "high",
     });
   }
@@ -35,13 +36,13 @@ export const evaluateMobileExperience: SpecialistEvaluator = ({ snapshot, metric
       issueType: "dense_mobile_intro",
       title: "The opening section is likely to feel dense on mobile",
       description:
-        `The captured top of page packs ${metrics.pageStructure.denseIntroHeadings} headings, ${metrics.pageStructure.denseIntroButtons} button-like elements, and ${metrics.pageStructure.denseIntroCtas} CTA cues into the opening layout. On small screens that often translates into a crowded first scroll.`,
+        `The captured top of page packs ${metrics.pageStructure.denseIntroHeadings} headings, ${metrics.pageStructure.denseIntroButtons} button-like elements, and ${metrics.pageStructure.denseIntroCtas} CTA cues into the opening layout. On small screens, that usually turns the first scroll into a crowded decision point.`,
       severity: "medium",
       confidence: "medium",
       evidenceLevel: "Observed",
       evidenceKeys: ["mobile_layout", "messaging_quality", "cta_inventory"],
       recommendation:
-        "Simplify the opening mobile experience around one clear message and one primary action before stacking additional elements.",
+        "Simplify the opening mobile experience around one clear message and one primary action before stacking secondary elements.",
       businessImpact: "high",
     });
   }
@@ -59,7 +60,7 @@ export const evaluateMobileExperience: SpecialistEvaluator = ({ snapshot, metric
       description:
         !metrics.formFriction.hasLabels
           ? "The captured form relies on unlabeled fields, which is especially punishing on mobile where users cannot scan field context as easily."
-          : `The captured form asks for ${metrics.formFriction.fieldCount} fields with ${metrics.formFriction.requiredCount} required. That is a heavy mobile first step for a small-screen visitor.`,
+          : `The captured form asks for ${metrics.formFriction.fieldCount} fields with ${metrics.formFriction.requiredCount} required. That is a heavy first step for a small-screen visitor.`,
       severity: snapshot.pageType === "contact" ? "high" : "medium",
       confidence: "high",
       evidenceLevel: "Observed",
@@ -86,7 +87,7 @@ export const evaluateMobileExperience: SpecialistEvaluator = ({ snapshot, metric
       evidenceLevel: "Observed",
       evidenceKeys: ["mobile_layout", "content_hierarchy"],
       recommendation:
-        "Shorten stacked sections, tighten copy blocks, and collapse secondary content so the mobile path reaches key proof and conversion points sooner.",
+        "Shorten stacked sections, tighten copy blocks, and collapse secondary content so the mobile path reaches proof and conversion points sooner.",
       businessImpact: "medium",
     });
   }

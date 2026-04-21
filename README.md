@@ -7,6 +7,7 @@ Evidence-backed website audits. Rule-first, LLM-second. Fullstack Node.js + Type
 - Vercel-only processing is the intended architecture in code; intake triggers audit processing inside the app project.
 - Deterministic findings and scores remain the source of truth; Gemini enrichment is additive only.
 - `/audits` dashboard lists recent audit runs with status, failure reasons, and links to reports.
+- Report experience now has both a concise operational view (`/report/[auditRunId]`) and a long-form document view (`/report/[auditRunId]/full`).
 - Runtime blockers addressed: Lambda-compatible browser launch args + `maxDuration = 300` on the intake route.
 - Operational smoke validation is still pending on Vercel; end-to-end proof requires a live deploy run.
 
@@ -64,7 +65,7 @@ public/         Static assets
 - [x] Playwright capture path
 - [x] In-project processing (discovery, capture, analysis)
 - [x] Deterministic evidence extraction + finding generation
-- [x] Scoring + report view (`/report/[auditRunId]`)
+- [x] Scoring + report views (`/report/[auditRunId]`, `/report/[auditRunId]/full`)
 - [ ] Real storage provider
 - [x] LLM enrichment layer
 - [ ] Auth / access control
@@ -142,6 +143,14 @@ Browser capture uses `@sparticuz/chromium` (Lambda-compatible binary) and `playw
 - `export const maxDuration = 300` added to the intake route segment so Vercel allows the `after()` Playwright callback up to 5 minutes (Pro plan limit).
 - `/audits` dashboard page added — reads recent audit runs from DB, shows status badges, failure reasons, and report links. Works with zero enrichment.
 - All existing tests still pass; 4 new tests added for the `AuditRunListItem` shape.
+
+## Shot 12 — report professionalization pass
+
+- Finding copy and recommendations were tightened so stored audit output reads more like a consultant review and less like a generic heuristic engine.
+- New document-style report route at `/report/[auditRunId]/full` adds: executive summary, top priorities, score summary, category-by-category review, strategic readout, recommended next actions, and appendix/evidence notes.
+- Full report assembly is deterministic and grounded in existing findings/scores only. No new issues are invented in the long-form view.
+- Report UI now strips repetitive homepage-only prefixes from rendered finding copy while preserving the scope notice at the report level.
+- Added focused tests for full-report data shaping and route rendering.
 
 ## Validation note
 

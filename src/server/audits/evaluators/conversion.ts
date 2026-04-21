@@ -16,13 +16,13 @@ export const evaluateConversion: SpecialistEvaluator = ({ snapshot, metrics }) =
       issueType: "weak_next_step_conversion_path",
       title: "Weak next-step conversion path on captured page",
       description:
-        "Based on the captured DOM, the page may not present a clear next step because no standard CTA/button heuristic or form was detected.",
+        "Based on the captured DOM, the page may not present a clear next step because no standard CTA/button pattern or form was detected.",
       severity: snapshot.pageType === "contact" ? "high" : "medium",
       confidence: "medium",
       evidenceLevel: "Inferred",
       evidenceKeys: ["cta_present", "form_present", "button_count"],
       recommendation:
-        "Add one clear next-step action for this page, such as a contact CTA, booking path, or request form.",
+        "Add one obvious next-step action for this page, such as a contact CTA, booking route, or short request form.",
       businessImpact: "high",
     });
   }
@@ -33,7 +33,7 @@ export const evaluateConversion: SpecialistEvaluator = ({ snapshot, metrics }) =
       issueType: "competing_cta_hierarchy",
       title: "Primary and secondary actions compete for attention",
       description:
-        `The captured page exposes ${metrics.ctaInventory.count} CTA-pattern elements across ${metrics.ctaInventory.uniqueCount} distinct labels. That spread makes it harder to tell which action is primary versus secondary.`,
+        `The captured page exposes ${metrics.ctaInventory.count} CTA-pattern elements across ${metrics.ctaInventory.uniqueCount} distinct labels. That spread makes it harder to tell which action should carry the page.`,
       severity:
         snapshot.pageType === "homepage" || snapshot.pageType === "contact"
           ? "medium"
@@ -42,7 +42,7 @@ export const evaluateConversion: SpecialistEvaluator = ({ snapshot, metrics }) =
       evidenceLevel: "Observed",
       evidenceKeys: ["cta_inventory", "conversion_path"],
       recommendation:
-        "Choose one primary action for this page and demote the rest to secondary or contextual links.",
+        "Choose one primary action for the page and demote the rest to clearly secondary or contextual links.",
       businessImpact: "high",
     });
   }
@@ -55,13 +55,13 @@ export const evaluateConversion: SpecialistEvaluator = ({ snapshot, metrics }) =
       description:
         metrics.trustSignals.density <= 2
           ? "Three or more CTAs on the captured page share the same label text, but the surrounding page shows only a thin trust layer. Repeating the same CTA without stronger framing can feel pushy instead of persuasive."
-          : "Three or more CTAs on the captured page share the same label text. Identical CTA labels spread across different sections signal repetition without hierarchy, which can reduce click-through focus.",
+          : "Three or more CTAs on the captured page share the same label text. Repeating identical CTA language across different sections creates repetition without clear hierarchy.",
       severity: metrics.trustSignals.density <= 2 ? "medium" : "low",
       confidence: "high",
       evidenceLevel: "Observed",
       evidenceKeys: ["cta_inventory", "trust_signals"],
       recommendation:
-        "Differentiate CTA labels by context (for example, 'Book a call' vs 'See pricing') so each action has a distinct purpose.",
+        "Differentiate CTA labels by context so each action signals a distinct purpose rather than repeating the same ask everywhere.",
       businessImpact: "medium",
     });
   }
@@ -72,13 +72,13 @@ export const evaluateConversion: SpecialistEvaluator = ({ snapshot, metrics }) =
       issueType: "cta_overload",
       title: "CTA overload may dilute primary conversion focus",
       description:
-        `The captured page contains ${metrics.ctaInventory.count} CTA-pattern elements. Overloading a page with competing calls-to-action fragments visitor attention and weakens the primary conversion path.`,
+        `The captured page contains ${metrics.ctaInventory.count} CTA-pattern elements. That volume fragments attention and weakens the page's primary conversion path.`,
       severity: hasMultipleDistinctCtas ? "medium" : "low",
       confidence: "medium",
       evidenceLevel: "Observed",
       evidenceKeys: ["cta_inventory", "conversion_path"],
       recommendation:
-        "Identify the single highest-value action for this page and reduce secondary CTAs to supporting roles.",
+        "Identify the single highest-value action for this page and reduce secondary CTAs to supporting roles around it.",
       businessImpact: "medium",
     });
   }
@@ -89,13 +89,13 @@ export const evaluateConversion: SpecialistEvaluator = ({ snapshot, metrics }) =
       issueType: "long_form_friction",
       title: "Long form may create conversion friction",
       description:
-        `The captured form contains ${metrics.formFriction.fieldCount} visible input fields. Forms with more than 6 fields have measurably higher abandonment rates, especially for first-contact pages.`,
+        `The captured form contains ${metrics.formFriction.fieldCount} visible input fields. That is a heavy first-step ask for a cold visitor, especially on lead-generation pages.`,
       severity: "medium",
       confidence: "medium",
       evidenceLevel: "Observed",
       evidenceKeys: ["form_friction", "form_present", "conversion_path"],
       recommendation:
-        "Reduce the form to the minimum fields needed for the first step. Move additional qualification questions to a follow-up.",
+        "Reduce the form to the minimum fields needed for the first step and move qualification questions to a follow-up.",
       businessImpact: "high",
     });
   }
@@ -111,13 +111,13 @@ export const evaluateConversion: SpecialistEvaluator = ({ snapshot, metrics }) =
       description:
         !metrics.formFriction.hasLabels
           ? "The captured form includes fields without matching label elements. On lead forms, unlabeled inputs increase hesitation and slow completion."
-          : `The captured form marks ${metrics.formFriction.requiredCount} fields as required. That is a heavy first-step ask for visitors who have not committed yet.`,
+          : `The captured form marks ${metrics.formFriction.requiredCount} fields as required. That is a demanding first-step ask for visitors who have not committed yet.`,
       severity: snapshot.pageType === "contact" ? "medium" : "low",
       confidence: "high",
       evidenceLevel: "Observed",
       evidenceKeys: ["form_friction", "conversion_path"],
       recommendation:
-        "Trim the first-step form to the minimum required fields and make every input clearly labeled.",
+        "Trim the first-step form to the minimum required fields and make every input explicitly labeled.",
       businessImpact: "high",
     });
   }
@@ -139,7 +139,7 @@ export const evaluateConversion: SpecialistEvaluator = ({ snapshot, metrics }) =
       evidenceLevel: "Inferred",
       evidenceKeys: ["form_friction", "cta_inventory", "conversion_path"],
       recommendation:
-        "Pair the longer form with a lower-friction action such as a short contact CTA, booking link, or email option.",
+        "Pair the longer form with a lower-friction path such as a short contact CTA, booking link, or direct email option.",
       businessImpact: "high",
     });
   }

@@ -19,8 +19,8 @@ export const evaluateUxUi: SpecialistEvaluator = ({ snapshot, metrics }) => {
       title: "Section hierarchy is likely to create scan friction",
       description:
         metrics.pageStructure.duplicateHeadingCount >= 2
-          ? "The captured page repeats section-heading patterns, which makes the layout feel more templated and harder to scan with confidence."
-          : `The captured page stacks ${metrics.pageStructure.sectionCount} sections and several long copy blocks. That combination often weakens scan flow because each section competes for similar visual weight.`,
+          ? "The captured page repeats section-heading patterns, which makes the layout feel templated and harder to scan with confidence."
+          : `The captured page stacks ${metrics.pageStructure.sectionCount} sections and several long copy blocks. That combination weakens scan flow because each section competes for similar visual weight.`,
       severity: snapshot.pageType === "homepage" ? "medium" : "low",
       confidence: "medium",
       evidenceLevel: "Observed",
@@ -41,13 +41,13 @@ export const evaluateUxUi: SpecialistEvaluator = ({ snapshot, metrics }) => {
       issueType: "conversion_area_overload",
       title: "The page is visually busy near conversion areas",
       description:
-        `The captured page combines a form or conversion block with ${metrics.pageStructure.denseIntroCtas} CTA cues and ${metrics.pageStructure.denseIntroButtons} button-like elements near the top of the layout. That often creates a visually noisy decision point.`,
+        `The captured page combines a form or conversion block with ${metrics.pageStructure.denseIntroCtas} CTA cues and ${metrics.pageStructure.denseIntroButtons} button-like elements near the top of the layout. That often creates a noisy decision point.`,
       severity: "medium",
       confidence: "medium",
       evidenceLevel: "Observed",
       evidenceKeys: ["conversion_area_clutter", "content_hierarchy"],
       recommendation:
-        "Reduce competing elements around the main conversion area so the layout reinforces one clear action instead of several visual distractions.",
+        "Reduce competing elements around the main conversion area so the layout reinforces one clear action instead of several distractions.",
       businessImpact: "high",
     });
   }

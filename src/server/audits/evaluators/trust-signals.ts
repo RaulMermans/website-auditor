@@ -15,13 +15,13 @@ export const evaluateTrustSignals: SpecialistEvaluator = ({ snapshot, metrics })
       issueType: "low_trust_signal_density",
       title: "Low trust signal density on key conversion page",
       description:
-        "The captured page shows at most one trust indicator across proof, reassurance, and contact cues. Visitors on key pages typically need multiple credibility signals to proceed.",
+        "The captured page shows at most one trust indicator across proof, reassurance, and contact cues. On key decision pages, that leaves the business looking under-substantiated.",
       severity: snapshot.pageType === "contact" ? "high" : "medium",
       confidence: "medium",
       evidenceLevel: "Observed",
       evidenceKeys: ["trust_signals", "contact_reassurance"],
       recommendation:
-        "Add a fuller trust layer near the main action: credible proof, a reassurance cue, and a clear contact path.",
+        "Build a fuller trust layer near the main action with concrete proof, a reassurance cue, and a clear contact path.",
       businessImpact: "high",
     });
   }

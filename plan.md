@@ -129,6 +129,26 @@ AC10 ✓ plan.md and SCRATCHPAD.md updated
 
 Remaining runtime validation debt: live Vercel smoke run, real artifact storage provider, and future visual evidence for `ux_ui`.
 
+## Shot 12 — Report professionalization pass (complete)
+
+- Added deterministic `build-full-report.ts` shaping so the app can assemble a client-readable long-form report from existing findings, scores, and inspection semantics.
+- Added `/report/[auditRunId]/full` as a document-style reading experience with executive summary, top priorities, score summary, category review, strategic readout, recommended next actions, and appendix/evidence notes.
+- Tightened evaluator wording and recommendations so stored findings read more precisely and less mechanically.
+- Existing concise report now links to the full report and strips repetitive homepage-only prefixes at render time while preserving scope truth.
+- Added focused tests for full-report assembly and route rendering.
+- Verification target remains: `npm install`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:coverage`, `npm run build`.
+
+AC1 ✓ findings read more professionally
+AC2 ✓ recommendations are more concrete
+AC3 ✓ full readable report route added
+AC4 ✓ full report includes all required sections
+AC5 ✓ full report stays grounded in deterministic findings
+AC6 ✓ confidence / evidence / inspection semantics are clearer
+AC7 ✓ concise report flow preserved
+AC8 ✓ tests cover new report assembly and presentation
+AC9 pending verification run
+AC10 ✓ README / plan / SCRATCHPAD updated
+
 ## Deferred decisions
 
 | Decision | Status | Needed by |

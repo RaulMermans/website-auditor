@@ -11,7 +11,7 @@ export const evaluateAccessibility: SpecialistEvaluator = ({ metrics }) => {
       issueType: "images_missing_alt_text",
       title: "Images missing alt text",
       description:
-        "The captured HTML includes image elements without usable alt attributes, which reduces screen-reader context and fallback text quality.",
+        "The captured HTML includes image elements without usable alt attributes, so screen-reader users and broken-image states lose basic context that should be available on the page.",
       severity:
         metrics.missingAltCount >= 3 || metrics.missingAltCount === metrics.imageCount
           ? "high"
@@ -19,7 +19,8 @@ export const evaluateAccessibility: SpecialistEvaluator = ({ metrics }) => {
       confidence: "high",
       evidenceLevel: "Measured",
       evidenceKeys: ["image_count", "missing_alt_count"],
-      recommendation: "Add meaningful alt text for informative images and empty alt text only for decorative ones.",
+      recommendation:
+        "Write meaningful alt text for informative images and reserve empty alt attributes only for decorative assets.",
       businessImpact: "medium",
     },
   ];
