@@ -21,6 +21,8 @@ export default defineConfig({
         // Type-only and env singleton files
         "src/lib/types.ts",
         "src/lib/env.ts",
+        // Exclude macOS Finder duplicate copies (files ending in " 2.ts")
+        "src/**/* 2.ts",
       ],
       thresholds: { lines: 80 },
     },

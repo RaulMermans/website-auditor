@@ -8,6 +8,15 @@ import type {
 } from "@/lib/types";
 import type { CreateFindingInput, CreatePageEvidenceInput } from "@/db/analysis";
 
+const GENERIC_INTRO_PATTERNS = [
+  /^welcome to (our|the|my)\b/i,
+  /^we (are|provide|offer|specialize)\b/i,
+  /^our (company|team|agency|firm|business)\b/i,
+  /^at [a-zA-Z ]{1,40},?\s+we /i,
+  /^hello,?\s+(we'?re|our)\b/i,
+  /^thank you for visiting\b/i,
+];
+
 const CTA_PATTERNS = [
   "contact",
   "book",
@@ -37,6 +46,34 @@ export interface ExtractedPageArtifacts {
   findings: CreateFindingInput[];
 }
 
+interface TrustSignalMetrics {
+  testimonials: boolean;
+  socialProof: boolean;
+  logoBlock: boolean;
+  guarantee: boolean;
+  contactInfo: boolean;
+  privacyLink: boolean;
+  certifications: boolean;
+  density: number;
+}
+
+interface CTAInventoryMetrics {
+  count: number;
+  texts: string[];
+  hasDuplicates: boolean;
+}
+
+interface FormFrictionMetrics {
+  fieldCount: number;
+  hasLabels: boolean;
+  requiredCount: number;
+}
+
+interface MessagingQualityMetrics {
+  genericIntroDetected: boolean;
+  heroTextLength: number;
+}
+
 interface ParsedPageMetrics {
   title: { present: boolean; text: string | null };
   metaDescription: { present: boolean; content: string | null };
@@ -56,6 +93,11 @@ interface ParsedPageMetrics {
     hints: string[];
   };
   textFlags: string[];
+  trustSignals: TrustSignalMetrics;
+  ctaInventory: CTAInventoryMetrics;
+  formFriction: FormFrictionMetrics;
+  messagingQuality: MessagingQualityMetrics;
+  scriptCount: number;
 }
 
 interface TagMatch {
@@ -183,6 +225,112 @@ function detectTextFlags(html: string) {
   );
 }
 
+function detectTrustSignals(html: string): TrustSignalMetrics {
+  const testimonials =
+    /<blockquote\b/i.test(html) ||
+    /class="[^"]*testimonial/i.test(html) ||
+    /class="[^"]*review/i.test(html) ||
+    /\d+\.?\d*\s*(out of 5|stars?|\/5)/i.test(html) ||
+    /[★⭐]{3,}/u.test(html);
+
+  const socialProof =
+    /trusted by\b/i.test(html) ||
+    /\d+\+?\s*(customers?|clients?|users?|companies|brands)\b/i.test(html) ||
+    /\bused by\b/i.test(html);
+
+  const logoBlock =
+    /class="[^"]*logo[s-]/i.test(html) ||
+    /class="[^"]*partner/i.test(html) ||
+    /class="[^"]*client[s-]/i.test(html);
+
+  const guarantee =
+    /money.?back/i.test(html) ||
+    /\bguarantee\b/i.test(html) ||
+    /risk.?free\b/i.test(html) ||
+    /no.?risk\b/i.test(html) ||
+    /satisfaction guarantee/i.test(html);
+
+  const contactInfo =
+    /href="tel:/i.test(html) ||
+    /\+?1?[-.\s]?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/.test(html);
+
+  const privacyLink =
+    /<a[^>]*>[^<]*(privacy|terms)[^<]*<\/a>/i.test(html);
+
+  const certifications =
+    /\bcertified\b/i.test(html) ||
+    /\baccredited\b/i.test(html) ||
+    /\bISO\b/.test(html) ||
+    /award.{0,20}winning/i.test(html);
+
+  const signals = [testimonials, socialProof, logoBlock, guarantee, contactInfo, privacyLink, certifications];
+  const density = signals.filter(Boolean).length;
+
+  return { testimonials, socialProof, logoBlock, guarantee, contactInfo, privacyLink, certifications, density };
+}
+
+function buildCtaInventory(
+  buttons: Array<{ text: string }>,
+  anchors: Array<{ text: string }>,
+  inputButtons: Array<{ attrs: Record<string, string> }>
+): CTAInventoryMetrics {
+  const ctaItems: string[] = [];
+
+  for (const btn of buttons) {
+    if (matchesCta(btn.text)) ctaItems.push(normalizeWhitespace(btn.text));
+  }
+  for (const anchor of anchors) {
+    if (matchesCta(anchor.text)) ctaItems.push(normalizeWhitespace(anchor.text));
+  }
+  for (const btn of inputButtons) {
+    const val = btn.attrs.value ?? "";
+    if (matchesCta(val)) ctaItems.push(normalizeWhitespace(val));
+  }
+
+  const lowerCounts = new Map<string, number>();
+  for (const t of ctaItems) {
+    const key = t.toLowerCase();
+    lowerCounts.set(key, (lowerCounts.get(key) ?? 0) + 1);
+  }
+  const hasDuplicates = Array.from(lowerCounts.values()).some((c) => c >= 3);
+  const unique = [...new Set(ctaItems)].slice(0, 10);
+
+  return { count: ctaItems.length, texts: unique, hasDuplicates };
+}
+
+function detectFormFriction(html: string): FormFrictionMetrics {
+  const inputFields = findStartTags(html, "input").filter((tag) => {
+    const type = (tag.attrs.type ?? "text").toLowerCase();
+    return !["hidden", "submit", "button", "image", "reset"].includes(type);
+  });
+  const textareas = findStartTags(html, "textarea");
+  const labelCount = (html.match(/<label\b/gi) ?? []).length;
+  const allFields = [...inputFields, ...textareas];
+  const requiredCount = allFields.filter(
+    (f) => "required" in f.attrs
+  ).length;
+
+  return {
+    fieldCount: allFields.length,
+    hasLabels: labelCount > 0,
+    requiredCount,
+  };
+}
+
+function detectMessagingQuality(html: string): MessagingQualityMetrics {
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const bodyText = bodyMatch ? stripTags(bodyMatch[1]) : stripTags(html);
+  const trimmed = bodyText.replace(/\s+/g, " ").trim();
+  const hero = trimmed.slice(0, 400);
+
+  const genericIntroDetected = GENERIC_INTRO_PATTERNS.some((pat) => pat.test(hero));
+
+  return {
+    genericIntroDetected,
+    heroTextLength: trimmed.length,
+  };
+}
+
 function matchesCta(text: string) {
   const normalized = normalizeWhitespace(text).toLowerCase();
   return CTA_PATTERNS.some((pattern) => normalized.includes(pattern));
@@ -242,6 +390,12 @@ function parseMetrics(snapshot: Pick<PageSnapshot, "url">, html: string): Parsed
       .includes("canonical")
   );
 
+  const trustSignals = detectTrustSignals(html);
+  const ctaInventory = buildCtaInventory(buttons, anchors, inputButtons);
+  const formFriction = detectFormFriction(html);
+  const messagingQuality = detectMessagingQuality(html);
+  const scriptCount = (html.match(/<script\b/gi) ?? []).length;
+
   return {
     title: {
       present: titleText.length > 0,
@@ -269,6 +423,11 @@ function parseMetrics(snapshot: Pick<PageSnapshot, "url">, html: string): Parsed
     viewportMetaPresent: Boolean(getMetaContent(html, "viewport")),
     headingStructure,
     textFlags,
+    trustSignals,
+    ctaInventory,
+    formFriction,
+    messagingQuality,
+    scriptCount,
   };
 }
 
@@ -397,6 +556,46 @@ function buildPageEvidence(
       key: "page_text_flags",
       value: metrics.textFlags,
       evidenceLevel: "Observed",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "trust_signals",
+      key: "trust_signals",
+      value: metrics.trustSignals,
+      evidenceLevel: "Observed",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "conversion",
+      key: "cta_inventory",
+      value: metrics.ctaInventory,
+      evidenceLevel: "Measured",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "conversion",
+      key: "form_friction",
+      value: metrics.formFriction,
+      evidenceLevel: "Measured",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "messaging_content",
+      key: "messaging_quality",
+      value: metrics.messagingQuality,
+      evidenceLevel: "Observed",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "performance",
+      key: "script_count",
+      value: metrics.scriptCount,
+      evidenceLevel: "Measured",
     },
   ];
 }
@@ -603,6 +802,102 @@ function buildFindingDrafts(
       evidenceKeys: ["page_text_flags"],
       recommendation:
         "Replace placeholder or staging copy with production messaging before using this page in audits or outreach.",
+    });
+  }
+
+  // Trust signals
+  const trustKeyPages: typeof snapshot.pageType[] = ["homepage", "services", "contact"];
+  if (trustKeyPages.includes(snapshot.pageType) && metrics.trustSignals.density <= 1) {
+    drafts.push({
+      category: "trust_signals",
+      title: "Low trust signal density on key conversion page",
+      description:
+        "The captured page shows at most one trust indicator (testimonials, social proof, logo block, guarantee, contact info, privacy link, or certifications). Visitors on key pages typically need multiple credibility signals to proceed.",
+      severity: "medium",
+      confidence: "medium",
+      evidenceLevel: "Observed",
+      evidenceKeys: ["trust_signals"],
+      recommendation:
+        "Add at least 2-3 trust signals to this page: real customer testimonials, logo block of known clients, or a satisfaction guarantee.",
+    });
+  }
+
+  // CTA issues
+  if (metrics.ctaInventory.hasDuplicates && metrics.ctaInventory.count >= 3) {
+    drafts.push({
+      category: "conversion",
+      title: "Repeated CTA labels may reduce conversion clarity",
+      description:
+        "Three or more CTAs on the captured page share the same label text. Identical CTA labels spread across different sections signal repetition without hierarchy, which can reduce click-through focus.",
+      severity: "low",
+      confidence: "high",
+      evidenceLevel: "Observed",
+      evidenceKeys: ["cta_inventory"],
+      recommendation:
+        "Differentiate CTA labels by context (e.g., 'Book a call' vs 'See pricing') so each action has a distinct purpose.",
+    });
+  }
+
+  if (metrics.ctaInventory.count > 6) {
+    drafts.push({
+      category: "conversion",
+      title: "CTA overload may dilute primary conversion focus",
+      description:
+        `The captured page contains ${metrics.ctaInventory.count} CTA-pattern elements. Overloading a page with competing calls-to-action fragments visitor attention and weakens the primary conversion path.`,
+      severity: "low",
+      confidence: "medium",
+      evidenceLevel: "Observed",
+      evidenceKeys: ["cta_inventory"],
+      recommendation:
+        "Identify the single highest-value action for this page and reduce secondary CTAs to supporting roles.",
+    });
+  }
+
+  // Form friction
+  if (metrics.formPresent && metrics.formFriction.fieldCount > 6) {
+    drafts.push({
+      category: "conversion",
+      title: "Long form may create conversion friction",
+      description:
+        `The captured form contains ${metrics.formFriction.fieldCount} visible input fields. Forms with more than 6 fields have measurably higher abandonment rates, especially for first-contact pages.`,
+      severity: "medium",
+      confidence: "medium",
+      evidenceLevel: "Observed",
+      evidenceKeys: ["form_friction", "form_present"],
+      recommendation:
+        "Reduce the form to the minimum fields needed for the first step. Move additional qualification questions to a follow-up.",
+    });
+  }
+
+  // Messaging quality
+  if (snapshot.pageType === "homepage" && metrics.messagingQuality.genericIntroDetected) {
+    drafts.push({
+      category: "messaging_content",
+      title: "Generic hero messaging obscures value proposition",
+      description:
+        "The homepage hero text begins with a generic introductory phrase ('Welcome to', 'We are', 'Our company'). Generic intros waste the above-fold position that should state a clear, differentiated outcome for the visitor.",
+      severity: "medium",
+      confidence: "medium",
+      evidenceLevel: "Observed",
+      evidenceKeys: ["messaging_quality"],
+      recommendation:
+        "Rewrite the hero opening to lead with the outcome or transformation the visitor gets, not a description of the business.",
+    });
+  }
+
+  // Performance hint
+  if (metrics.scriptCount > 15) {
+    drafts.push({
+      category: "performance",
+      title: "Heavy script loading may delay page responsiveness",
+      description:
+        `The captured HTML includes ${metrics.scriptCount} script elements. High script counts are a leading indicator of render-blocking load issues and slow Time to Interactive, particularly on mobile connections.`,
+      severity: "low",
+      confidence: "medium",
+      evidenceLevel: "Measured",
+      evidenceKeys: ["script_count"],
+      recommendation:
+        "Audit and defer non-critical scripts, consolidate third-party tags, and set a script budget to improve load performance.",
     });
   }
 

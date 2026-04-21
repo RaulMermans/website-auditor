@@ -80,4 +80,32 @@ describe("scoreAuditByCategory", () => {
     expect(ALL_FINDING_CATEGORIES).toContain("performance");
     expect(ALL_FINDING_CATEGORIES).toContain("mobile_experience");
   });
+
+  it("defaults inspectedCategories to all categories when not provided", () => {
+    const result = scoreAuditByCategory([]);
+    const inspected = result.inspectedCategories ?? ALL_FINDING_CATEGORIES;
+    expect(inspected).toHaveLength(ALL_FINDING_CATEGORIES.length);
+  });
+
+  it("returns only the provided inspectedCategories", () => {
+    const inspected: typeof ALL_FINDING_CATEGORIES = ["technical_seo", "accessibility"];
+    const result = scoreAuditByCategory([], inspected);
+    expect(result.inspectedCategories).toEqual(inspected);
+  });
+
+  it("reports uninspected category as 100 in byCategory but exposes it via inspectedCategories", () => {
+    const inspected: typeof ALL_FINDING_CATEGORIES = ["technical_seo"];
+    const result = scoreAuditByCategory(
+      [{ id: "1", severity: "high", category: "technical_seo" }],
+      inspected
+    );
+    // technical_seo penalized
+    expect(result.byCategory.technical_seo).toBe(90);
+    // performance not inspected — byCategory still shows 100 (penalty model)
+    expect(result.byCategory.performance).toBe(100);
+    // inspectedCategories reflects what was passed
+    expect(result.inspectedCategories).toBeDefined();
+    expect(result.inspectedCategories).not.toContain("performance");
+    expect(result.inspectedCategories).toContain("technical_seo");
+  });
 });

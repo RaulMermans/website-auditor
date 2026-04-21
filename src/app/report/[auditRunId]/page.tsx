@@ -141,6 +141,7 @@ export default async function ReportPage({
           {ALL_FINDING_CATEGORIES.map((cat) => {
             const score = scores.byCategory[cat];
             const count = findingsByCategory.get(cat)?.length ?? 0;
+            const isInspected = !scores.inspectedCategories || scores.inspectedCategories.includes(cat);
             return (
               <div
                 key={cat}
@@ -149,17 +150,18 @@ export default async function ReportPage({
                   background: "#fff",
                   border: "1px solid #e5e7eb",
                   borderRadius: 6,
+                  opacity: isInspected ? 1 : 0.6,
                 }}
               >
                 <div
                   style={{
                     fontWeight: 700,
                     fontSize: "1.25rem",
-                    color: scoreColor(score),
+                    color: isInspected ? scoreColor(score) : "#9ca3af",
                     marginBottom: 4,
                   }}
                 >
-                  {score}
+                  {isInspected ? score : "—"}
                 </div>
                 <div
                   style={{
@@ -172,9 +174,11 @@ export default async function ReportPage({
                   {CATEGORY_LABELS[cat]}
                 </div>
                 <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
-                  {count === 0
-                    ? "No findings"
-                    : `${count} finding${count !== 1 ? "s" : ""}`}
+                  {!isInspected
+                    ? "Not inspected"
+                    : count === 0
+                      ? "No findings"
+                      : `${count} finding${count !== 1 ? "s" : ""}`}
                 </div>
               </div>
             );

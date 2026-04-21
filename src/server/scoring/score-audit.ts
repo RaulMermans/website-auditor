@@ -31,10 +31,13 @@ export const ALL_FINDING_CATEGORIES: FindingCategory[] = [
 export interface CategoryScores {
   overall: number;
   byCategory: Record<FindingCategory, number>;
+  /** Categories where at least one evidence item was collected during the audit. Absent means all were inspected. */
+  inspectedCategories?: FindingCategory[];
 }
 
 export function scoreAuditByCategory(
-  findings: Pick<Finding, "id" | "severity" | "category">[]
+  findings: Pick<Finding, "id" | "severity" | "category">[],
+  inspectedCategories?: FindingCategory[]
 ): CategoryScores {
   const overallPenalty = findings.reduce(
     (sum, f) => sum + (SEVERITY_WEIGHT[f.severity] ?? 0),
@@ -53,6 +56,7 @@ export function scoreAuditByCategory(
   return {
     overall: Math.max(0, MAX_SCORE - overallPenalty),
     byCategory,
+    inspectedCategories: inspectedCategories ?? [...ALL_FINDING_CATEGORIES],
   };
 }
 

@@ -78,3 +78,48 @@ Replaced `playwright` + `scripts/install-playwright.mjs` postinstall with `@spar
 - `GEMINI_MODEL` — optional; defaults to `gemini-2.5-flash`
 - `NEXT_PUBLIC_APP_URL` — optional; used for links only
 - `WORKER_SECRET` and `WORKER_ENDPOINT` are no longer part of the deployment contract
+
+---
+
+## Shot 10 — Agentic audit quality upgrade (2026-04-21)
+
+### Explicit agentic workflow
+
+```
+Orchestrator      process-audit-run.ts           status transitions
+Capture Agent     capture-audit-run.ts            Playwright → page_snapshots
+Evidence Agent    extract-page-evidence.ts        DOM → page_evidence (deterministic)
+Deduplication     deduplicate-findings.ts         merge by (category, title fingerprint)
+Scoring           score-audit.ts                  penalty model + inspectedCategories
+Report Assembly   db/report.ts + report page      coverage-aware display
+Synthesis         generate-report-enrichment.ts   LLM downstream of deterministic data
+```
+
+### What changed
+
+1. **`deduplicate-findings.ts` (new)**: collapses same-issue findings across pages into one, aggregates `pageUrls` on `evidenceRef`.
+2. **`extract-page-evidence.ts`**: added trust signal detection, CTA inventory, form friction, messaging quality, script count. All new heuristics emit evidence items that mark categories as "inspected".
+3. **`analyze-audit-run.ts`**: calls `deduplicateFindings()` before writing to DB.
+4. **`score-audit.ts`**: `scoreAuditByCategory` now accepts `inspectedCategories?` and returns it on `CategoryScores`. Backward compatible — omitting the arg defaults to all categories inspected.
+5. **`db/report.ts`**: loads distinct `category` from `page_evidence` and passes them to `scoreAuditByCategory`, enabling truthful "Not inspected" reporting.
+6. **`generate-report-enrichment.ts`**: stronger synthesis prompt with explicit dedup, evidence-label, and scope constraints. `EnrichmentPromptInput` gains `inspectedCategories`.
+7. **Report page**: category score cards show "—" and "Not inspected" for uninspected categories instead of false "100".
+
+### Evidence categories now covered per page
+
+| Category | Keys |
+|---|---|
+| technical_seo | title, meta_description, h1_count, internal/external links, canonical, robots_meta, heading_structure |
+| accessibility | image_count, missing_alt_count |
+| mobile_experience | viewport_meta_present |
+| conversion | form_present, cta_present, button_count, cta_inventory, form_friction |
+| messaging_content | page_text_flags, messaging_quality |
+| trust_signals | trust_signals |
+| performance | script_count |
+
+`ux_ui` remains uninspected (needs visual/layout analysis beyond DOM — future work).
+
+### Runtime validation debt (still pending)
+- Vercel smoke run for end-to-end validation
+- Real blob storage provider for production artifacts
+- `ux_ui` category has no heuristics yet

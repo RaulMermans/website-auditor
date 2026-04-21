@@ -184,12 +184,21 @@ export const reportRepository: ReportRepository = {
 
       const findings = findingsResult.rows.map(mapFinding);
 
+      const evidenceCatResult = await client.query<{ category: FindingCategory }>(
+        `SELECT DISTINCT category FROM page_evidence WHERE audit_run_id = $1`,
+        [auditRunId]
+      );
+      const evidenceCategories = evidenceCatResult.rows.map((r) => r.category);
+
       return {
         auditRunId,
         domain: runRow.domain,
         auditRun: mapAuditRun(runRow),
         findings,
-        scores: scoreAuditByCategory(findings),
+        scores: scoreAuditByCategory(
+          findings,
+          evidenceCategories.length > 0 ? evidenceCategories : undefined
+        ),
       };
     });
   },

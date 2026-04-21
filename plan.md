@@ -102,6 +102,31 @@ AC1 ✓ AC2 ✓ AC3 ✓ AC4 ✓ AC5 ✓ AC6 ✓
 
 AC: no `playwright` in root `node_modules`; no `.local-browsers/` on build; browser launch uses `@sparticuz/chromium` exclusively ✓
 
+## Shot 10 — Agentic audit quality upgrade (in progress)
+
+Upgrade from structural linter to senior-auditor system. No pipeline rebuild — quality, judgment, and honesty improvements only.
+
+- `deduplicate-findings.ts`: collapses same-(category, title) findings across pages into one with merged evidence refs.
+- `extract-page-evidence.ts`: added trust signal, CTA inventory, form friction, messaging quality, and performance script count heuristics. All produce evidence items that mark categories as "inspected".
+- `score-audit.ts`: `CategoryScores` gains `inspectedCategories`; uninspected categories render as "—" not 100.
+- `db/report.ts`: loads distinct evidence categories to pass as `inspectedCategories` to scoring.
+- `generate-report-enrichment.ts`: stronger synthesis prompt — no repetition, evidence labels, scope limits, no invented claims.
+- Report page: "Not inspected" label on uninspected category cards.
+- 25+ new tests covering dedup, trust/CTA/form/messaging heuristics, scoring coverage.
+
+AC1 ✓ workflow steps visible in code
+AC2 ✓ deduplication implemented and tested
+AC3 ✓ trust/conversion/messaging/performance findings added
+AC4 ✓ scoring shows "—" for uninspected categories
+AC5 ✓ all specialist evaluators are deterministic
+AC6 ✓ LLM synthesis uses stronger constrained prompt
+AC7 ✓ report shows "Not inspected" instead of false 100
+AC8 ✓ 25+ new tests
+AC9 pending (lint/typecheck/test/build)
+AC10 ✓ SCRATCHPAD.md and plan.md updated
+
+Remaining runtime validation debt: Vercel smoke run; real storage provider; ux_ui category uninspected.
+
 ## Deferred decisions
 
 | Decision | Status | Needed by |

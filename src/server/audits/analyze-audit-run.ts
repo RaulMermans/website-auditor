@@ -7,6 +7,7 @@ import { auditAnalysisRepository } from "@/db/analysis";
 import type { StorageClient } from "@/server/contracts/storage";
 import { storageClient } from "@/server/contracts/storage";
 import { extractPageArtifacts } from "@/server/audits/extract-page-evidence";
+import { deduplicateFindings } from "@/server/audits/deduplicate-findings";
 import type { Finding, PageEvidence } from "@/lib/types";
 
 export interface AnalyzeAuditRunDeps {
@@ -52,10 +53,12 @@ export async function analyzeAuditRun(
     throw new Error(`No HTML snapshot artifacts available for audit run ${auditRunId}`);
   }
 
+  const deduplicated = deduplicateFindings(findings);
+
   const persisted = await deps.analysisRepository.replaceAuditAnalysis({
     auditRunId,
     pageEvidence,
-    findings,
+    findings: deduplicated,
   });
 
   return {
