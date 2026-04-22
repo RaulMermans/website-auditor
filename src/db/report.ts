@@ -2,11 +2,14 @@ import { withDbClient } from "@/db/client";
 import type {
   AuditRun,
   AuditStatus,
+  ClaimPosture,
   EvidenceLabel,
   Finding,
   FindingCategory,
   FindingConfidence,
+  FindingEvaluatorStatus,
   FindingSeverity,
+  FindingSupportType,
 } from "@/lib/types";
 import {
   ALL_FINDING_CATEGORIES,
@@ -43,6 +46,10 @@ interface FindingRow {
   confidence: FindingConfidence;
   evidence_level: EvidenceLabel;
   evidence_ref: Record<string, unknown>;
+  claim_posture: ClaimPosture;
+  support_type: FindingSupportType;
+  evaluator_status: FindingEvaluatorStatus;
+  evaluator_notes: string | null;
   recommendation: string;
   created_at: Date;
 }
@@ -114,6 +121,10 @@ function mapFinding(row: FindingRow): Finding {
     confidence: row.confidence,
     evidenceLevel: row.evidence_level,
     evidenceRef: row.evidence_ref,
+    claimPosture: row.claim_posture,
+    supportType: row.support_type,
+    evaluatorStatus: row.evaluator_status,
+    evaluatorNotes: row.evaluator_notes,
     recommendation: row.recommendation,
     createdAt: row.created_at,
   };
@@ -283,10 +294,15 @@ export const reportRepository: ReportRepository = {
             confidence,
             evidence_level,
             evidence_ref,
+            claim_posture,
+            support_type,
+            evaluator_status,
+            evaluator_notes,
             recommendation,
             created_at
           FROM findings
           WHERE audit_run_id = $1
+            AND evaluator_status = 'accepted'
           ORDER BY category, severity, created_at
         `,
         [auditRunId]

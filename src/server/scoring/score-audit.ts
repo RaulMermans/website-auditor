@@ -28,7 +28,7 @@ export interface ScoreAuditInput {
   rubricId: string;
   findings: Array<
     Pick<Finding, "id" | "severity"> &
-      Partial<Pick<Finding, "confidence" | "evidenceLevel">>
+      Partial<Pick<Finding, "confidence" | "evidenceLevel" | "evaluatorStatus">>
   >;
 }
 
@@ -86,6 +86,10 @@ export interface CategoryScores {
 
 export interface ScoreAuditByCategoryOptions {
   inspectionKeysByCategory?: Partial<Record<FindingCategory, string[]>>;
+}
+
+function filterAcceptedFindings<T extends Partial<Pick<Finding, "evaluatorStatus">>>(findings: T[]) {
+  return findings.filter((finding) => finding.evaluatorStatus !== "needs_review");
 }
 
 function clampScore(score: number) {
@@ -179,26 +183,28 @@ function getInspectionCeiling(summary: InspectionSummary) {
 export function scoreAuditByCategory(
   findings: Array<
     Pick<Finding, "id" | "severity" | "category"> &
-      Partial<Pick<Finding, "confidence" | "evidenceLevel">>
+      Partial<Pick<Finding, "confidence" | "evidenceLevel" | "evaluatorStatus">>
   >,
   options: ScoreAuditByCategoryOptions = {}
 ): CategoryScores {
+  const acceptedFindings = filterAcceptedFindings(findings);
+
   const findingsByCategory = ALL_FINDING_CATEGORIES.reduce<
     Record<
       FindingCategory,
       Array<
         Pick<Finding, "id" | "severity" | "category"> &
-          Partial<Pick<Finding, "confidence" | "evidenceLevel">>
+          Partial<Pick<Finding, "confidence" | "evidenceLevel" | "evaluatorStatus">>
       >
     >
   >((acc, category) => {
-    acc[category] = findings.filter((finding) => finding.category === category);
+    acc[category] = acceptedFindings.filter((finding) => finding.category === category);
     return acc;
   }, {} as Record<
     FindingCategory,
     Array<
       Pick<Finding, "id" | "severity" | "category"> &
-        Partial<Pick<Finding, "confidence" | "evidenceLevel">>
+        Partial<Pick<Finding, "confidence" | "evidenceLevel" | "evaluatorStatus">>
     >
   >);
 
@@ -242,7 +248,7 @@ export function scoreAuditByCategory(
   const multiFindingCategories = categoriesWithIssues.filter(
     (category) => findingsByCategory[category].filter((finding) => finding.severity !== "info").length > 1
   ).length;
-  const higherPriorityFindings = findings.filter(
+  const higherPriorityFindings = acceptedFindings.filter(
     (finding) => finding.severity === "critical" || finding.severity === "high"
   ).length;
   const multiCategoryPenalty = Math.max(0, categoriesWithIssues.length - 1) * 2.5;
@@ -257,7 +263,8 @@ export function scoreAuditByCategory(
 }
 
 export function scoreAudit(input: ScoreAuditInput): Omit<Scorecard, "id" | "computedAt"> {
-  const penalty = input.findings.reduce((sum, finding) => sum + getFindingPenalty(finding), 0);
+  const acceptedFindings = filterAcceptedFindings(input.findings);
+  const penalty = acceptedFindings.reduce((sum, finding) => sum + getFindingPenalty(finding), 0);
   const totalScore = clampScore(MAX_SCORE - penalty);
 
   return {

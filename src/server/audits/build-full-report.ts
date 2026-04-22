@@ -247,6 +247,14 @@ function getSeverityRisk(severity: Finding["severity"]) {
 }
 
 function getEvidenceCalibration(finding: Finding) {
+  if (finding.supportType === "cross_page") {
+    return "Supported by repeatable DOM-backed signals across multiple captured pages in this audit.";
+  }
+
+  if (finding.claimPosture === "directional" || finding.supportType === "inferred") {
+    return "Directional inference from captured signals rather than a confirmed measured defect; validate it against live UX or analytics while implementing.";
+  }
+
   if (finding.evidenceLevel === "Measured") {
     return "Supported by direct markup or count-based evidence from the captured page.";
   }
@@ -254,8 +262,7 @@ function getEvidenceCalibration(finding: Finding) {
   if (finding.evidenceLevel === "Observed") {
     return "Supported by visible page patterns in the capture; the pattern is concrete even though downstream impact was not benchmarked.";
   }
-
-  return "Directional inference from captured signals rather than a confirmed measured defect; validate it against live UX or analytics while implementing.";
+  return "Supported by visible page patterns in the capture rather than a direct benchmark-style measurement.";
 }
 
 function buildRiskStatement(finding: Finding) {
