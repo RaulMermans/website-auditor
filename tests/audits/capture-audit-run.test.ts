@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { captureAuditRun } from "@/server/audits/capture-audit-run";
+import { normalizePlaywrightChromiumLaunchError } from "@/server/browser/playwright-chromium-driver";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -14,8 +15,8 @@ function createDeps(options?: {
   const failingUrls = options?.failingUrls ?? new Set<string>();
   let currentUrl = "about:blank";
 
-  const page = {
-    goto: vi.fn(async (url: string) => {
+  const session = {
+    navigate: vi.fn(async ({ url }: { url: string }) => {
       currentUrl = url;
 
       if (failingUrls.has(url)) {
@@ -23,15 +24,19 @@ function createDeps(options?: {
       }
 
       return {
-        ok: () => options?.homepageOk !== false,
-        status: () => (options?.homepageOk === false ? 500 : 200),
+        url,
+        ok: options?.homepageOk !== false,
+        status: options?.homepageOk === false ? 500 : 200,
       };
     }),
-    url: vi.fn(() => currentUrl),
-    waitForTimeout: vi.fn().mockResolvedValue(undefined),
-    content: vi.fn(async () => `<html data-url="${currentUrl}"></html>`),
-    screenshot: vi.fn().mockResolvedValue(Buffer.from("fake-image")),
-    evaluate: vi.fn().mockResolvedValue(links),
+    getUrl: vi.fn(async () => currentUrl),
+    extractHtml: vi.fn(async () => ({ value: `<html data-url="${currentUrl}"></html>` })),
+    screenshot: vi.fn().mockResolvedValue({
+      data: Buffer.from("fake-image"),
+      contentType: "image/jpeg",
+    }),
+    evaluate: vi.fn().mockResolvedValue({ value: links }),
+    close: vi.fn().mockResolvedValue(undefined),
   };
 
   const deps = {
@@ -42,13 +47,14 @@ function createDeps(options?: {
     storage: {
       put: vi.fn().mockImplementation(async (key: string) => key),
     },
-    launchBrowser: vi.fn().mockResolvedValue({
-      page,
-      close: vi.fn().mockResolvedValue(undefined),
-    }),
+    browser: {
+      name: "playwright" as const,
+      createSession: vi.fn().mockResolvedValue(session),
+    },
+    waitAfterNavigation: vi.fn().mockResolvedValue(undefined),
   };
 
-  return { deps, page };
+  return { deps, session };
 }
 
 describe("captureAuditRun", () => {
@@ -205,8 +211,10 @@ describe("captureAuditRun", () => {
 
   it("marks the run failed when Chromium is unavailable in the runtime", async () => {
     const { deps } = createDeps();
-    deps.launchBrowser = vi.fn().mockRejectedValue(
-      new Error("browserType.launch: Executable doesn't exist at /var/task/.cache/ms-playwright/chromium")
+    deps.browser.createSession = vi.fn().mockRejectedValue(
+      normalizePlaywrightChromiumLaunchError(
+        new Error("browserType.launch: Executable doesn't exist at /var/task/.cache/ms-playwright/chromium")
+      )
     );
 
     const result = await captureAuditRun(

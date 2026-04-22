@@ -55,6 +55,7 @@ public/         Static assets
 
 - **App runtime** (Next.js / Vercel): intake, audit processing trigger, browser capture orchestration, report viewing.
 - **Processing path**: `submitDomainAction()` creates the audit run, enqueues `audit.run`, then schedules in-project processing with `after(...)`.
+- **Browser runtime**: `src/server/browser/*` owns the `BrowserDriver` / `BrowserSession` seam. The default adapter remains Playwright + `@sparticuz/chromium`; the optional `browser_use` path is an external HTTP sidecar boundary only. Audit orchestration, scoring, reporting, and enrichment stay in this repo.
 - **Queue**: `pg-boss` behind `src/server/contracts/queue.ts`.
 - **Storage**: local FS provider in the app runtime for now (dev-only MVP), interface at `src/server/contracts/storage.ts`.
 - **DB client / ORM**: raw `pg` client with raw SQL migrations in `migrations/`.
@@ -86,10 +87,10 @@ This checklist is still pending, not a report of current success. The deployed i
 
 App runtime envs:
 - Required: `DATABASE_URL`
-- Optional: `PG_BOSS_SCHEMA` (defaults to `pgboss`), `GEMINI_API_KEY`, `GEMINI_MODEL` (defaults to `gemini-2.5-flash`), `NEXT_PUBLIC_APP_URL`
+- Optional: `PG_BOSS_SCHEMA` (defaults to `pgboss`), `BROWSER_DRIVER` (defaults to `playwright`), `BROWSER_USE_BASE_URL`, `BROWSER_USE_API_TOKEN`, `GEMINI_API_KEY`, `GEMINI_MODEL` (defaults to `gemini-2.5-flash`), `NEXT_PUBLIC_APP_URL`
 
 Vercel defaults are sufficient for the app deploy. No custom build override or `vercel.json` is required by the current repo.
-Browser capture uses `@sparticuz/chromium` (Lambda-compatible binary) and `playwright-core`. No `postinstall` step or browser download is required; `npm install` is sufficient for both local dev and Vercel. The `worker/` directory is legacy and is **not** a workspace — it is excluded from the root install to prevent the full `playwright` package from being installed and polluting `playwright-core/.local-browsers/`.
+Browser capture defaults to `@sparticuz/chromium` (Lambda-compatible binary) + `playwright-core`. No `postinstall` step or browser download is required; `npm install` is sufficient for both local dev and Vercel. The optional `browser_use` path is not in-process product logic; it expects a separately run sidecar/service that exposes the repo-owned browser session contract over HTTP. The `worker/` directory is legacy and is **not** a workspace — it is excluded from the root install to prevent the full `playwright` package from being installed and polluting `playwright-core/.local-browsers/`.
 
 1. Ensure the Next.js app deployment has `DATABASE_URL` set.
 2. Ensure DB migrations are applied against the production database:
@@ -151,6 +152,13 @@ Browser capture uses `@sparticuz/chromium` (Lambda-compatible binary) and `playw
 - Full report assembly is deterministic and grounded in existing findings/scores only. No new issues are invented in the long-form view.
 - Report UI now strips repetitive homepage-only prefixes from rendered finding copy while preserving the scope notice at the report level.
 - Added focused tests for full-report data shaping and route rendering.
+
+## Shot 13 — browser runtime abstraction spike
+
+- Capture runtime now goes through `src/server/browser/*`, not directly through `playwright-core` types in `capture-audit-run.ts`.
+- `PlaywrightChromiumDriver` preserves the Vercel-safe default path, including `@sparticuz/chromium`, `playwright-core`, launch flags, and `PLAYWRIGHT_BROWSERS_PATH=0`.
+- `BrowserUseDriver` is an optional HTTP adapter seam only. It assumes a remote service or sidecar that exposes repo-owned session endpoints; browser-use agent planning stays outside this app.
+- `BROWSER_DRIVER=playwright|browser_use` now selects the adapter. Default remains `playwright`.
 
 ## Validation note
 

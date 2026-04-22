@@ -149,6 +149,22 @@ AC8 ✓ tests cover new report assembly and presentation
 AC9 pending verification run
 AC10 ✓ README / plan / SCRATCHPAD updated
 
+## Shot 13 — Browser runtime abstraction spike (complete)
+
+- Added `src/server/browser/*` with project-owned `BrowserDriver` / `BrowserSession` contracts and a small factory driven by env.
+- Moved the current Playwright + `@sparticuz/chromium` runtime into `PlaywrightChromiumDriver`, preserving the Vercel-safe launch flags and making `PLAYWRIGHT_BROWSERS_PATH=0` explicit again.
+- Refactored `capture-audit-run.ts` to depend on the browser abstraction instead of `playwright-core` page types. Capture behavior, artifact persistence, and homepage-only fallback remain unchanged.
+- Added `BrowserUseDriver` as an HTTP sidecar/service seam only. It intentionally talks to repo-owned browser session endpoints and does not import browser-use agent/orchestration logic.
+- Added focused seam tests for capture mocking, driver selection, browser-use HTTP calls, and Playwright launch error normalization.
+- Env contract now supports `BROWSER_DRIVER`, `BROWSER_USE_BASE_URL`, and `BROWSER_USE_API_TOKEN`.
+
+AC1 ✓ current capture path still works through the new abstraction
+AC2 ✓ capture logic is less coupled to Playwright
+AC3 ✓ browser-use integration seam exists without product-logic leakage
+AC4 ✓ default driver remains the current Playwright path
+AC5 ✓ no scoring/report/enrichment logic changed
+AC6 pending full repo verification run
+
 ## Deferred decisions
 
 | Decision | Status | Needed by |

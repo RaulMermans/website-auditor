@@ -7,6 +7,11 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url().optional(),
   PG_BOSS_SCHEMA: z.string().min(1).optional(),
 
+  // Browser runtime
+  BROWSER_DRIVER: z.enum(["playwright", "browser_use"]).default("playwright"),
+  BROWSER_USE_BASE_URL: z.string().url().optional(),
+  BROWSER_USE_API_TOKEN: z.string().min(1).optional(),
+
   // Storage (provider TBD)
   STORAGE_BUCKET: z.string().optional(),
   STORAGE_ACCESS_KEY: z.string().optional(),
