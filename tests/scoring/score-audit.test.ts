@@ -40,6 +40,24 @@ describe("scoreAudit", () => {
     const result = scoreAudit({ auditRunId: "a", rubricId: "r", findings });
     expect(result.totalScore).toBe(0);
   });
+
+  it("ignores findings that still need evaluator review", () => {
+    const result = scoreAudit({
+      auditRunId: "a",
+      rubricId: "r",
+      findings: [
+        {
+          id: "1",
+          severity: "critical",
+          confidence: "high",
+          evidenceLevel: "Measured",
+          evaluatorStatus: "needs_review",
+        },
+      ],
+    });
+
+    expect(result.totalScore).toBe(92);
+  });
 });
 
 describe("scoreAuditByCategory", () => {
@@ -161,6 +179,36 @@ describe("scoreAuditByCategory", () => {
     expect(result.byCategory.technical_seo).toBe(80);
     expect(result.byCategory.messaging_content).toBe(83);
     expect(result.overall).toBeLessThan(80);
+  });
+
+  it("excludes needs-review findings from category scoring", () => {
+    const result = scoreAuditByCategory(
+      [
+        {
+          id: "accepted",
+          severity: "high",
+          category: "technical_seo",
+          confidence: "high",
+          evidenceLevel: "Measured",
+          evaluatorStatus: "accepted",
+        },
+        {
+          id: "review",
+          severity: "critical",
+          category: "technical_seo",
+          confidence: "high",
+          evidenceLevel: "Measured",
+          evaluatorStatus: "needs_review",
+        },
+      ],
+      {
+        inspectionKeysByCategory: {
+          technical_seo: CATEGORY_EXPECTED_KEYS.technical_seo,
+        },
+      }
+    );
+
+    expect(result.byCategory.technical_seo).toBe(80);
   });
 
   it("covers all 8 expected categories", () => {

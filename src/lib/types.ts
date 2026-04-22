@@ -2,6 +2,9 @@
 // These are structural contracts — implementations live in src/db/ and src/server/.
 
 export type EvidenceLabel = "Measured" | "Observed" | "Inferred";
+export type ClaimPosture = "confirmed" | "observed_pattern" | "directional";
+export type FindingSupportType = "dom" | "cross_page" | "inferred";
+export type FindingEvaluatorStatus = "accepted" | "needs_review";
 export type FindingCategory =
   | "performance"
   | "technical_seo"
@@ -29,6 +32,22 @@ export type PageType =
   | "contact"
   | "content"
   | "other";
+
+export type PageReviewStatus =
+  | "queued"
+  | "capturing"
+  | "auditing"
+  | "evaluating"
+  | "accepted"
+  | "needs_review"
+  | "failed";
+
+export type PageEvaluatorStatus =
+  | "queued"
+  | "evaluating"
+  | "accepted"
+  | "needs_review"
+  | "failed";
 
 export interface Project {
   id: string;
@@ -62,6 +81,10 @@ export interface PageSnapshot {
   htmlStorageKey?: string;
   screenshotStorageKey?: string;
   capturedAt: Date;
+  reviewStatus?: PageReviewStatus;
+  retryCount?: number;
+  escalationReason?: string | null;
+  evaluatorStatus?: PageEvaluatorStatus;
 }
 
 export interface PageEvidence {
@@ -86,6 +109,10 @@ export interface Finding {
   confidence: FindingConfidence;
   evidenceLevel: EvidenceLabel;
   evidenceRef: Record<string, unknown>;
+  claimPosture?: ClaimPosture;
+  supportType?: FindingSupportType;
+  evaluatorStatus?: FindingEvaluatorStatus;
+  evaluatorNotes?: string | null;
   recommendation: string;
   createdAt: Date;
 }

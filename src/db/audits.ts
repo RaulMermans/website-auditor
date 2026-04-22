@@ -1,6 +1,14 @@
 import type { PoolClient } from "pg";
 import { withDbClient, withTransaction } from "@/db/client";
-import type { AuditRun, AuditStatus, PageSnapshot, PageType, TargetDomain } from "@/lib/types";
+import type {
+  AuditRun,
+  AuditStatus,
+  PageEvaluatorStatus,
+  PageReviewStatus,
+  PageSnapshot,
+  PageType,
+  TargetDomain,
+} from "@/lib/types";
 
 // ─── Row types (DB shape) ────────────────────────────────────────────────────
 
@@ -30,6 +38,10 @@ interface PageSnapshotRow {
   html_storage_key: string | null;
   screenshot_storage_key: string | null;
   captured_at: Date;
+  review_status: PageReviewStatus;
+  retry_count: number;
+  escalation_reason: string | null;
+  evaluator_status: PageEvaluatorStatus;
 }
 
 // ─── Public input/output types ────────────────────────────────────────────────
@@ -104,6 +116,10 @@ function mapPageSnapshot(row: PageSnapshotRow): PageSnapshot {
     htmlStorageKey: row.html_storage_key ?? undefined,
     screenshotStorageKey: row.screenshot_storage_key ?? undefined,
     capturedAt: row.captured_at,
+    reviewStatus: row.review_status,
+    retryCount: row.retry_count,
+    escalationReason: row.escalation_reason,
+    evaluatorStatus: row.evaluator_status,
   };
 }
 
@@ -224,10 +240,31 @@ export const auditJobRepository: AuditJobRepository = {
       const result = await client.query<PageSnapshotRow>(
         `
           INSERT INTO page_snapshots (
-            id, audit_run_id, url, page_type, html_storage_key, screenshot_storage_key, captured_at
+            id,
+            audit_run_id,
+            url,
+            page_type,
+            html_storage_key,
+            screenshot_storage_key,
+            captured_at,
+            review_status,
+            retry_count,
+            escalation_reason,
+            evaluator_status
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-          RETURNING id, audit_run_id, url, page_type, html_storage_key, screenshot_storage_key, captured_at
+          VALUES ($1, $2, $3, $4, $5, $6, $7, 'capturing', 0, NULL, 'queued')
+          RETURNING
+            id,
+            audit_run_id,
+            url,
+            page_type,
+            html_storage_key,
+            screenshot_storage_key,
+            captured_at,
+            review_status,
+            retry_count,
+            escalation_reason,
+            evaluator_status
         `,
         [
           crypto.randomUUID(),

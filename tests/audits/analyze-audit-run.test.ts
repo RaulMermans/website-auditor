@@ -42,6 +42,7 @@ describe("analyzeAuditRun", () => {
 
     const analysisRepository: AuditAnalysisRepository = {
       getAuditAnalysisContext: vi.fn().mockResolvedValue(context),
+      updatePageReviewState: vi.fn().mockResolvedValue(undefined),
       replaceAuditAnalysis: vi.fn().mockImplementation(async (input: ReplaceAuditAnalysisInput) => {
         persistedInput = input;
 
@@ -67,6 +68,10 @@ describe("analyzeAuditRun", () => {
             confidence: item.confidence,
             evidenceLevel: item.evidenceLevel,
             evidenceRef: item.evidenceRef,
+            claimPosture: item.claimPosture,
+            supportType: item.supportType,
+            evaluatorStatus: item.evaluatorStatus,
+            evaluatorNotes: item.evaluatorNotes ?? null,
             recommendation: item.recommendation,
             createdAt: new Date("2026-04-19T10:05:00.000Z"),
           })),
@@ -115,6 +120,17 @@ describe("analyzeAuditRun", () => {
     expect(
       result.findings.every((finding) =>
         ["critical", "high", "medium", "low", "info"].includes(finding.severity)
+      )
+    ).toBe(true);
+    expect(result.findings.every((finding) => finding.evaluatorStatus)).toBe(true);
+    expect(
+      result.findings.every((finding) =>
+        ["confirmed", "observed_pattern", "directional"].includes(finding.claimPosture!)
+      )
+    ).toBe(true);
+    expect(
+      result.findings.every((finding) =>
+        ["dom", "cross_page", "inferred"].includes(finding.supportType!)
       )
     ).toBe(true);
 

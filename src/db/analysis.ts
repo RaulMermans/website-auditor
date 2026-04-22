@@ -1,12 +1,17 @@
 import { withDbClient, withTransaction } from "@/db/client";
 import type {
   AuditRun,
+  ClaimPosture,
   EvidenceLabel,
   Finding,
   FindingCategory,
   FindingConfidence,
+  FindingEvaluatorStatus,
   FindingSeverity,
+  FindingSupportType,
+  PageEvaluatorStatus,
   PageEvidence,
+  PageReviewStatus,
   PageSnapshot,
   PageType,
 } from "@/lib/types";
@@ -31,6 +36,10 @@ interface PageSnapshotRow {
   html_storage_key: string | null;
   screenshot_storage_key: string | null;
   captured_at: Date;
+  review_status: PageReviewStatus;
+  retry_count: number;
+  escalation_reason: string | null;
+  evaluator_status: PageEvaluatorStatus;
 }
 
 interface PageEvidenceRow {
@@ -55,6 +64,10 @@ interface FindingRow {
   confidence: FindingConfidence;
   evidence_level: EvidenceLabel;
   evidence_ref: Record<string, unknown>;
+  claim_posture: ClaimPosture;
+  support_type: FindingSupportType;
+  evaluator_status: FindingEvaluatorStatus;
+  evaluator_notes: string | null;
   recommendation: string;
   created_at: Date;
 }
@@ -83,7 +96,19 @@ export interface CreateFindingInput {
   confidence: FindingConfidence;
   evidenceLevel: EvidenceLabel;
   evidenceRef: Record<string, unknown>;
+  claimPosture?: ClaimPosture;
+  supportType?: FindingSupportType;
+  evaluatorStatus?: FindingEvaluatorStatus;
+  evaluatorNotes?: string | null;
   recommendation: string;
+}
+
+export interface UpdatePageReviewStateInput {
+  pageSnapshotId: string;
+  reviewStatus: PageReviewStatus;
+  retryCount: number;
+  escalationReason: string | null;
+  evaluatorStatus: PageEvaluatorStatus;
 }
 
 export interface ReplaceAuditAnalysisInput {
@@ -99,6 +124,7 @@ export interface ReplaceAuditAnalysisResult {
 
 export interface AuditAnalysisRepository {
   getAuditAnalysisContext(auditRunId: string): Promise<AuditAnalysisContext>;
+  updatePageReviewState(input: UpdatePageReviewStateInput): Promise<void>;
   replaceAuditAnalysis(input: ReplaceAuditAnalysisInput): Promise<ReplaceAuditAnalysisResult>;
 }
 
@@ -125,6 +151,10 @@ function mapPageSnapshot(row: PageSnapshotRow): PageSnapshot {
     htmlStorageKey: row.html_storage_key ?? undefined,
     screenshotStorageKey: row.screenshot_storage_key ?? undefined,
     capturedAt: row.captured_at,
+    reviewStatus: row.review_status,
+    retryCount: row.retry_count,
+    escalationReason: row.escalation_reason,
+    evaluatorStatus: row.evaluator_status,
   };
 }
 
@@ -153,9 +183,43 @@ function mapFinding(row: FindingRow): Finding {
     confidence: row.confidence,
     evidenceLevel: row.evidence_level,
     evidenceRef: row.evidence_ref,
+    claimPosture: row.claim_posture,
+    supportType: row.support_type,
+    evaluatorStatus: row.evaluator_status,
+    evaluatorNotes: row.evaluator_notes,
     recommendation: row.recommendation,
     createdAt: row.created_at,
   };
+}
+
+function deriveClaimPosture(evidenceLevel: EvidenceLabel): ClaimPosture {
+  if (evidenceLevel === "Measured") {
+    return "confirmed";
+  }
+
+  if (evidenceLevel === "Observed") {
+    return "observed_pattern";
+  }
+
+  return "directional";
+}
+
+function deriveSupportType(
+  evidenceLevel: EvidenceLabel,
+  evidenceRef: Record<string, unknown>
+): FindingSupportType {
+  if (evidenceLevel === "Inferred") {
+    return "inferred";
+  }
+
+  const pageCount =
+    typeof evidenceRef.pageCount === "number"
+      ? evidenceRef.pageCount
+      : evidenceRef.pageUrl
+        ? 1
+        : 0;
+
+  return pageCount > 1 ? "cross_page" : "dom";
 }
 
 export const auditAnalysisRepository: AuditAnalysisRepository = {
@@ -194,7 +258,11 @@ export const auditAnalysisRepository: AuditAnalysisRepository = {
             page_type,
             html_storage_key,
             screenshot_storage_key,
-            captured_at
+            captured_at,
+            review_status,
+            retry_count,
+            escalation_reason,
+            evaluator_status
           FROM page_snapshots
           WHERE audit_run_id = $1
           ORDER BY captured_at ASC, url ASC
@@ -206,6 +274,28 @@ export const auditAnalysisRepository: AuditAnalysisRepository = {
         auditRun: mapAuditRun(auditRun),
         pageSnapshots: pageSnapshotResult.rows.map(mapPageSnapshot),
       };
+    });
+  },
+
+  async updatePageReviewState({
+    pageSnapshotId,
+    reviewStatus,
+    retryCount,
+    escalationReason,
+    evaluatorStatus,
+  }) {
+    await withDbClient(async (client) => {
+      await client.query(
+        `
+          UPDATE page_snapshots
+          SET review_status = $2,
+              retry_count = $3,
+              escalation_reason = $4,
+              evaluator_status = $5
+          WHERE id = $1
+        `,
+        [pageSnapshotId, reviewStatus, retryCount, escalationReason, evaluatorStatus]
+      );
     });
   },
 
@@ -267,9 +357,13 @@ export const auditAnalysisRepository: AuditAnalysisRepository = {
               confidence,
               evidence_level,
               evidence_ref,
+              claim_posture,
+              support_type,
+              evaluator_status,
+              evaluator_notes,
               recommendation
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15)
             RETURNING
               id,
               audit_run_id,
@@ -281,6 +375,10 @@ export const auditAnalysisRepository: AuditAnalysisRepository = {
               confidence,
               evidence_level,
               evidence_ref,
+              claim_posture,
+              support_type,
+              evaluator_status,
+              evaluator_notes,
               recommendation,
               created_at
           `,
@@ -295,6 +393,10 @@ export const auditAnalysisRepository: AuditAnalysisRepository = {
             finding.confidence,
             finding.evidenceLevel,
             JSON.stringify(finding.evidenceRef ?? {}),
+            finding.claimPosture ?? deriveClaimPosture(finding.evidenceLevel),
+            finding.supportType ?? deriveSupportType(finding.evidenceLevel, finding.evidenceRef),
+            finding.evaluatorStatus ?? "accepted",
+            finding.evaluatorNotes ?? null,
             finding.recommendation,
           ]
         );
