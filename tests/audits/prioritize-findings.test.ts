@@ -35,7 +35,7 @@ describe("prioritizeFindings", () => {
       makeFinding({
         id: "1",
         category: "conversion",
-        title: "Weak next-step conversion path on captured page",
+        title: "Primary next step is not yet clear on this page",
         severity: "high",
         confidence: "high",
         evidenceLevel: "Inferred",
@@ -53,7 +53,7 @@ describe("prioritizeFindings", () => {
       makeFinding({
         id: "3",
         category: "performance",
-        title: "Heavy script loading may delay page responsiveness",
+        title: "Script footprint is heavier than expected",
         severity: "low",
         confidence: "medium",
         evidenceLevel: "Measured",
@@ -94,7 +94,7 @@ describe("prioritizeFindings", () => {
     const homepageConversion = makeFinding({
       id: "homepage-conversion",
       category: "conversion",
-      title: "Primary and secondary actions compete for attention",
+      title: "Primary action is not clearly distinguished from secondary actions",
       severity: "high",
       confidence: "high",
       evidenceLevel: "Observed",
@@ -109,7 +109,7 @@ describe("prioritizeFindings", () => {
     const homepageMessaging = makeFinding({
       id: "homepage-messaging",
       category: "messaging_content",
-      title: "Homepage value proposition is still too generic above the fold",
+      title: "Homepage opening message stays broad above the fold",
       severity: "high",
       confidence: "medium",
       evidenceLevel: "Observed",
@@ -149,7 +149,7 @@ describe("prioritizeFindings", () => {
       makeFinding({
         id: "conv-1",
         category: "conversion",
-        title: "Primary and secondary actions compete for attention",
+        title: "Primary action is not clearly distinguished from secondary actions",
         severity: "high",
         evidenceRef: {
           issueType: "competing_cta_hierarchy",
@@ -162,7 +162,7 @@ describe("prioritizeFindings", () => {
       makeFinding({
         id: "conv-2",
         category: "conversion",
-        title: "CTA overload may dilute primary conversion focus",
+        title: "Too many calls to action compete for the same attention",
         severity: "medium",
         evidenceRef: {
           issueType: "cta_overload",
@@ -175,7 +175,7 @@ describe("prioritizeFindings", () => {
       makeFinding({
         id: "trust",
         category: "trust_signals",
-        title: "Low trust signal density on key conversion page",
+        title: "Trust layer is thin on a key decision page",
         severity: "medium",
         evidenceRef: {
           issueType: "low_trust_signal_density",
@@ -188,7 +188,7 @@ describe("prioritizeFindings", () => {
       makeFinding({
         id: "message",
         category: "messaging_content",
-        title: "Homepage value proposition is still too generic above the fold",
+        title: "Homepage opening message stays broad above the fold",
         severity: "medium",
         evidenceRef: {
           issueType: "weak_value_proposition",

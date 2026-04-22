@@ -15,7 +15,7 @@ function makeReportData(overrides: Partial<ReportData> = {}): ReportData {
       auditRunId: "run-1",
       pageSnapshotId: "s-home",
       category: "messaging_content",
-      title: "Homepage value proposition is still too generic above the fold",
+      title: "Homepage opening message stays broad above the fold",
       description:
         "The homepage hero copy stays broad and only loosely aligns with the title/meta language in the captured page.",
       severity: "high",
@@ -57,9 +57,9 @@ function makeReportData(overrides: Partial<ReportData> = {}): ReportData {
       auditRunId: "run-1",
       pageSnapshotId: "s-home",
       category: "conversion",
-      title: "Weak next-step conversion path on captured page",
+      title: "Primary next step is not yet clear on this page",
       description:
-        "Based on the captured DOM, the page may not present a clear next step because no standard CTA/button pattern or form was detected.",
+        "The captured DOM did not surface a standard CTA/button pattern or form. That suggests the page may not be giving visitors an obvious next step, although this remains a directional judgment rather than a measured conversion benchmark.",
       severity: "medium",
       confidence: "medium",
       evidenceLevel: "Inferred",
@@ -111,9 +111,7 @@ describe("buildFullReportData", () => {
     const fullReport = buildFullReportData(makeReportData());
 
     expect(fullReport.executiveSummary.overview).toContain("captured page set");
-    expect(fullReport.executiveSummary.whatIsLimiting[0]).toContain(
-      "Homepage value proposition is still too generic above the fold"
-    );
+    expect(fullReport.executiveSummary.whatIsLimiting[0]).toContain("Messaging & Content:");
     expect(fullReport.topPriorities).toHaveLength(3);
     expect(fullReport.scoreSummary.lightlyInspectedCategories).toContain("Conversion");
     expect(fullReport.scoreSummary.insufficientEvidenceCategories).toContain("UX / UI");
@@ -124,6 +122,8 @@ describe("buildFullReportData", () => {
       "Experience Flow",
     ]);
     expect(fullReport.nextActions.quickWins[0]).toContain("Technical SEO:");
+    expect(fullReport.topPriorities[0]?.evidenceNote).toContain("visible page patterns");
+    expect(fullReport.topPriorities[2]?.risk).toContain("directional");
   });
 
   it("keeps full report findings grounded in the underlying deterministic findings", () => {

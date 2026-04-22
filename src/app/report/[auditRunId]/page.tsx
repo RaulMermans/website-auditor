@@ -1,39 +1,213 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { reportRepository } from "@/db/report";
 import { enrichmentRepository } from "@/db/enrichment";
+import { reportRepository } from "@/db/report";
 import type { OutreachAsset } from "@/lib/types";
 import {
+  AUDIT_STATUS_META,
   CATEGORY_LABELS,
   EVIDENCE_COLORS,
-  getFindingSupportLabel,
+  REVIEW_STATE_META,
   scoreColor,
   SEVERITY_COLORS,
-  stripHomepageScopePrefix,
 } from "@/lib/report-presentation";
+import { buildFullReportData, type FullReportFinding } from "@/server/audits/build-full-report";
 
-const REVIEW_STATE_STYLES = {
-  inspected_clean: {
-    background: "#f0fdf4",
-    border: "#86efac",
-    text: "#166534",
-  },
-  inspected_with_findings: {
-    background: "#fff7ed",
-    border: "#fdba74",
-    text: "#9a3412",
-  },
-  lightly_inspected: {
-    background: "#fffbeb",
-    border: "#fcd34d",
-    text: "#92400e",
-  },
-  insufficient_evidence: {
-    background: "#f8fafc",
-    border: "#cbd5e1",
-    text: "#475569",
-  },
-} as const;
+interface BadgePresentation {
+  label: string;
+  background: string;
+  border: string;
+  text: string;
+}
+
+function renderSummaryList(items: string[]) {
+  return (
+    <ul style={{ margin: 0, paddingLeft: 18, color: "#334155" }}>
+      {items.map((item) => (
+        <li key={item} style={{ marginBottom: 8 }}>
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function renderCountRow(label: string, value: number, color: string) {
+  return (
+    <div
+      key={label}
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+        padding: "10px 12px",
+        borderRadius: 12,
+        background: "#fff",
+        border: "1px solid #e2e8f0",
+      }}
+    >
+      <span style={{ color: "#334155", fontWeight: 600 }}>{label}</span>
+      <span style={{ color, fontWeight: 800 }}>{value}</span>
+    </div>
+  );
+}
+
+function StatusBadge({ label, background, border, text }: BadgePresentation) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "6px 10px",
+        borderRadius: 999,
+        background,
+        border: `1px solid ${border}`,
+        color: text,
+        fontSize: "0.76rem",
+        fontWeight: 700,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function FindingCard({ finding }: { finding: FullReportFinding }) {
+  return (
+    <article
+      key={finding.id}
+      style={{
+        padding: 18,
+        borderRadius: 18,
+        background: "#fff",
+        border: "1px solid #e5e7eb",
+        boxShadow: "0 10px 24px rgba(15, 23, 42, 0.04)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          flexWrap: "wrap",
+          alignItems: "center",
+          marginBottom: 12,
+        }}
+      >
+        <span
+          style={{
+            padding: "4px 8px",
+            borderRadius: 999,
+            background: "#eff6ff",
+            color: "#1d4ed8",
+            fontSize: "0.74rem",
+            fontWeight: 700,
+          }}
+        >
+          {finding.categoryLabel}
+        </span>
+        <span
+          style={{
+            padding: "4px 8px",
+            borderRadius: 999,
+            background: `${SEVERITY_COLORS[finding.severity]}1a`,
+            color: SEVERITY_COLORS[finding.severity],
+            fontSize: "0.74rem",
+            fontWeight: 700,
+          }}
+        >
+          {finding.severity.toUpperCase()}
+        </span>
+        <span
+          style={{
+            padding: "4px 8px",
+            borderRadius: 999,
+            background: `${EVIDENCE_COLORS[finding.evidenceLevel]}1a`,
+            color: EVIDENCE_COLORS[finding.evidenceLevel],
+            fontSize: "0.74rem",
+            fontWeight: 700,
+          }}
+        >
+          {finding.evidenceLevel} · {finding.confidence}
+        </span>
+        <span
+          style={{
+            padding: "4px 8px",
+            borderRadius: 999,
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            color: "#475569",
+            fontSize: "0.74rem",
+            fontWeight: 700,
+          }}
+        >
+          {finding.supportLabel}
+        </span>
+      </div>
+
+      <h3 style={{ margin: "0 0 14px", fontSize: "1.08rem", lineHeight: 1.35 }}>{finding.title}</h3>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 12,
+          marginBottom: 12,
+        }}
+      >
+        <div style={findingSectionStyle}>
+          <p style={findingSectionLabelStyle}>What we found</p>
+          <p style={findingSectionValueStyle}>{finding.summary}</p>
+        </div>
+        <div style={findingSectionStyle}>
+          <p style={findingSectionLabelStyle}>Why it matters</p>
+          <p style={findingSectionValueStyle}>{finding.whyItMatters}</p>
+        </div>
+        <div style={findingSectionStyle}>
+          <p style={findingSectionLabelStyle}>Risk if unchanged</p>
+          <p style={findingSectionValueStyle}>{finding.risk}</p>
+        </div>
+        <div
+          style={{
+            ...findingSectionStyle,
+            background: "#ecfdf5",
+            border: "1px solid #bbf7d0",
+          }}
+        >
+          <p style={{ ...findingSectionLabelStyle, color: "#166534" }}>Next step</p>
+          <p style={{ ...findingSectionValueStyle, color: "#166534" }}>{finding.nextStep}</p>
+        </div>
+      </div>
+
+      <p style={{ margin: 0, color: "#64748b", fontSize: "0.85rem" }}>
+        Evidence framing: {finding.evidenceNote}
+      </p>
+    </article>
+  );
+}
+
+const findingSectionStyle: React.CSSProperties = {
+  padding: "12px 14px",
+  borderRadius: 14,
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+};
+
+const findingSectionLabelStyle: React.CSSProperties = {
+  margin: "0 0 6px",
+  fontSize: "0.74rem",
+  fontWeight: 800,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  color: "#64748b",
+};
+
+const findingSectionValueStyle: React.CSSProperties = {
+  margin: 0,
+  color: "#334155",
+  fontSize: "0.93rem",
+  lineHeight: 1.55,
+};
 
 export default async function ReportPage({
   params,
@@ -46,537 +220,688 @@ export default async function ReportPage({
     enrichmentRepository.getAssetsForAuditRun(auditRunId).catch(() => [] as OutreachAsset[]),
   ]);
 
-  if (!data) notFound();
+  if (!data) {
+    notFound();
+  }
 
-  const { auditRun, domain, findings, topPriorities, scores, categoryReviews } = data;
+  const fullReport = buildFullReportData(data);
   const assetMap = Object.fromEntries(
-    enrichmentAssets.map((a) => [a.type, a.content])
+    enrichmentAssets.map((asset) => [asset.type, asset.content])
   ) as Partial<Record<OutreachAsset["type"], string>>;
-  const inspectedCleanCount = categoryReviews.filter(
-    (review) => review.reviewState === "inspected_clean"
-  ).length;
-  const lightlyInspectedCount = categoryReviews.filter(
-    (review) => review.reviewState === "lightly_inspected"
-  ).length;
-  const insufficientEvidenceCount = categoryReviews.filter(
-    (review) => review.reviewState === "insufficient_evidence"
-  ).length;
+  const hasEnrichment =
+    Boolean(assetMap.summary) ||
+    Boolean(assetMap.quick_wins) ||
+    Boolean(assetMap.email) ||
+    Boolean(assetMap.collaboration) ||
+    Boolean(assetMap.loom_script);
+  const statusMeta = AUDIT_STATUS_META[data.auditRun.status];
+  const reviewStateCounts = data.categoryReviews.reduce<
+    Record<keyof typeof REVIEW_STATE_META, number>
+  >(
+    (acc, review) => {
+      acc[review.reviewState] += 1;
+      return acc;
+    },
+    {
+      inspected_clean: 0,
+      inspected_with_findings: 0,
+      lightly_inspected: 0,
+      insufficient_evidence: 0,
+    }
+  );
 
   return (
-    <main style={{ maxWidth: 800, margin: "48px auto", padding: "0 24px" }}>
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: "1.75rem", fontWeight: 700, marginBottom: 4 }}>
-          {domain}
-        </h1>
-        <p style={{ color: "#6b7280", fontSize: "0.875rem" }}>
-          Run: {auditRunId} · Status: {auditRun.status}
-          {auditRun.completedAt
-            ? ` · Completed: ${new Date(auditRun.completedAt).toLocaleString()}`
-            : ""}
-        </p>
-        <div style={{ display: "flex", gap: 12, marginTop: 16, flexWrap: "wrap" }}>
-          <Link
-            href={`/report/${auditRunId}/full`}
-            style={{
-              fontSize: "0.875rem",
-              fontWeight: 600,
-              color: "#1d4ed8",
-              textDecoration: "none",
-            }}
-          >
-            Read full report
-          </Link>
-        </div>
-
-        {auditRun.homepageOnly && (
-          <div
-            style={{
-              marginTop: 16,
-              padding: "12px 16px",
-              background: "#fffbeb",
-              border: "1px solid #fcd34d",
-              borderRadius: 6,
-              color: "#92400e",
-              fontSize: "0.875rem",
-            }}
-          >
-            <strong>Homepage-only audit.</strong> Findings and scores reflect
-            the homepage snapshot only. Whole-site claims are not supported in
-            this report.
-          </div>
-        )}
-      </div>
-
-      <div
-        style={{
-          marginBottom: 32,
-          padding: 24,
-          background: "#fff",
-          border: "1px solid #e5e7eb",
-          borderRadius: 8,
-          display: "flex",
-          alignItems: "center",
-          gap: 24,
-        }}
-      >
-        <div
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "linear-gradient(180deg, #f8fafc 0%, #eef2ff 220px, #ffffff 220px)",
+        padding: "40px 24px 72px",
+      }}
+    >
+      <div style={{ maxWidth: 1120, margin: "0 auto", display: "grid", gap: 24 }}>
+        <section
+          id="overview"
           style={{
-            fontSize: "3rem",
-            fontWeight: 700,
-            color: scoreColor(scores.overall),
-            lineHeight: 1,
-            minWidth: 72,
-            textAlign: "center",
+            padding: "28px 30px",
+            borderRadius: 24,
+            background: "rgba(255,255,255,0.94)",
+            border: "1px solid rgba(148, 163, 184, 0.2)",
+            boxShadow: "0 20px 50px rgba(15, 23, 42, 0.06)",
           }}
         >
-          {scores.overall}
-        </div>
-        <div>
-          <p style={{ fontWeight: 600, marginBottom: 4 }}>Overall score</p>
-          <p style={{ color: "#6b7280", fontSize: "0.875rem" }}>
-            {findings.length} finding{findings.length !== 1 ? "s" : ""} across the
-            current deterministic review. {inspectedCleanCount} categor
-            {inspectedCleanCount !== 1 ? "ies" : "y"} inspected clean,{" "}
-            {lightlyInspectedCount} lightly inspected, {insufficientEvidenceCount} with
-            insufficient evidence.
-          </p>
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 12,
-          marginBottom: 32,
-        }}
-      >
-        {[
-          {
-            label: "Inspected Clean",
-            value: inspectedCleanCount,
-            background: "#f0fdf4",
-            border: "#86efac",
-            text: "#166534",
-          },
-          {
-            label: "Light Inspection",
-            value: lightlyInspectedCount,
-            background: "#fffbeb",
-            border: "#fcd34d",
-            text: "#92400e",
-          },
-          {
-            label: "Insufficient Evidence",
-            value: insufficientEvidenceCount,
-            background: "#f8fafc",
-            border: "#cbd5e1",
-            text: "#475569",
-          },
-        ].map((item) => (
           <div
-            key={item.label}
             style={{
-              padding: 16,
-              borderRadius: 8,
-              border: `1px solid ${item.border}`,
-              background: item.background,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              gap: 16,
+              flexWrap: "wrap",
+              marginBottom: 18,
             }}
           >
-            <div style={{ fontSize: "1.4rem", fontWeight: 700, color: item.text }}>
-              {item.value}
+            <div>
+              <p
+                style={{
+                  margin: "0 0 6px",
+                  fontSize: "0.76rem",
+                  fontWeight: 800,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "#6366f1",
+                }}
+              >
+                Concise Audit Report
+              </p>
+              <h1 style={{ margin: "0 0 8px", fontSize: "2.25rem", fontWeight: 800 }}>
+                {fullReport.domain}
+              </h1>
+              <p style={{ margin: 0, color: "#64748b", fontSize: "0.92rem" }}>
+                Run: {auditRunId}
+              </p>
             </div>
-            <div style={{ fontSize: "0.8rem", fontWeight: 600, color: item.text }}>
-              {item.label}
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <Link href="/audits" style={secondaryLinkStyle}>
+                Back to audits
+              </Link>
+              <Link href={`/report/${auditRunId}/full`} style={primaryLinkStyle}>
+                Open full report
+              </Link>
             </div>
           </div>
-        ))}
-      </div>
 
-      {topPriorities.length > 0 && (
-        <div style={{ marginBottom: 32 }}>
-          <h2
-            style={{ fontSize: "1.125rem", fontWeight: 600, marginBottom: 12 }}
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              alignItems: "center",
+              marginBottom: 18,
+            }}
           >
-            Top priorities
-          </h2>
-          <p style={{ color: "#6b7280", fontSize: "0.875rem", marginBottom: 12 }}>
-            Curated shortlist of the strongest, most distinct issues surfaced in the
-            captured audit evidence.
-          </p>
+            <StatusBadge {...statusMeta} />
+            {data.auditRun.homepageOnly && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  background: "#fffbeb",
+                  border: "1px solid #fcd34d",
+                  color: "#92400e",
+                  fontSize: "0.76rem",
+                  fontWeight: 700,
+                }}
+              >
+                Homepage-only scope
+              </span>
+            )}
+          </div>
+
           <div
             style={{
               display: "grid",
-              gap: 12,
+              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gap: 16,
+              marginBottom: 18,
             }}
           >
-            {topPriorities.map((finding, index) => (
-              <div
-                key={`${finding.id}-priority`}
-                style={{
-                  padding: 16,
-                  background: "#fff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 6,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    marginBottom: 8,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: "0.75rem",
-                      fontWeight: 700,
-                      color: "#6b7280",
-                    }}
-                  >
-                    #{index + 1}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "0.75rem",
-                      fontWeight: 700,
-                      padding: "2px 6px",
-                      borderRadius: 4,
-                      background: "#eff6ff",
-                      color: "#1d4ed8",
-                    }}
-                  >
-                    {CATEGORY_LABELS[finding.category]}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "0.75rem",
-                      fontWeight: 700,
-                      padding: "2px 6px",
-                      borderRadius: 4,
-                      background: SEVERITY_COLORS[finding.severity] + "1a",
-                      color: SEVERITY_COLORS[finding.severity],
-                    }}
-                  >
-                    {finding.severity.toUpperCase()}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "0.75rem",
-                      fontWeight: 600,
-                      padding: "2px 6px",
-                      borderRadius: 4,
-                      background:
-                        EVIDENCE_COLORS[finding.evidenceLevel] + "1a",
-                      color: EVIDENCE_COLORS[finding.evidenceLevel],
-                    }}
-                  >
-                    {finding.evidenceLevel} · {finding.confidence}
-                  </span>
-                  <span style={{ fontWeight: 600 }}>
-                    {stripHomepageScopePrefix(finding.title)}
-                  </span>
-                </div>
-                <p
-                  style={{
-                    fontSize: "0.75rem",
-                    color: "#6b7280",
-                    marginBottom: 8,
-                  }}
-                >
-                  Support: {getFindingSupportLabel(finding)}
-                </p>
-                <p
-                  style={{
-                    fontSize: "0.875rem",
-                    color: "#4b5563",
-                    marginBottom: 8,
-                  }}
-                >
-                  {stripHomepageScopePrefix(finding.description)}
-                </p>
-                <p style={{ fontSize: "0.875rem", color: "#065f46" }}>
-                  <strong>Recommendation:</strong> {stripHomepageScopePrefix(finding.recommendation)}
-                </p>
+            <div
+              style={{
+                padding: 20,
+                borderRadius: 18,
+                background: "#0f172a",
+                color: "#fff",
+              }}
+            >
+              <div style={{ fontSize: "3.1rem", fontWeight: 800, lineHeight: 1, color: "#fff" }}>
+                {fullReport.scoreSummary.overall}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+              <p style={{ margin: "10px 0 8px", fontSize: "0.84rem", fontWeight: 700, opacity: 0.85 }}>
+                Overall score
+              </p>
+              <p style={{ margin: 0, color: "#cbd5e1", fontSize: "0.9rem", lineHeight: 1.55 }}>
+                {fullReport.executiveSummary.inspectionFrame}
+              </p>
+            </div>
 
-      <div style={{ marginBottom: 32 }}>
-        <h2
-          style={{ fontSize: "1.125rem", fontWeight: 600, marginBottom: 12 }}
-        >
-          Category scores
-        </h2>
-        <div
+            <div
+              style={{
+                padding: 20,
+                borderRadius: 18,
+                background: "#fff",
+                border: "1px solid #e5e7eb",
+              }}
+            >
+              <p style={panelEyebrowStyle}>Main Conclusion</p>
+              <p style={{ margin: "0 0 10px", color: "#0f172a", fontSize: "1rem", lineHeight: 1.65 }}>
+                {fullReport.executiveSummary.overview}
+              </p>
+              <p style={{ margin: 0, color: "#64748b", fontSize: "0.9rem", lineHeight: 1.55 }}>
+                {fullReport.appendix.scopeNote}
+              </p>
+            </div>
+
+            <div
+              style={{
+                padding: 20,
+                borderRadius: 18,
+                background: "#fff",
+                border: "1px solid #e5e7eb",
+              }}
+            >
+              <p style={panelEyebrowStyle}>Do First</p>
+              {renderSummaryList(fullReport.nextActions.quickWins.slice(0, 3))}
+            </div>
+          </div>
+
+          <nav
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            {[
+              ["#overview", "Overview"],
+              ["#priorities", "Top Priorities"],
+              ["#scores", "Score Summary"],
+              ["#review", "Category Review"],
+              ["#evidence", "Evidence Notes"],
+              ...(hasEnrichment ? [["#ai", "AI Enrichment"]] : []),
+            ].map(([href, label]) => (
+              <a key={href} href={href} style={anchorPillStyle}>
+                {label}
+              </a>
+            ))}
+          </nav>
+        </section>
+
+        <section
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
             gap: 12,
           }}
         >
-          {categoryReviews.map((review) => {
-            const isInspected = review.score !== null;
-            const inspectionLabel =
-              review.reviewState === "insufficient_evidence"
-                ? "Insufficient evidence"
-                : review.reviewState === "lightly_inspected"
-                  ? review.findingCount === 0
-                    ? "Light inspection"
-                    : `${review.findingCount} finding${review.findingCount !== 1 ? "s" : ""} · light inspection`
-                  : review.findingCount === 0
-                    ? "Inspected clean"
-                    : `${review.findingCount} finding${review.findingCount !== 1 ? "s" : ""}`;
-            return (
+          {(Object.entries(REVIEW_STATE_META) as Array<
+            [keyof typeof REVIEW_STATE_META, (typeof REVIEW_STATE_META)[keyof typeof REVIEW_STATE_META]]
+          >).map(([key, meta]) => (
+            <div
+              key={key}
+              style={{
+                padding: "16px 18px",
+                borderRadius: 18,
+                border: `1px solid ${meta.border}`,
+                background: meta.background,
+              }}
+            >
+              <div style={{ fontSize: "1.8rem", fontWeight: 800, color: meta.text }}>
+                {reviewStateCounts[key]}
+              </div>
+              <p style={{ margin: "4px 0 6px", fontSize: "0.84rem", fontWeight: 800, color: meta.text }}>
+                {meta.label}
+              </p>
+              <p style={{ margin: 0, color: meta.text, fontSize: "0.86rem", lineHeight: 1.5 }}>
+                {meta.description}
+              </p>
+            </div>
+          ))}
+        </section>
+
+        <section id="priorities" style={sectionStyle}>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <p style={sectionEyebrowStyle}>Priority View</p>
+              <h2 style={sectionTitleStyle}>Top Priorities</h2>
+              <p style={sectionIntroStyle}>
+                This shortlist is intended to answer two questions quickly: what is most likely
+                reducing credibility or performance, and what should be fixed before deeper polish.
+              </p>
+            </div>
+          </div>
+
+          {fullReport.topPriorities.length === 0 ? (
+            <p style={{ margin: 0, color: "#64748b" }}>
+              No prioritized issues were surfaced in the current deterministic findings set.
+            </p>
+          ) : (
+            <div style={{ display: "grid", gap: 14 }}>
+              {fullReport.topPriorities.map((finding) => (
+                <FindingCard key={finding.id} finding={finding} />
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section id="scores" style={sectionStyle}>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <p style={sectionEyebrowStyle}>Coverage And Scoring</p>
+              <h2 style={sectionTitleStyle}>Score Summary</h2>
+              <p style={sectionIntroStyle}>
+                Scores only reflect categories with enough deterministic evidence to score honestly.
+                Use the status label on each category before interpreting the number.
+              </p>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)",
+              gap: 16,
+            }}
+          >
+            <div
+              style={{
+                padding: 18,
+                borderRadius: 18,
+                background: "#fff",
+                border: "1px solid #e5e7eb",
+              }}
+            >
               <div
-                key={review.category}
                 style={{
-                  padding: "14px 16px",
-                  background: "#fff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 6,
-                  opacity: isInspected ? 1 : 0.6,
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: 12,
                 }}
               >
-                <div
-                  style={{
-                    fontWeight: 700,
-                    fontSize: "1.25rem",
-                    color: isInspected ? scoreColor(review.score ?? 0) : "#9ca3af",
-                    marginBottom: 4,
-                  }}
-                >
-                  {isInspected ? review.score : "—"}
-                </div>
-                <div
-                  style={{
-                    fontSize: "0.8rem",
-                    fontWeight: 600,
-                    color: "#374151",
-                    marginBottom: 2,
-                  }}
-                >
-                  {CATEGORY_LABELS[review.category]}
-                </div>
-                <div style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
-                  {inspectionLabel}
-                </div>
+                {fullReport.categorySections.map((section) => {
+                  const reviewMeta =
+                    section.inspectionStatus === "not_inspected"
+                      ? REVIEW_STATE_META.insufficient_evidence
+                      : section.inspectionStatus === "lightly_inspected"
+                        ? REVIEW_STATE_META.lightly_inspected
+                        : section.findings.length > 0
+                          ? REVIEW_STATE_META.inspected_with_findings
+                          : REVIEW_STATE_META.inspected_clean;
+
+                  return (
+                    <a
+                      key={section.category}
+                      href={`#category-${section.category}`}
+                      style={{
+                        padding: "14px 16px",
+                        borderRadius: 14,
+                        background: reviewMeta.background,
+                        border: `1px solid ${reviewMeta.border}`,
+                        textDecoration: "none",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "1.55rem",
+                          fontWeight: 800,
+                          color: section.score === null ? reviewMeta.text : scoreColor(section.score),
+                          lineHeight: 1,
+                          marginBottom: 8,
+                        }}
+                      >
+                        {section.score ?? "—"}
+                      </div>
+                      <div style={{ fontWeight: 800, color: "#0f172a", marginBottom: 4 }}>
+                        {CATEGORY_LABELS[section.category]}
+                      </div>
+                      <div style={{ color: reviewMeta.text, fontSize: "0.82rem", fontWeight: 700 }}>
+                        {section.inspectionLabel}
+                      </div>
+                    </a>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {(assetMap.summary || assetMap.quick_wins || assetMap.email || assetMap.collaboration || assetMap.loom_script) && (
-        <div style={{ marginBottom: 32 }}>
-          <h2 style={{ fontSize: "1.125rem", fontWeight: 600, marginBottom: 12 }}>
-            AI Enrichment
-          </h2>
-          <p style={{ fontSize: "0.75rem", color: "#9ca3af", marginBottom: 16 }}>
-            Generated from deterministic findings. No facts added beyond stored evidence.
-          </p>
-
-          {assetMap.summary && (
-            <div style={{ marginBottom: 16, padding: 16, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6 }}>
-              <h3 style={{ fontSize: "0.875rem", fontWeight: 600, color: "#374151", marginBottom: 8 }}>Executive Summary</h3>
-              <p style={{ fontSize: "0.875rem", color: "#4b5563" }}>{assetMap.summary}</p>
             </div>
-          )}
 
-          {assetMap.quick_wins && (
-            <div style={{ marginBottom: 16, padding: 16, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6 }}>
-              <h3 style={{ fontSize: "0.875rem", fontWeight: 600, color: "#166534", marginBottom: 8 }}>Quick Wins</h3>
-              <p style={{ fontSize: "0.875rem", color: "#166534", whiteSpace: "pre-wrap" }}>{assetMap.quick_wins}</p>
+            <div style={{ display: "grid", gap: 12 }}>
+              <div style={summaryPanelStyle}>
+                <p style={panelEyebrowStyle}>What Is Working</p>
+                {renderSummaryList(fullReport.executiveSummary.whatIsWorking)}
+              </div>
+              <div style={summaryPanelStyle}>
+                <p style={panelEyebrowStyle}>What Is Limiting</p>
+                {renderSummaryList(fullReport.executiveSummary.whatIsLimiting)}
+              </div>
             </div>
-          )}
+          </div>
+        </section>
 
-          {(assetMap.email || assetMap.collaboration || assetMap.loom_script) && (
-            <div style={{ padding: 16, background: "#fefce8", border: "1px solid #fde68a", borderRadius: 6 }}>
-              <h3 style={{ fontSize: "0.875rem", fontWeight: 600, color: "#713f12", marginBottom: 12 }}>Outreach Assets</h3>
-              {assetMap.email && (
-                <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: "0.75rem", fontWeight: 600, color: "#92400e", marginBottom: 4 }}>Cold Email Draft</p>
-                  <p style={{ fontSize: "0.875rem", color: "#713f12", whiteSpace: "pre-wrap" }}>{assetMap.email}</p>
-                </div>
-              )}
-              {assetMap.collaboration && (
-                <div style={{ marginBottom: 12 }}>
-                  <p style={{ fontSize: "0.75rem", fontWeight: 600, color: "#92400e", marginBottom: 4 }}>Collaboration Angle</p>
-                  <p style={{ fontSize: "0.875rem", color: "#713f12" }}>{assetMap.collaboration}</p>
-                </div>
-              )}
-              {assetMap.loom_script && (
-                <div>
-                  <p style={{ fontSize: "0.75rem", fontWeight: 600, color: "#92400e", marginBottom: 4 }}>Loom Script Notes</p>
-                  <p style={{ fontSize: "0.875rem", color: "#713f12", whiteSpace: "pre-wrap" }}>{assetMap.loom_script}</p>
-                </div>
-              )}
+        <section id="review" style={sectionStyle}>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <p style={sectionEyebrowStyle}>Detailed Review</p>
+              <h2 style={sectionTitleStyle}>Category Review</h2>
+              <p style={sectionIntroStyle}>
+                Each category below separates what was found from why it matters, the downside of
+                leaving it unchanged, and the most direct next move.
+              </p>
             </div>
-          )}
-        </div>
-      )}
+          </div>
 
-      <div>
-        <h2
-          style={{
-            fontSize: "1.125rem",
-            fontWeight: 600,
-            marginBottom: 16,
-          }}
-        >
-          Category review
-        </h2>
-        {findings.length === 0 && (
-          <p style={{ color: "#6b7280", marginBottom: 16 }}>
-            No prioritized findings were generated, but the category coverage states
-            below still show what was inspected versus what had limited evidence.
-          </p>
-        )}
-        {categoryReviews.map((review) => {
-          const reviewStyle = REVIEW_STATE_STYLES[review.reviewState];
-          return (
-            <div key={review.category} style={{ marginBottom: 24 }}>
-                <h3
+          <div style={{ display: "grid", gap: 16 }}>
+            {fullReport.categorySections.map((section) => {
+              const reviewMeta =
+                section.inspectionStatus === "not_inspected"
+                  ? REVIEW_STATE_META.insufficient_evidence
+                  : section.inspectionStatus === "lightly_inspected"
+                    ? REVIEW_STATE_META.lightly_inspected
+                    : section.findings.length > 0
+                      ? REVIEW_STATE_META.inspected_with_findings
+                      : REVIEW_STATE_META.inspected_clean;
+
+              return (
+                <section
+                  key={section.category}
+                  id={`category-${section.category}`}
                   style={{
-                    fontSize: "1rem",
-                    fontWeight: 600,
-                    color: "#374151",
-                    marginBottom: 12,
-                    paddingBottom: 6,
-                    borderBottom: "1px solid #f3f4f6",
+                    scrollMarginTop: 24,
+                    padding: 20,
+                    borderRadius: 20,
+                    background: "#fff",
+                    border: "1px solid #e5e7eb",
                   }}
                 >
-                  {CATEGORY_LABELS[review.category]}
-                </h3>
-                <div
-                  style={{
-                    marginBottom: 12,
-                    padding: 14,
-                    borderRadius: 6,
-                    border: `1px solid ${reviewStyle.border}`,
-                    background: reviewStyle.background,
-                  }}
-                >
-                  <p
-                    style={{
-                      fontSize: "0.8rem",
-                      fontWeight: 700,
-                      color: reviewStyle.text,
-                      marginBottom: 4,
-                    }}
-                  >
-                    {review.headline}
-                    {review.score !== null ? ` · ${review.score}/100` : ""}
-                  </p>
-                  <p style={{ fontSize: "0.875rem", color: reviewStyle.text }}>
-                    {review.summary}
-                  </p>
-                </div>
-                {review.findings.map((finding) => (
                   <div
-                    key={finding.id}
                     style={{
-                      marginBottom: 12,
-                      padding: 16,
-                      background: "#fff",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: 6,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: 14,
+                      flexWrap: "wrap",
+                      marginBottom: 14,
                     }}
                   >
+                    <div>
+                      <h3 style={{ margin: "0 0 8px", fontSize: "1.18rem", fontWeight: 800 }}>
+                        {section.label}
+                      </h3>
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                        <StatusBadge {...reviewMeta} />
+                        <span
+                          style={{
+                            color: section.score === null ? "#94a3b8" : scoreColor(section.score),
+                            fontWeight: 800,
+                          }}
+                        >
+                          {section.score === null ? "No score" : `${section.score}/100`}
+                        </span>
+                      </div>
+                    </div>
+
                     <div
                       style={{
-                        display: "flex",
-                        alignItems: "flex-start",
-                        gap: 8,
-                        marginBottom: 8,
-                        flexWrap: "wrap",
+                        maxWidth: 360,
+                        padding: "10px 12px",
+                        borderRadius: 14,
+                        background: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                        color: "#475569",
+                        fontSize: "0.84rem",
+                        fontWeight: 700,
                       }}
                     >
-                      <span
-                        style={{
-                          fontSize: "0.7rem",
-                          fontWeight: 700,
-                          padding: "2px 6px",
-                          borderRadius: 4,
-                          background: SEVERITY_COLORS[finding.severity] + "1a",
-                          color: SEVERITY_COLORS[finding.severity],
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {finding.severity.toUpperCase()}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: "0.7rem",
-                          fontWeight: 600,
-                          padding: "2px 6px",
-                          borderRadius: 4,
-                          background:
-                            EVIDENCE_COLORS[finding.evidenceLevel] + "1a",
-                          color: EVIDENCE_COLORS[finding.evidenceLevel],
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {finding.evidenceLevel}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: "0.7rem",
-                          fontWeight: 600,
-                          padding: "2px 6px",
-                          borderRadius: 4,
-                          background: "#f3f4f6",
-                          color: "#4b5563",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {finding.confidence} confidence
-                      </span>
-                      <span
-                        style={{ fontWeight: 600, fontSize: "0.9rem", flex: 1 }}
-                      >
-                        {stripHomepageScopePrefix(finding.title)}
-                      </span>
+                      {section.inspectionNote}
                     </div>
-                    <p
-                      style={{
-                        fontSize: "0.75rem",
-                        color: "#6b7280",
-                        marginBottom: 8,
-                      }}
-                    >
-                      Support: {getFindingSupportLabel(finding)}
-                    </p>
-                    <p
-                      style={{
-                        color: "#4b5563",
-                        fontSize: "0.875rem",
-                        marginBottom: 8,
-                      }}
-                    >
-                      {stripHomepageScopePrefix(finding.description)}
-                    </p>
-                    <p
-                      style={{
-                        fontSize: "0.875rem",
-                        color: "#065f46",
-                        background: "#ecfdf5",
-                        padding: "8px 12px",
-                        borderRadius: 4,
-                      }}
-                    >
-                      <strong>Recommendation:</strong> {stripHomepageScopePrefix(finding.recommendation)}
-                    </p>
                   </div>
-                ))}
+
+                  <p style={{ margin: "0 0 14px", color: "#334155", lineHeight: 1.6 }}>
+                    {section.interpretation}
+                  </p>
+
+                  {section.recommendations.length > 0 && (
+                    <div
+                      style={{
+                        marginBottom: 16,
+                        padding: "14px 16px",
+                        borderRadius: 16,
+                        background: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                      }}
+                    >
+                      <p style={{ margin: "0 0 8px", fontWeight: 800, color: "#0f172a" }}>
+                        Recommended moves
+                      </p>
+                      {renderSummaryList(section.recommendations)}
+                    </div>
+                  )}
+
+                  {section.findings.length > 0 ? (
+                    <div style={{ display: "grid", gap: 14 }}>
+                      {section.findings.map((finding) => (
+                        <FindingCard key={finding.id} finding={finding} />
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ margin: 0, color: "#64748b" }}>
+                      No prioritized findings are listed for this category beyond the inspection
+                      note above.
+                    </p>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        </section>
+
+        <section id="evidence" style={sectionStyle}>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <p style={sectionEyebrowStyle}>Evidence And Scope</p>
+              <h2 style={sectionTitleStyle}>Evidence Notes</h2>
+              <p style={sectionIntroStyle}>
+                This section is meant to make the report’s confidence boundaries explicit before
+                any narrative interpretation is taken too far.
+              </p>
             </div>
-          );
-        })}
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gap: 16,
+            }}
+          >
+            <div style={summaryPanelStyle}>
+              <p style={panelEyebrowStyle}>Scope</p>
+              <p style={{ margin: 0, color: "#334155", lineHeight: 1.6 }}>{fullReport.appendix.scopeNote}</p>
+            </div>
+            <div style={summaryPanelStyle}>
+              <p style={panelEyebrowStyle}>Evidence Levels</p>
+              <div style={{ display: "grid", gap: 8 }}>
+                {renderCountRow("Measured", fullReport.appendix.evidenceCounts.Measured, EVIDENCE_COLORS.Measured)}
+                {renderCountRow("Observed", fullReport.appendix.evidenceCounts.Observed, EVIDENCE_COLORS.Observed)}
+                {renderCountRow("Inferred", fullReport.appendix.evidenceCounts.Inferred, EVIDENCE_COLORS.Inferred)}
+              </div>
+            </div>
+            <div style={summaryPanelStyle}>
+              <p style={panelEyebrowStyle}>Inspection Notes</p>
+              {renderSummaryList(fullReport.appendix.inspectionNotes)}
+            </div>
+          </div>
+        </section>
+
+        {hasEnrichment && (
+          <section id="ai" style={sectionStyle}>
+            <div style={sectionHeaderStyle}>
+              <div>
+                <p style={sectionEyebrowStyle}>Optional Downstream Layer</p>
+                <h2 style={sectionTitleStyle}>AI Enrichment</h2>
+                <p style={sectionIntroStyle}>
+                  These assets are generated from the stored deterministic findings only. They are
+                  summaries and outreach helpers, not new evidence.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 14 }}>
+              {assetMap.summary && (
+                <div style={summaryPanelStyle}>
+                  <p style={panelEyebrowStyle}>Executive Summary</p>
+                  <p style={{ margin: 0, color: "#334155", lineHeight: 1.6 }}>{assetMap.summary}</p>
+                </div>
+              )}
+
+              {assetMap.quick_wins && (
+                <div
+                  style={{
+                    ...summaryPanelStyle,
+                    background: "#f0fdf4",
+                    border: "1px solid #bbf7d0",
+                  }}
+                >
+                  <p style={{ ...panelEyebrowStyle, color: "#166534" }}>Quick Wins</p>
+                  <p style={{ margin: 0, color: "#166534", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                    {assetMap.quick_wins}
+                  </p>
+                </div>
+              )}
+
+              {(assetMap.email || assetMap.collaboration || assetMap.loom_script) && (
+                <div
+                  style={{
+                    padding: 18,
+                    borderRadius: 18,
+                    background: "#fefce8",
+                    border: "1px solid #fde68a",
+                  }}
+                >
+                  <p style={{ ...panelEyebrowStyle, color: "#92400e" }}>Outreach Assets</p>
+                  <div style={{ display: "grid", gap: 12 }}>
+                    {assetMap.email && (
+                      <div>
+                        <p style={outreachLabelStyle}>Cold Email Draft</p>
+                        <p style={outreachCopyStyle}>{assetMap.email}</p>
+                      </div>
+                    )}
+                    {assetMap.collaboration && (
+                      <div>
+                        <p style={outreachLabelStyle}>Collaboration Angle</p>
+                        <p style={outreachCopyStyle}>{assetMap.collaboration}</p>
+                      </div>
+                    )}
+                    {assetMap.loom_script && (
+                      <div>
+                        <p style={outreachLabelStyle}>Loom Script Notes</p>
+                        <p style={{ ...outreachCopyStyle, whiteSpace: "pre-wrap" }}>{assetMap.loom_script}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );
 }
+
+const sectionStyle: React.CSSProperties = {
+  padding: "22px 24px",
+  borderRadius: 24,
+  background: "#fff",
+  border: "1px solid #e5e7eb",
+  boxShadow: "0 12px 28px rgba(15, 23, 42, 0.04)",
+};
+
+const sectionHeaderStyle: React.CSSProperties = {
+  marginBottom: 16,
+};
+
+const sectionEyebrowStyle: React.CSSProperties = {
+  margin: "0 0 6px",
+  fontSize: "0.76rem",
+  fontWeight: 800,
+  letterSpacing: "0.12em",
+  textTransform: "uppercase",
+  color: "#6366f1",
+};
+
+const sectionTitleStyle: React.CSSProperties = {
+  margin: "0 0 8px",
+  fontSize: "1.45rem",
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const sectionIntroStyle: React.CSSProperties = {
+  margin: 0,
+  color: "#64748b",
+  fontSize: "0.94rem",
+  lineHeight: 1.6,
+  maxWidth: 760,
+};
+
+const panelEyebrowStyle: React.CSSProperties = {
+  margin: "0 0 8px",
+  fontSize: "0.76rem",
+  fontWeight: 800,
+  letterSpacing: "0.12em",
+  textTransform: "uppercase",
+  color: "#64748b",
+};
+
+const summaryPanelStyle: React.CSSProperties = {
+  padding: 18,
+  borderRadius: 18,
+  background: "#fff",
+  border: "1px solid #e5e7eb",
+};
+
+const primaryLinkStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "10px 14px",
+  borderRadius: 999,
+  background: "#0f172a",
+  color: "#fff",
+  fontSize: "0.84rem",
+  fontWeight: 800,
+  textDecoration: "none",
+};
+
+const secondaryLinkStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "10px 14px",
+  borderRadius: 999,
+  background: "#fff",
+  color: "#334155",
+  border: "1px solid #cbd5e1",
+  fontSize: "0.84rem",
+  fontWeight: 800,
+  textDecoration: "none",
+};
+
+const anchorPillStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "8px 12px",
+  borderRadius: 999,
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+  color: "#334155",
+  fontSize: "0.82rem",
+  fontWeight: 700,
+  textDecoration: "none",
+};
+
+const outreachLabelStyle: React.CSSProperties = {
+  margin: "0 0 4px",
+  fontSize: "0.76rem",
+  fontWeight: 800,
+  color: "#92400e",
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+};
+
+const outreachCopyStyle: React.CSSProperties = {
+  margin: 0,
+  color: "#78350f",
+  lineHeight: 1.6,
+};

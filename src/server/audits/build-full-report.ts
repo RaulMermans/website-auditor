@@ -13,17 +13,17 @@ import {
 
 const CATEGORY_IMPACT_NOTES: Record<FindingCategory, string> = {
   performance:
-    "Page weight and structural complexity increase the chance of a slower first impression or delayed interaction.",
+    "A heavier page footprint increases the chance that the first impression feels slower or less responsive, especially on constrained devices.",
   technical_seo:
-    "Search engines and browsers receive weaker signals about page purpose, hierarchy, or preferred indexing state.",
+    "Search engines and browsers receive weaker signals about page purpose, hierarchy, or the preferred indexing state.",
   accessibility:
     "Visitors using assistive technology lose context or fallback information that should be available by default.",
   ux_ui:
-    "Scanning and decision-making become harder when the layout gives too many elements similar visual weight.",
+    "Scanning becomes harder when the layout gives too many elements similar visual weight or asks visitors to process too much at once.",
   messaging_content:
-    "Visitors have to work harder to understand the offer, audience, or outcome before they decide whether to continue.",
+    "Visitors have to work harder to understand the offer, audience, or likely outcome before deciding whether to continue.",
   conversion:
-    "The path from interest to action becomes less obvious or asks for too much commitment too early.",
+    "The path from interest to action becomes less obvious or asks for more commitment than a first step usually should.",
   trust_signals:
     "The page gives visitors less reassurance at the point where they need confidence to move forward.",
   mobile_experience:
@@ -188,18 +188,18 @@ function joinLabels(labels: string[]) {
 
 function describeOverallCondition(score: number) {
   if (score >= 85) {
-    return "shows a relatively disciplined foundation in the inspected areas, with targeted weaknesses rather than broad breakdowns";
+    return "shows a comparatively disciplined foundation in the inspected areas, with targeted weaknesses rather than broad structural friction";
   }
 
   if (score >= 70) {
-    return "has a workable foundation, but several issues are still reducing clarity, trust, or efficiency";
+    return "has a workable foundation, but several issues are still softening clarity, trust, or conversion efficiency";
   }
 
   if (score >= 55) {
     return "shows material friction across the inspected areas and would benefit from a focused remediation pass";
   }
 
-  return "shows multiple high-priority issues in the inspected areas and needs a sharper correction pass before it feels consistently credible";
+  return "shows multiple high-priority issues in the inspected areas and needs a sharper correction pass before the experience feels consistently credible";
 }
 
 function getScopeSubject(data: ReportData) {
@@ -212,7 +212,7 @@ function getInspectionLabel(review: ReportCategoryReview) {
   }
 
   if (review.reviewState === "lightly_inspected") {
-    return "Light inspection";
+    return "Lightly inspected";
   }
 
   if (review.reviewState === "inspected_clean") {
@@ -224,52 +224,52 @@ function getInspectionLabel(review: ReportCategoryReview) {
 
 function getInspectionNote(review: ReportCategoryReview) {
   if (review.reviewState === "insufficient_evidence") {
-    return "This category was not meaningfully covered in the current deterministic pass.";
+    return "This category was not meaningfully covered in the current deterministic pass and should be treated as unknown.";
   }
 
-  return `${review.observedChecks}/${review.expectedChecks} deterministic checks covered in this category.`;
+  return `${review.observedChecks}/${review.expectedChecks} deterministic checks covered in this category during the current pass.`;
 }
 
 function getSeverityRisk(severity: Finding["severity"]) {
   switch (severity) {
     case "critical":
-      return "This is a priority correction because it is likely to materially weaken performance on a key page.";
+      return "This deserves prompt correction because it is likely to materially weaken a key page.";
     case "high":
       return "This is likely to suppress clarity, trust, or follow-through until it is corrected.";
     case "medium":
-      return "This creates meaningful friction and is worth addressing in the next improvement pass.";
+      return "This is a meaningful source of friction and is worth addressing in the next improvement pass.";
     case "low":
-      return "This is secondary to higher-priority issues, but tightening it should improve polish and consistency.";
+      return "This sits below the higher-priority issues, but tightening it should improve polish and consistency.";
     case "info":
     default:
-      return "This is a lower-stakes issue, but cleaning it up should improve overall execution quality.";
+      return "This is lower-stakes, but cleaning it up should improve execution quality.";
   }
 }
 
 function getEvidenceCalibration(finding: Finding) {
   if (finding.evidenceLevel === "Measured") {
-    return "Measured directly from the captured page.";
+    return "Supported by direct markup or count-based evidence from the captured page.";
   }
 
   if (finding.evidenceLevel === "Observed") {
-    return "Observed in the captured page structure and content patterns.";
+    return "Supported by visible page patterns in the capture; the pattern is concrete even though downstream impact was not benchmarked.";
   }
 
-  return "Inference from captured signals rather than a directly measured defect; validate it while implementing the fix.";
+  return "Directional inference from captured signals rather than a confirmed measured defect; validate it against live UX or analytics while implementing.";
 }
 
 function buildRiskStatement(finding: Finding) {
   const severityRisk = getSeverityRisk(finding.severity);
 
   if (finding.evidenceLevel === "Inferred") {
-    return `${severityRisk} The risk call here is intentionally cautious because it is inference-backed, not directly measured.`;
+    return `${severityRisk} Treat the impact call as directional because it is inference-backed rather than directly measured.`;
   }
 
   if (finding.evidenceLevel === "Observed") {
     return `${severityRisk} The underlying pattern is visible in the captured experience, even if downstream impact was not directly measured here.`;
   }
 
-  return `${severityRisk} The underlying issue is directly measurable in the captured page.`;
+  return `${severityRisk} The underlying issue is directly present in the captured page evidence.`;
 }
 
 function buildNarrativeFinding(finding: Finding): FullReportFinding {
@@ -300,7 +300,7 @@ function buildCategoryInterpretation(
 
   if (review.reviewState === "lightly_inspected") {
     return review.findingCount > 0
-      ? "This category surfaced credible issues, but the inspection depth was partial. The current findings are directionally useful; the absence of additional issues is not a clean bill of health."
+      ? "This category surfaced credible issues, but inspection depth was only partial. The findings are useful directional signals; the absence of additional issues is not a clean bill of health."
       : "Only limited checks ran here. No issues surfaced, but the evidence is too thin to call the category clean.";
   }
 
@@ -310,7 +310,7 @@ function buildCategoryInterpretation(
 
   const leadFinding = narrativeFindings[0];
   return leadFinding
-    ? `${CATEGORY_LABELS[review.category]} is one of the clearer pressure points in this audit. The lead issue is "${leadFinding.title}", and the inspection depth is strong enough to treat the surfaced problems as credible.`
+    ? `${CATEGORY_LABELS[review.category]} is a genuine pressure point in this audit. The lead issue is "${leadFinding.title}", and inspection depth is strong enough to treat the surfaced problems as credible category friction rather than isolated noise.`
     : `${CATEGORY_LABELS[review.category]} shows credible pressure in the current deterministic pass.`;
 }
 
@@ -325,14 +325,12 @@ function buildExecutiveSummary(
   const whatIsWorking =
     inspectedCleanCategories.length > 0
       ? [
-          `The current deterministic pass did not surface material issues in ${joinLabels(inspectedCleanCategories)}.`,
+          `${joinLabels(inspectedCleanCategories)} read comparatively steady within the inspected signals.`,
         ]
-      : ["Few inspected categories read as clearly clean yet in the current pass."];
+      : ["No inspected category reads fully settled yet in the current pass."];
   const whatIsLimiting =
     topPriorities.length > 0
-      ? topPriorities.slice(0, 3).map(
-          (finding) => `${finding.title}: ${finding.whyItMatters}`
-        )
+      ? topPriorities.slice(0, 3).map((finding) => `${finding.categoryLabel}: ${finding.summary}`)
       : ["No prioritized issues were generated from the current deterministic findings set."];
   const lightlyInspectedCount = categorySections.filter(
     (section) => section.inspectionStatus === "lightly_inspected"
@@ -348,7 +346,7 @@ function buildExecutiveSummary(
     overview:
       `${getScopeSubject(data)} ${describeOverallCondition(data.scores.overall)}. ` +
       (topPriorities.length > 0
-        ? `The strongest constraints currently sit in ${joinLabels(
+        ? `The clearest current constraints sit in ${joinLabels(
             dedupeStrings(topPriorities.slice(0, 3).map((finding) => finding.categoryLabel))
           )}.`
         : "The current pass did not surface prioritized issues."),
@@ -408,7 +406,7 @@ function buildStrategicReadout(
       return {
         title: lens.title,
         body:
-          `The strongest signal here is ${joinLabels(findingTitles)}. ` +
+          `The clearest signal here is ${joinLabels(findingTitles)}. ` +
           `${lens.impactNote}`,
       };
     }
@@ -522,7 +520,7 @@ export function buildFullReportData(data: ReportData): FullReportData {
       quickWins:
         quickWins.length > 0
           ? quickWins
-          : ["No immediate deterministic quick wins were surfaced beyond the issues already listed above."],
+          : ["No additional low-complexity wins stood out beyond the prioritized issues already listed above."],
       mediumPriority:
         mediumPriority.length > 0
           ? mediumPriority
@@ -530,7 +528,7 @@ export function buildFullReportData(data: ReportData): FullReportData {
       strategic:
         strategic.length > 0
           ? strategic
-          : ["No deeper strategic improvements were surfaced beyond the prioritized findings already listed."],
+          : ["No deeper strategic improvements surfaced beyond the prioritized findings already listed."],
     },
     appendix: {
       scopeNote: data.auditRun.homepageOnly

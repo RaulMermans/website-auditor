@@ -8,8 +8,9 @@ import {
   scoreAuditByCategory,
 } from "@/server/scoring/score-audit";
 
-const { getReportDataMock, notFoundMock } = vi.hoisted(() => ({
+const { getReportDataMock, getAssetsForAuditRunMock, notFoundMock } = vi.hoisted(() => ({
   getReportDataMock: vi.fn(),
+  getAssetsForAuditRunMock: vi.fn(),
   notFoundMock: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
@@ -41,7 +42,18 @@ vi.mock("@/db/report", async (importOriginal) => {
   };
 });
 
-import FullReportPage from "@/app/report/[auditRunId]/full/page";
+vi.mock("@/db/enrichment", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/db/enrichment")>();
+
+  return {
+    ...actual,
+    enrichmentRepository: {
+      getAssetsForAuditRun: getAssetsForAuditRunMock,
+    },
+  };
+});
+
+import ReportPage from "@/app/report/[auditRunId]/page";
 
 vi.stubGlobal("React", React);
 
@@ -122,31 +134,40 @@ function makeReportData(): ReportData {
   };
 }
 
-describe("FullReportPage", () => {
-  it("renders the document-style full report sections", async () => {
+describe("ReportPage", () => {
+  it("renders the concise report hierarchy and enrichment section", async () => {
     getReportDataMock.mockResolvedValue(makeReportData());
+    getAssetsForAuditRunMock.mockResolvedValue([
+      {
+        id: "asset-1",
+        auditRunId: "run-1",
+        type: "summary",
+        content: "Deterministic summary copy.",
+        generatedAt: now,
+      },
+    ]);
 
-    const element = await FullReportPage({
+    const element = await ReportPage({
       params: Promise.resolve({ auditRunId: "run-1" }),
     });
     const html = renderToStaticMarkup(element);
 
-    expect(html).toContain("Executive Summary");
+    expect(html).toContain("Main Conclusion");
+    expect(html).toContain("Do First");
     expect(html).toContain("Top Priorities");
     expect(html).toContain("Score Summary");
-    expect(html).toContain("Category-by-Category Review");
-    expect(html).toContain("Strategic Readout");
-    expect(html).toContain("Recommended Next Actions");
-    expect(html).toContain("Appendix / Evidence Notes");
-    expect(html).toContain("Reading Guide");
+    expect(html).toContain("Category Review");
+    expect(html).toContain("Evidence Notes");
+    expect(html).toContain("AI Enrichment");
     expect(html).toContain("Homepage opening message stays broad above the fold");
   });
 
   it("delegates to notFound when the audit run is missing", async () => {
     getReportDataMock.mockResolvedValue(null);
+    getAssetsForAuditRunMock.mockResolvedValue([]);
 
     await expect(
-      FullReportPage({
+      ReportPage({
         params: Promise.resolve({ auditRunId: "missing-run" }),
       })
     ).rejects.toThrow("NEXT_NOT_FOUND");

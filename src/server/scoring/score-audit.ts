@@ -20,8 +20,8 @@ const EVIDENCE_MULTIPLIER: Record<EvidenceLabel, number> = {
   Inferred: 0.75,
 };
 
-const MAX_SCORE = 95;
-const MIN_LIGHT_INSPECTION_SCORE = 70;
+const MAX_SCORE = 92;
+const MIN_LIGHT_INSPECTION_SCORE = 64;
 
 export interface ScoreAuditInput {
   auditRunId: string;
@@ -110,6 +110,25 @@ function getFindingPenalty(
   );
 }
 
+function getCategoryPenalty(
+  findings: Array<
+    Pick<Finding, "severity"> &
+      Partial<Pick<Finding, "confidence" | "evidenceLevel">>
+  >
+) {
+  const basePenalty = findings.reduce((sum, finding) => sum + getFindingPenalty(finding), 0);
+  const meaningfulFindingCount = findings.filter((finding) => finding.severity !== "info").length;
+  const highPriorityCount = findings.filter(
+    (finding) => finding.severity === "critical" || finding.severity === "high"
+  ).length;
+
+  const densityPenalty =
+    meaningfulFindingCount <= 1 ? 0 : 2 + Math.max(0, meaningfulFindingCount - 2) * 2;
+  const escalationPenalty = highPriorityCount > 1 ? 2 : 0;
+
+  return basePenalty + densityPenalty + escalationPenalty;
+}
+
 function resolveInspectionSummary(
   category: FindingCategory,
   options?: ScoreAuditByCategoryOptions
@@ -164,6 +183,25 @@ export function scoreAuditByCategory(
   >,
   options: ScoreAuditByCategoryOptions = {}
 ): CategoryScores {
+  const findingsByCategory = ALL_FINDING_CATEGORIES.reduce<
+    Record<
+      FindingCategory,
+      Array<
+        Pick<Finding, "id" | "severity" | "category"> &
+          Partial<Pick<Finding, "confidence" | "evidenceLevel">>
+      >
+    >
+  >((acc, category) => {
+    acc[category] = findings.filter((finding) => finding.category === category);
+    return acc;
+  }, {} as Record<
+    FindingCategory,
+    Array<
+      Pick<Finding, "id" | "severity" | "category"> &
+        Partial<Pick<Finding, "confidence" | "evidenceLevel">>
+    >
+  >);
+
   const inspectionSummaryByCategory = Object.fromEntries(
     ALL_FINDING_CATEGORIES.map((category) => [category, resolveInspectionSummary(category, options)])
   ) as Record<FindingCategory, InspectionSummary>;
@@ -171,9 +209,7 @@ export function scoreAuditByCategory(
   const byCategory = Object.fromEntries(
     ALL_FINDING_CATEGORIES.map((category) => {
       const inspectionSummary = inspectionSummaryByCategory[category];
-      const categoryPenalty = findings
-        .filter((finding) => finding.category === category)
-        .reduce((sum, finding) => sum + getFindingPenalty(finding), 0);
+      const categoryPenalty = getCategoryPenalty(findingsByCategory[category]);
 
       if (inspectionSummary.status === "not_inspected") {
         return [category, 0];
@@ -200,9 +236,20 @@ export function scoreAuditByCategory(
     inspectedScores.length > 0
       ? inspectedScores.reduce((sum, score) => sum + score, 0) / inspectedScores.length
       : 0;
+  const categoriesWithIssues = inspectedCategories.filter(
+    (category) => findingsByCategory[category].length > 0
+  );
+  const multiFindingCategories = categoriesWithIssues.filter(
+    (category) => findingsByCategory[category].filter((finding) => finding.severity !== "info").length > 1
+  ).length;
+  const higherPriorityFindings = findings.filter(
+    (finding) => finding.severity === "critical" || finding.severity === "high"
+  ).length;
+  const multiCategoryPenalty = Math.max(0, categoriesWithIssues.length - 1) * 2.5;
+  const backlogPenalty = multiFindingCategories * 1.5 + Math.min(higherPriorityFindings, 4) * 0.75;
 
   return {
-    overall: clampScore(inspectedAverage - coveragePenalty),
+    overall: clampScore(inspectedAverage - coveragePenalty - multiCategoryPenalty - backlogPenalty),
     byCategory,
     inspectedCategories,
     inspectionSummaryByCategory,

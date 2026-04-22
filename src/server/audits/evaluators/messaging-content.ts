@@ -31,10 +31,10 @@ export const evaluateMessagingContent: SpecialistEvaluator = ({ snapshot, metric
     drafts.push({
       category: "messaging_content",
       issueType: "weak_value_proposition",
-      title: "Homepage value proposition is still too generic above the fold",
+      title: "Homepage opening message stays broad above the fold",
       description:
         metrics.messagingQuality.genericIntroDetected
-          ? "The homepage hero opens with generic introductory language instead of a specific audience, offer, or outcome. That makes the first impression descriptive rather than persuasive."
+          ? "The homepage hero opens with generic introductory language instead of a specific audience, offer, or outcome. That makes the first impression more descriptive than decisive."
           : "The homepage hero copy stays broad and only loosely aligns with the title/meta language in the captured page. The opening does not quickly clarify what is offered, who it is for, and why it matters.",
       severity: weakHeroAlignment && metrics.trustSignals.density <= 1 ? "high" : "medium",
       confidence: metrics.messagingQuality.genericIntroDetected ? "high" : "medium",
@@ -53,7 +53,7 @@ export const evaluateMessagingContent: SpecialistEvaluator = ({ snapshot, metric
     drafts.push({
       category: "messaging_content",
       issueType: "offer_sprawl",
-      title: "The page broadens into too many themes before one offer is clear",
+      title: "The page broadens before one core offer is established",
       description:
         `The captured page carries ${metrics.messagingQuality.h2Count} section headings and multiple offer cues. That breadth makes the story feel expansive before one core service or promise is firmly established.`,
       severity: "medium",
@@ -75,7 +75,7 @@ export const evaluateMessagingContent: SpecialistEvaluator = ({ snapshot, metric
     drafts.push({
       category: "messaging_content",
       issueType: "headline_section_mismatch",
-      title: "Hero promise and downstream sections feel loosely connected",
+      title: "Hero promise and downstream sections are only loosely connected",
       description:
         "The hero/title language and downstream section headings share limited overlap in the captured page. That makes the homepage read more like a stack of sections than one coherent story.",
       severity: "medium",

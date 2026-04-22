@@ -54,7 +54,7 @@ describe("trust signal evidence and findings", () => {
   it("emits low-trust finding on homepage with density <= 1", () => {
     const html = `<html><head><title>My Site</title></head><body><h1>Welcome</h1></body></html>`;
     const result = extractPageArtifacts(RUN, HOMEPAGE, html);
-    const trustFindings = getFindings(result.findings, "trust signal density");
+    const trustFindings = getFindings(result.findings, "trust layer is thin");
     expect(trustFindings.length).toBeGreaterThan(0);
   });
 
@@ -67,7 +67,7 @@ describe("trust signal evidence and findings", () => {
         <a href="/privacy">Privacy</a>
       </body></html>`;
     const result = extractPageArtifacts(RUN, HOMEPAGE, html);
-    const trustFindings = getFindings(result.findings, "trust signal density");
+    const trustFindings = getFindings(result.findings, "trust layer is thin");
     expect(trustFindings).toHaveLength(0);
   });
 
@@ -75,7 +75,7 @@ describe("trust signal evidence and findings", () => {
     const snap = { id: "snap-3", url: "https://example.com/about", pageType: "about" as const };
     const html = `<html><body><h1>About us</h1></body></html>`;
     const result = extractPageArtifacts(RUN, snap, html);
-    const trustFindings = getFindings(result.findings, "trust signal density");
+    const trustFindings = getFindings(result.findings, "trust layer is thin");
     expect(trustFindings).toHaveLength(0);
   });
 });
@@ -101,7 +101,7 @@ describe("CTA inventory evidence and findings", () => {
     const result = extractPageArtifacts(RUN, HOMEPAGE, html);
     const ev = getEvidence<{ hasDuplicates: boolean }>(result.pageEvidence, "cta_inventory");
     expect(ev.hasDuplicates).toBe(true);
-    const findingList = getFindings(result.findings, "repeated cta");
+    const findingList = getFindings(result.findings, "repeats without adding much context");
     expect(findingList.length).toBeGreaterThan(0);
   });
 
@@ -109,7 +109,7 @@ describe("CTA inventory evidence and findings", () => {
     const buttons = Array.from({ length: 7 }, (_, i) => `<button>Book a demo ${i}</button>`).join("");
     const html = `<html><body>${buttons}</body></html>`;
     const result = extractPageArtifacts(RUN, HOMEPAGE, html);
-    const overloadFindings = getFindings(result.findings, "cta overload");
+    const overloadFindings = getFindings(result.findings, "too many calls to action");
     expect(overloadFindings.length).toBeGreaterThan(0);
   });
 
@@ -122,7 +122,7 @@ describe("CTA inventory evidence and findings", () => {
         <a href="/contact">Contact us</a>
       </body></html>`;
     const result = extractPageArtifacts(RUN, HOMEPAGE, html);
-    const competingFindings = getFindings(result.findings, "primary and secondary actions compete");
+    const competingFindings = getFindings(result.findings, "primary action is not clearly distinguished");
     expect(competingFindings.length).toBeGreaterThan(0);
   });
 });
@@ -146,7 +146,7 @@ describe("form friction evidence and findings", () => {
     const inputs = Array.from({ length: 7 }, (_, i) => `<input type="text" name="field${i}">`).join("");
     const html = `<html><body><form>${inputs}</form></body></html>`;
     const result = extractPageArtifacts(RUN, SERVICES, html);
-    const frictionFindings = getFindings(result.findings, "long form");
+    const frictionFindings = getFindings(result.findings, "first-step form asks for more");
     expect(frictionFindings.length).toBeGreaterThan(0);
     expect(frictionFindings[0]).toMatchObject({ category: "conversion", severity: "medium" });
   });
@@ -154,7 +154,7 @@ describe("form friction evidence and findings", () => {
   it("does NOT emit friction finding for small form", () => {
     const html = `<html><body><form><input type="email"><input type="text"></form></body></html>`;
     const result = extractPageArtifacts(RUN, SERVICES, html);
-    const frictionFindings = getFindings(result.findings, "long form");
+    const frictionFindings = getFindings(result.findings, "first-step form asks for more");
     expect(frictionFindings).toHaveLength(0);
   });
 
@@ -205,7 +205,7 @@ describe("messaging quality evidence and findings", () => {
     const ev = getEvidence<{ genericIntroDetected: boolean }>(result.pageEvidence, "messaging_quality");
     expect(ev.genericIntroDetected).toBe(true);
 
-    const msgFindings = getFindings(result.findings, "value proposition");
+    const msgFindings = getFindings(result.findings, "opening message stays broad");
     expect(msgFindings.length).toBeGreaterThan(0);
     expect(msgFindings[0]).toMatchObject({ category: "messaging_content", severity: "high" });
   });
@@ -222,7 +222,7 @@ describe("messaging quality evidence and findings", () => {
     const result = extractPageArtifacts(RUN, HOMEPAGE, html);
     const ev = getEvidence<{ genericIntroDetected: boolean }>(result.pageEvidence, "messaging_quality");
     expect(ev.genericIntroDetected).toBe(false);
-    const msgFindings = getFindings(result.findings, "value proposition");
+    const msgFindings = getFindings(result.findings, "opening message stays broad");
     expect(msgFindings).toHaveLength(0);
   });
 
@@ -230,7 +230,7 @@ describe("messaging quality evidence and findings", () => {
     const snap = { id: "snap-3", url: "https://example.com/about", pageType: "about" as const };
     const html = `<html><body><h1>Welcome to our company</h1></body></html>`;
     const result = extractPageArtifacts(RUN, snap, html);
-    const msgFindings = getFindings(result.findings, "value proposition");
+    const msgFindings = getFindings(result.findings, "opening message stays broad");
     expect(msgFindings).toHaveLength(0);
   });
 
@@ -248,7 +248,7 @@ describe("messaging quality evidence and findings", () => {
       .join("");
     const html = `<html><body><h1>Grow faster</h1>${headings}</body></html>`;
     const result = extractPageArtifacts(RUN, HOMEPAGE, html);
-    const msgFindings = getFindings(result.findings, "too many themes");
+    const msgFindings = getFindings(result.findings, "broadens before one core offer");
     expect(msgFindings.length).toBeGreaterThan(0);
   });
 });
@@ -267,7 +267,7 @@ describe("performance script count evidence and findings", () => {
     const scripts = Array.from({ length: 5 }, (_, i) => `<script src="s${i}.js"></script>`).join("");
     const html = `<html><head>${scripts}</head><body></body></html>`;
     const result = extractPageArtifacts(RUN, HOMEPAGE, html);
-    const perfFindings = getFindings(result.findings, "heavy script");
+    const perfFindings = getFindings(result.findings, "script footprint");
     expect(perfFindings).toHaveLength(0);
   });
 
@@ -275,7 +275,7 @@ describe("performance script count evidence and findings", () => {
     const scripts = Array.from({ length: 16 }, (_, i) => `<script src="s${i}.js"></script>`).join("");
     const html = `<html><head>${scripts}</head><body></body></html>`;
     const result = extractPageArtifacts(RUN, HOMEPAGE, html);
-    const perfFindings = getFindings(result.findings, "heavy script");
+    const perfFindings = getFindings(result.findings, "script footprint");
     expect(perfFindings.length).toBeGreaterThan(0);
     expect(perfFindings[0]).toMatchObject({ category: "performance", evidenceLevel: "Measured" });
   });

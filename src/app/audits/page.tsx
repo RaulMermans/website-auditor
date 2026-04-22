@@ -1,41 +1,14 @@
 import Link from "next/link";
 import { listRecentAuditRuns } from "@/db/report";
-
-export const dynamic = "force-dynamic";
+import { AUDIT_STATUS_META } from "@/lib/report-presentation";
 import type { AuditRunListItem } from "@/db/report";
 import type { AuditStatus } from "@/lib/types";
 
-const STATUS_COLORS: Record<AuditStatus, { bg: string; color: string }> = {
-  pending: { bg: "#f3f4f6", color: "#374151" },
-  discovering: { bg: "#eff6ff", color: "#1d4ed8" },
-  capturing: { bg: "#eff6ff", color: "#1d4ed8" },
-  analyzing: { bg: "#eff6ff", color: "#1d4ed8" },
-  complete: { bg: "#f0fdf4", color: "#166534" },
-  failed: { bg: "#fef2f2", color: "#991b1b" },
-};
-
-function StatusBadge({ status }: { status: AuditStatus }) {
-  const { bg, color } = STATUS_COLORS[status];
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "2px 8px",
-        borderRadius: 4,
-        fontSize: "0.75rem",
-        fontWeight: 600,
-        background: bg,
-        color,
-        whiteSpace: "nowrap",
-      }}
-    >
-      {status}
-    </span>
-  );
-}
+export const dynamic = "force-dynamic";
 
 function formatDate(date: Date | null) {
   if (!date) return "—";
+
   return new Date(date).toLocaleString("en-GB", {
     day: "2-digit",
     month: "short",
@@ -45,140 +18,367 @@ function formatDate(date: Date | null) {
   });
 }
 
-function AuditRow({ run }: { run: AuditRunListItem }) {
-  const isComplete = run.status === "complete";
-  const isFailed = run.status === "failed";
+function StatusBadge({ status }: { status: AuditStatus }) {
+  const meta = AUDIT_STATUS_META[status];
 
   return (
-    <tr>
-      <td style={cellStyle}>
-        <span style={{ fontFamily: "monospace", fontSize: "0.75rem", color: "#6b7280" }}>
-          {run.auditRunId.slice(0, 8)}…
-        </span>
-      </td>
-      <td style={cellStyle}>
-        <span style={{ fontWeight: 600 }}>{run.domain}</span>
-        {run.homepageOnly && (
-          <span style={{ marginLeft: 6, fontSize: "0.7rem", color: "#d97706" }}>homepage-only</span>
-        )}
-      </td>
-      <td style={cellStyle}>
-        <StatusBadge status={run.status} />
-      </td>
-      <td style={{ ...cellStyle, color: "#6b7280", fontSize: "0.8rem" }}>
-        {formatDate(run.createdAt)}
-      </td>
-      <td style={{ ...cellStyle, color: "#6b7280", fontSize: "0.8rem" }}>
-        {formatDate(run.completedAt)}
-      </td>
-      <td style={cellStyle}>
-        {isFailed && run.failureReason ? (
-          <span
-            style={{
-              fontSize: "0.75rem",
-              color: "#991b1b",
-              maxWidth: 260,
-              display: "block",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-            title={run.failureReason}
-          >
-            {run.failureReason}
-          </span>
-        ) : isComplete ? (
-          <Link
-            href={`/report/${run.auditRunId}`}
-            style={{ fontSize: "0.875rem", color: "#1d4ed8", fontWeight: 600 }}
-          >
-            View report →
-          </Link>
-        ) : (
-          <span style={{ color: "#9ca3af", fontSize: "0.8rem" }}>—</span>
-        )}
-      </td>
-    </tr>
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "6px 10px",
+        borderRadius: 999,
+        border: `1px solid ${meta.border}`,
+        background: meta.background,
+        color: meta.text,
+        fontSize: "0.76rem",
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {meta.label}
+    </span>
   );
 }
 
-const cellStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  borderBottom: "1px solid #f3f4f6",
-  verticalAlign: "top",
+function renderActionLinks(run: AuditRunListItem) {
+  if (run.status === "complete") {
+    return (
+      <>
+        <Link href={`/report/${run.auditRunId}`} style={primaryLinkStyle}>
+          Open concise report
+        </Link>
+        <Link href={`/report/${run.auditRunId}/full`} style={secondaryLinkStyle}>
+          Open full report
+        </Link>
+      </>
+    );
+  }
+
+  if (run.status === "failed") {
+    return (
+      <>
+        <Link href={`/report/${run.auditRunId}`} style={primaryLinkStyle}>
+          Open run
+        </Link>
+        <Link href="/intake" style={secondaryLinkStyle}>
+          Start another audit
+        </Link>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Link href={`/report/${run.auditRunId}`} style={primaryLinkStyle}>
+        Open run
+      </Link>
+      <Link href="/intake" style={secondaryLinkStyle}>
+        Queue another audit
+      </Link>
+    </>
+  );
+}
+
+function AuditRunCard({ run }: { run: AuditRunListItem }) {
+  const statusMeta = AUDIT_STATUS_META[run.status];
+
+  return (
+    <article
+      style={{
+        padding: 20,
+        borderRadius: 18,
+        border: "1px solid #e5e7eb",
+        background: "#fff",
+        boxShadow: "0 10px 24px rgba(15, 23, 42, 0.04)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 12,
+          flexWrap: "wrap",
+          marginBottom: 14,
+        }}
+      >
+        <div>
+          <p
+            style={{
+              margin: "0 0 6px",
+              fontSize: "0.72rem",
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "#9ca3af",
+            }}
+          >
+            Audit Run
+          </p>
+          <h2 style={{ margin: "0 0 6px", fontSize: "1.15rem", fontWeight: 700 }}>{run.domain}</h2>
+          <p style={{ margin: 0, color: "#6b7280", fontSize: "0.82rem" }}>
+            {run.auditRunId}
+          </p>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {run.homepageOnly && (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "6px 10px",
+                borderRadius: 999,
+                background: "#fffbeb",
+                border: "1px solid #fcd34d",
+                color: "#92400e",
+                fontSize: "0.76rem",
+                fontWeight: 700,
+              }}
+            >
+              Homepage-only
+            </span>
+          )}
+          <StatusBadge status={run.status} />
+        </div>
+      </div>
+
+      <p
+        style={{
+          margin: "0 0 16px",
+          padding: "12px 14px",
+          borderRadius: 12,
+          border: `1px solid ${statusMeta.border}`,
+          background: statusMeta.background,
+          color: statusMeta.text,
+          fontSize: "0.9rem",
+        }}
+      >
+        {statusMeta.description}
+      </p>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          gap: 12,
+          marginBottom: 16,
+        }}
+      >
+        <div style={metaCardStyle}>
+          <p style={metaLabelStyle}>Created</p>
+          <p style={metaValueStyle}>{formatDate(run.createdAt)}</p>
+        </div>
+        <div style={metaCardStyle}>
+          <p style={metaLabelStyle}>Completed</p>
+          <p style={metaValueStyle}>{formatDate(run.completedAt)}</p>
+        </div>
+        <div style={metaCardStyle}>
+          <p style={metaLabelStyle}>Recommended next step</p>
+          <p style={metaValueStyle}>
+            {run.status === "complete"
+              ? "Review the concise report first, then open the full report."
+              : run.status === "failed"
+                ? "Open the run details, inspect the failure reason, then re-run if needed."
+                : "Open the run to monitor progress and refresh when the status advances."}
+          </p>
+        </div>
+      </div>
+
+      {run.status === "failed" && run.failureReason && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: "12px 14px",
+            borderRadius: 12,
+            border: "1px solid #fecaca",
+            background: "#fef2f2",
+            color: "#991b1b",
+          }}
+        >
+          <p style={{ margin: "0 0 4px", fontSize: "0.76rem", fontWeight: 700, textTransform: "uppercase" }}>
+            Failure reason
+          </p>
+          <p style={{ margin: 0, fontSize: "0.9rem" }}>{run.failureReason}</p>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>{renderActionLinks(run)}</div>
+    </article>
+  );
+}
+
+const metaCardStyle: React.CSSProperties = {
+  padding: "12px 14px",
+  borderRadius: 12,
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
 };
 
-const thStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  textAlign: "left",
-  fontSize: "0.75rem",
+const metaLabelStyle: React.CSSProperties = {
+  margin: "0 0 4px",
+  fontSize: "0.72rem",
   fontWeight: 700,
-  color: "#6b7280",
+  letterSpacing: "0.06em",
   textTransform: "uppercase",
-  letterSpacing: "0.05em",
-  borderBottom: "2px solid #e5e7eb",
-  whiteSpace: "nowrap",
+  color: "#94a3b8",
+};
+
+const metaValueStyle: React.CSSProperties = {
+  margin: 0,
+  color: "#334155",
+  fontSize: "0.9rem",
+};
+
+const primaryLinkStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "10px 14px",
+  borderRadius: 999,
+  background: "#0f172a",
+  color: "#fff",
+  fontSize: "0.84rem",
+  fontWeight: 700,
+  textDecoration: "none",
+};
+
+const secondaryLinkStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "10px 14px",
+  borderRadius: 999,
+  background: "#fff",
+  color: "#334155",
+  border: "1px solid #cbd5e1",
+  fontSize: "0.84rem",
+  fontWeight: 700,
+  textDecoration: "none",
 };
 
 export default async function AuditsPage() {
   const runs = await listRecentAuditRuns(50);
+  const readyCount = runs.filter((run) => run.status === "complete").length;
+  const inProgressCount = runs.filter((run) =>
+    ["pending", "discovering", "capturing", "analyzing"].includes(run.status)
+  ).length;
+  const failedCount = runs.filter((run) => run.status === "failed").length;
+  const homepageOnlyCount = runs.filter((run) => run.homepageOnly).length;
 
   return (
-    <main style={{ maxWidth: 1000, margin: "48px auto", padding: "0 24px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 16, marginBottom: 24 }}>
-        <h1 style={{ fontSize: "1.75rem", fontWeight: 700 }}>Audit Runs</h1>
-        <Link href="/intake" style={{ fontSize: "0.875rem", color: "#1d4ed8", fontWeight: 600 }}>
-          + New audit
-        </Link>
-      </div>
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "linear-gradient(180deg, #f8fafc 0%, #eef2ff 180px, #ffffff 180px)",
+        padding: "40px 24px 72px",
+      }}
+    >
+      <div style={{ maxWidth: 1080, margin: "0 auto" }}>
+        <section
+          style={{
+            marginBottom: 24,
+            padding: "26px 28px",
+            borderRadius: 24,
+            background: "rgba(255,255,255,0.92)",
+            border: "1px solid rgba(148, 163, 184, 0.2)",
+            boxShadow: "0 20px 50px rgba(15, 23, 42, 0.06)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              gap: 16,
+              flexWrap: "wrap",
+              marginBottom: 18,
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  margin: "0 0 6px",
+                  fontSize: "0.76rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "#6366f1",
+                }}
+              >
+                Audit Dashboard
+              </p>
+              <h1 style={{ margin: "0 0 8px", fontSize: "2rem", fontWeight: 800 }}>Audit Runs</h1>
+              <p style={{ margin: 0, color: "#475569", maxWidth: 720, fontSize: "0.96rem" }}>
+                Review recent runs, see whether each audit is ready, in progress, or blocked, and
+                jump directly to the concise or full report when a run is complete.
+              </p>
+            </div>
 
-      {runs.length === 0 ? (
-        <div
-          style={{
-            padding: 32,
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            color: "#6b7280",
-            textAlign: "center",
-          }}
-        >
-          No audit runs yet.{" "}
-          <Link href="/intake" style={{ color: "#1d4ed8" }}>
-            Create the first one.
-          </Link>
-        </div>
-      ) : (
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            overflow: "hidden",
-          }}
-        >
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: "#f9fafb" }}>
-                <th style={thStyle}>ID</th>
-                <th style={thStyle}>Domain</th>
-                <th style={thStyle}>Status</th>
-                <th style={thStyle}>Created</th>
-                <th style={thStyle}>Completed</th>
-                <th style={thStyle}>Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((run) => (
-                <AuditRow key={run.auditRunId} run={run} />
-              ))}
-            </tbody>
-          </table>
-          <p style={{ padding: "10px 12px", fontSize: "0.75rem", color: "#9ca3af" }}>
-            Showing {runs.length} most recent audit run{runs.length !== 1 ? "s" : ""}.
-          </p>
-        </div>
-      )}
+            <Link href="/intake" style={primaryLinkStyle}>
+              New audit
+            </Link>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {[
+              ["Reports ready", readyCount, "#166534", "#f0fdf4", "#86efac"],
+              ["In progress", inProgressCount, "#1d4ed8", "#eff6ff", "#bfdbfe"],
+              ["Failed runs", failedCount, "#991b1b", "#fef2f2", "#fecaca"],
+              ["Homepage-only", homepageOnlyCount, "#92400e", "#fffbeb", "#fcd34d"],
+            ].map(([label, value, text, background, border]) => (
+              <div
+                key={label as string}
+                style={{
+                  padding: "16px 18px",
+                  borderRadius: 16,
+                  background: background as string,
+                  border: `1px solid ${border as string}`,
+                }}
+              >
+                <div style={{ fontSize: "1.7rem", fontWeight: 800, color: text as string }}>
+                  {value}
+                </div>
+                <div style={{ fontSize: "0.84rem", fontWeight: 700, color: text as string }}>
+                  {label}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {runs.length === 0 ? (
+          <section
+            style={{
+              padding: 32,
+              background: "#fff",
+              border: "1px solid #e5e7eb",
+              borderRadius: 18,
+              color: "#64748b",
+              textAlign: "center",
+            }}
+          >
+            No audit runs yet.{" "}
+            <Link href="/intake" style={{ color: "#1d4ed8", fontWeight: 700 }}>
+              Create the first one.
+            </Link>
+          </section>
+        ) : (
+          <section style={{ display: "grid", gap: 16 }}>
+            {runs.map((run) => (
+              <AuditRunCard key={run.auditRunId} run={run} />
+            ))}
+          </section>
+        )}
+      </div>
     </main>
   );
 }

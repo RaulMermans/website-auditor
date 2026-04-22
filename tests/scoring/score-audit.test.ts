@@ -9,7 +9,7 @@ import {
 describe("scoreAudit", () => {
   it("does not award a perfect score when no findings exist", () => {
     const result = scoreAudit({ auditRunId: "a", rubricId: "r", findings: [] });
-    expect(result.totalScore).toBe(95);
+    expect(result.totalScore).toBe(92);
   });
 
   it("penalizes high-confidence measured findings more than before", () => {
@@ -18,7 +18,7 @@ describe("scoreAudit", () => {
       rubricId: "r",
       findings: [{ id: "1", severity: "critical", confidence: "high", evidenceLevel: "Measured" }],
     });
-    expect(result.totalScore).toBe(77);
+    expect(result.totalScore).toBe(74);
   });
 
   it("penalizes low-confidence inferred findings less aggressively", () => {
@@ -27,7 +27,7 @@ describe("scoreAudit", () => {
       rubricId: "r",
       findings: [{ id: "1", severity: "high", confidence: "low", evidenceLevel: "Inferred" }],
     });
-    expect(result.totalScore).toBe(90);
+    expect(result.totalScore).toBe(87);
   });
 
   it("clamps to 0 on extreme penalty", () => {
@@ -45,10 +45,10 @@ describe("scoreAudit", () => {
 describe("scoreAuditByCategory", () => {
   it("returns strong but non-perfect inspected scores when no issues are found", () => {
     const result = scoreAuditByCategory([]);
-    expect(result.overall).toBe(95);
-    expect(result.byCategory.technical_seo).toBe(95);
-    expect(result.byCategory.accessibility).toBe(95);
-    expect(result.byCategory.ux_ui).toBe(95);
+    expect(result.overall).toBe(92);
+    expect(result.byCategory.technical_seo).toBe(92);
+    expect(result.byCategory.accessibility).toBe(92);
+    expect(result.byCategory.ux_ui).toBe(92);
   });
 
   it("penalizes only the affected inspected category", () => {
@@ -61,9 +61,9 @@ describe("scoreAuditByCategory", () => {
         evidenceLevel: "Measured",
       },
     ]);
-    expect(result.overall).toBe(94);
-    expect(result.byCategory.technical_seo).toBe(83);
-    expect(result.byCategory.accessibility).toBe(95);
+    expect(result.overall).toBe(90);
+    expect(result.byCategory.technical_seo).toBe(80);
+    expect(result.byCategory.accessibility).toBe(92);
   });
 
   it("distinguishes lightly inspected categories from fully inspected ones", () => {
@@ -129,6 +129,38 @@ describe("scoreAuditByCategory", () => {
     );
 
     expect(highConfidence.byCategory.conversion).toBeLessThan(lowConfidence.byCategory.conversion);
+  });
+
+  it("pulls the overall score down when issues span multiple categories", () => {
+    const result = scoreAuditByCategory(
+      [
+        {
+          id: "seo",
+          severity: "high",
+          category: "technical_seo",
+          confidence: "high",
+          evidenceLevel: "Measured",
+        },
+        {
+          id: "message",
+          severity: "high",
+          category: "messaging_content",
+          confidence: "medium",
+          evidenceLevel: "Observed",
+        },
+      ],
+      {
+        inspectionKeysByCategory: {
+          technical_seo: CATEGORY_EXPECTED_KEYS.technical_seo,
+          messaging_content: CATEGORY_EXPECTED_KEYS.messaging_content,
+          accessibility: CATEGORY_EXPECTED_KEYS.accessibility,
+        },
+      }
+    );
+
+    expect(result.byCategory.technical_seo).toBe(80);
+    expect(result.byCategory.messaging_content).toBe(83);
+    expect(result.overall).toBeLessThan(80);
   });
 
   it("covers all 8 expected categories", () => {

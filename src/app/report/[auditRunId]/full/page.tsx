@@ -4,6 +4,7 @@ import { reportRepository } from "@/db/report";
 import {
   CATEGORY_LABELS,
   EVIDENCE_COLORS,
+  REVIEW_STATE_META,
   scoreColor,
   SEVERITY_COLORS,
 } from "@/lib/report-presentation";
@@ -260,9 +261,13 @@ export default async function FullReportPage({
                 href={`#${id}`}
                 style={{
                   textDecoration: "none",
-                  color: "#475569",
+                  color: "#334155",
                   fontSize: "0.82rem",
-                  fontWeight: 600,
+                  fontWeight: 700,
+                  padding: "8px 12px",
+                  borderRadius: 999,
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
                 }}
               >
                 {label}
@@ -271,7 +276,106 @@ export default async function FullReportPage({
           </nav>
         </header>
 
-        <section id="summary" style={{ marginBottom: 34 }}>
+        <section
+          id="reader-guide"
+          style={{
+            marginBottom: 34,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+            gap: 16,
+            scrollMarginTop: 24,
+          }}
+        >
+          <div
+            style={{
+              padding: 18,
+              borderRadius: 16,
+              background: "#fff",
+              border: "1px solid #e5e7eb",
+            }}
+          >
+            <h2
+              style={{
+                margin: "0 0 10px",
+                fontSize: "1rem",
+                fontFamily:
+                  'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              }}
+            >
+              Reading Guide
+            </h2>
+            <div style={{ display: "grid", gap: 10 }}>
+              {[
+                ["#summary", "Executive Summary", "Read this first for the main conclusion and coverage frame."],
+                ["#priorities", "Top Priorities", "Use this when you need the clearest issues and next moves fast."],
+                ["#scores", "Score Summary", "Check status labels before interpreting category scores."],
+                ["#categories", "Category Review", "Read here when you want the detailed evidence-backed reasoning."],
+                ["#strategic", "Strategic Readout", "Use this for the consultant-style thematic synthesis."],
+                ["#actions", "Next Actions", "This is the most direct implementation-oriented view."],
+                ["#appendix", "Appendix", "Open this for scope, evidence mix, and inspection notes."],
+              ].map(([href, label, note]) => (
+                <a
+                  key={href}
+                  href={href}
+                  style={{
+                    textDecoration: "none",
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                    color: "#334155",
+                  }}
+                >
+                  <strong>{label}</strong>
+                  <span style={{ display: "block", marginTop: 4, color: "#64748b", fontSize: "0.84rem" }}>
+                    {note}
+                  </span>
+                </a>
+              ))}
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: 18,
+              borderRadius: 16,
+              background: "#fff",
+              border: "1px solid #e5e7eb",
+            }}
+          >
+            <h2
+              style={{
+                margin: "0 0 10px",
+                fontSize: "1rem",
+                fontFamily:
+                  'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              }}
+            >
+              How To Read Status
+            </h2>
+            <div style={{ display: "grid", gap: 10 }}>
+              {Object.values(REVIEW_STATE_META).map((meta) => (
+                <div
+                  key={meta.label}
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    background: meta.background,
+                    border: `1px solid ${meta.border}`,
+                    color: meta.text,
+                  }}
+                >
+                  <strong>{meta.label}</strong>
+                  <span style={{ display: "block", marginTop: 4, fontSize: "0.84rem", lineHeight: 1.5 }}>
+                    {meta.description}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="summary" style={{ marginBottom: 34, scrollMarginTop: 24 }}>
           <h2
             style={{
               margin: "0 0 14px",
@@ -353,7 +457,7 @@ export default async function FullReportPage({
           </p>
         </section>
 
-        <section id="priorities" style={{ marginBottom: 34 }}>
+        <section id="priorities" style={{ marginBottom: 34, scrollMarginTop: 24 }}>
           <h2
             style={{
               margin: "0 0 14px",
@@ -429,6 +533,19 @@ export default async function FullReportPage({
                     >
                       {finding.evidenceLevel} · {finding.confidence}
                     </span>
+                    <span
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        background: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                        color: "#475569",
+                        fontSize: "0.75rem",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {finding.supportLabel}
+                    </span>
                   </div>
                   <h3 style={{ margin: "0 0 10px", fontSize: "1.25rem" }}>{finding.title}</h3>
                   <p style={{ margin: "0 0 10px", color: "#374151" }}>
@@ -460,7 +577,7 @@ export default async function FullReportPage({
           )}
         </section>
 
-        <section id="scores" style={{ marginBottom: 34 }}>
+        <section id="scores" style={{ marginBottom: 34, scrollMarginTop: 24 }}>
           <h2
             style={{
               margin: "0 0 14px",
@@ -638,7 +755,7 @@ export default async function FullReportPage({
           </div>
         </section>
 
-        <section id="categories" style={{ marginBottom: 34 }}>
+        <section id="categories" style={{ marginBottom: 34, scrollMarginTop: 24 }}>
           <h2
             style={{
               margin: "0 0 14px",
@@ -650,16 +767,28 @@ export default async function FullReportPage({
             Category-by-Category Review
           </h2>
           <div style={{ display: "grid", gap: 18 }}>
-            {fullReport.categorySections.map((section) => (
-              <section
-                key={section.category}
-                style={{
-                  padding: 22,
-                  borderRadius: 18,
-                  background: "#fff",
-                  border: "1px solid #e5e7eb",
-                }}
-              >
+            {fullReport.categorySections.map((section) => {
+              const reviewMeta =
+                section.inspectionStatus === "not_inspected"
+                  ? REVIEW_STATE_META.insufficient_evidence
+                  : section.inspectionStatus === "lightly_inspected"
+                    ? REVIEW_STATE_META.lightly_inspected
+                    : section.findings.length > 0
+                      ? REVIEW_STATE_META.inspected_with_findings
+                      : REVIEW_STATE_META.inspected_clean;
+
+              return (
+                <section
+                  key={section.category}
+                  id={`category-${section.category}`}
+                  style={{
+                    padding: 22,
+                    borderRadius: 18,
+                    background: "#fff",
+                    border: `1px solid ${reviewMeta.border}`,
+                    scrollMarginTop: 24,
+                  }}
+                >
                 <div
                   style={{
                     display: "flex",
@@ -698,9 +827,9 @@ export default async function FullReportPage({
                     style={{
                       padding: "8px 12px",
                       borderRadius: 999,
-                      background: "#f8fafc",
-                      border: "1px solid #e2e8f0",
-                      color: "#475569",
+                      background: reviewMeta.background,
+                      border: `1px solid ${reviewMeta.border}`,
+                      color: reviewMeta.text,
                       fontSize: "0.8rem",
                       fontWeight: 600,
                       fontFamily:
@@ -786,10 +915,23 @@ export default async function FullReportPage({
                               fontWeight: 700,
                               fontSize: "0.72rem",
                             }}
-                          >
-                            {finding.evidenceLevel} · {finding.confidence}
-                          </span>
-                        </div>
+                            >
+                              {finding.evidenceLevel} · {finding.confidence}
+                            </span>
+                            <span
+                              style={{
+                                padding: "4px 8px",
+                                borderRadius: 999,
+                                background: "#f8fafc",
+                                border: "1px solid #e2e8f0",
+                                color: "#475569",
+                                fontWeight: 700,
+                                fontSize: "0.72rem",
+                              }}
+                            >
+                              {finding.supportLabel}
+                            </span>
+                          </div>
                         <h4 style={{ margin: "0 0 8px", fontSize: "1.02rem" }}>
                           {finding.title}
                         </h4>
@@ -824,12 +966,13 @@ export default async function FullReportPage({
                     No prioritized findings are listed for this category beyond the inspection note above.
                   </p>
                 )}
-              </section>
-            ))}
+                </section>
+              );
+            })}
           </div>
         </section>
 
-        <section id="strategic" style={{ marginBottom: 34 }}>
+        <section id="strategic" style={{ marginBottom: 34, scrollMarginTop: 24 }}>
           <h2
             style={{
               margin: "0 0 14px",
@@ -867,7 +1010,7 @@ export default async function FullReportPage({
           </div>
         </section>
 
-        <section id="actions" style={{ marginBottom: 34 }}>
+        <section id="actions" style={{ marginBottom: 34, scrollMarginTop: 24 }}>
           <h2
             style={{
               margin: "0 0 14px",
@@ -922,7 +1065,7 @@ export default async function FullReportPage({
           </div>
         </section>
 
-        <section id="appendix">
+        <section id="appendix" style={{ scrollMarginTop: 24 }}>
           <h2
             style={{
               margin: "0 0 14px",

@@ -140,7 +140,7 @@ describe("deduplicateFindings", () => {
     const result = deduplicateFindings([
       makeFinding({
         category: "messaging_content",
-        title: "Homepage value proposition is still too generic above the fold",
+        title: "Homepage opening message stays broad above the fold",
         description: "The hero copy stays broad.",
         severity: "high",
         evidenceRef: {
@@ -154,7 +154,7 @@ describe("deduplicateFindings", () => {
       makeFinding({
         pageSnapshotId: "snap-2",
         category: "messaging_content",
-        title: "Homepage value proposition is still too generic above the fold",
+        title: "Homepage opening message stays broad above the fold",
         description: "The hero copy stays broad.",
         severity: "medium",
         evidenceRef: {

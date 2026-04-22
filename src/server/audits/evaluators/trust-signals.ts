@@ -13,9 +13,9 @@ export const evaluateTrustSignals: SpecialistEvaluator = ({ snapshot, metrics })
     drafts.push({
       category: "trust_signals",
       issueType: "low_trust_signal_density",
-      title: "Low trust signal density on key conversion page",
+      title: "Trust layer is thin on a key decision page",
       description:
-        "The captured page shows at most one trust indicator across proof, reassurance, and contact cues. On key decision pages, that leaves the business looking under-substantiated.",
+        "The captured page shows at most one trust indicator across proof, reassurance, and contact cues. On a key decision page, that leaves the business under-substantiated at the point where visitors are deciding whether to continue.",
       severity: snapshot.pageType === "contact" ? "high" : "medium",
       confidence: "medium",
       evidenceLevel: "Observed",
@@ -30,7 +30,7 @@ export const evaluateTrustSignals: SpecialistEvaluator = ({ snapshot, metrics })
     drafts.push({
       category: "trust_signals",
       issueType: "thin_social_proof_layer",
-      title: "Some trust cues exist, but the proof layer still feels thin",
+      title: "Reassurance cues are present, but proof remains light",
       description:
         "The captured page contains a few trust-related elements, but most are reassurance or contact cues rather than stronger proof such as testimonials, client logos, case studies, or certifications.",
       severity: "low",
@@ -47,7 +47,7 @@ export const evaluateTrustSignals: SpecialistEvaluator = ({ snapshot, metrics })
     drafts.push({
       category: "trust_signals",
       issueType: "weak_contact_clarity",
-      title: "Contact clarity is weak where reassurance should be strongest",
+      title: "Direct contact cues are not easy to verify here",
       description:
         "The captured page does not surface a clear phone, email, address, or obvious contact route. That makes the business feel harder to verify at the point of evaluation.",
       severity: snapshot.pageType === "contact" ? "high" : "medium",
@@ -67,7 +67,7 @@ export const evaluateTrustSignals: SpecialistEvaluator = ({ snapshot, metrics })
     drafts.push({
       category: "trust_signals",
       issueType: "missing_reassurance_near_conversion",
-      title: "Reassurance is thin around the main conversion step",
+      title: "Reassurance is limited near the main conversion step",
       description:
         "The captured page shows little legal or reassurance language near a high-intent page or form. That can slow submissions when visitors are deciding whether to trust the next step.",
       severity: "low",

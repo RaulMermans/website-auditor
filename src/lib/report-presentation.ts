@@ -1,4 +1,4 @@
-import type { Finding, FindingCategory } from "@/lib/types";
+import type { AuditStatus, Finding, FindingCategory } from "@/lib/types";
 
 export const CATEGORY_LABELS: Record<FindingCategory, string> = {
   performance: "Performance",
@@ -23,6 +23,89 @@ export const EVIDENCE_COLORS: Record<Finding["evidenceLevel"], string> = {
   Measured: "#0284c7",
   Observed: "#7c3aed",
   Inferred: "#9ca3af",
+};
+
+export const REVIEW_STATE_META = {
+  inspected_clean: {
+    label: "Inspected and clean",
+    description:
+      "Meaningful deterministic checks ran here and no prioritized issues surfaced in this pass.",
+    background: "#f0fdf4",
+    border: "#86efac",
+    text: "#166534",
+  },
+  inspected_with_findings: {
+    label: "Inspected with prioritized findings",
+    description:
+      "This category was meaningfully inspected and the findings below are worth addressing first.",
+    background: "#fff7ed",
+    border: "#fdba74",
+    text: "#9a3412",
+  },
+  lightly_inspected: {
+    label: "Lightly inspected",
+    description:
+      "Some deterministic checks ran, but coverage is still partial and the absence of more issues is not a clean result.",
+    background: "#fffbeb",
+    border: "#fcd34d",
+    text: "#92400e",
+  },
+  insufficient_evidence: {
+    label: "Insufficient evidence",
+    description:
+      "This category should be treated as unknown in the current pass rather than assumed to be healthy.",
+    background: "#f8fafc",
+    border: "#cbd5e1",
+    text: "#475569",
+  },
+} as const;
+
+export const AUDIT_STATUS_META: Record<
+  AuditStatus,
+  { label: string; description: string; background: string; border: string; text: string }
+> = {
+  pending: {
+    label: "Queued",
+    description: "The audit run has been created and is waiting to start.",
+    background: "#f8fafc",
+    border: "#cbd5e1",
+    text: "#475569",
+  },
+  discovering: {
+    label: "Discovering pages",
+    description: "The system is selecting the priority pages to inspect in this run.",
+    background: "#eff6ff",
+    border: "#bfdbfe",
+    text: "#1d4ed8",
+  },
+  capturing: {
+    label: "Capturing evidence",
+    description: "Browser snapshots and HTML evidence are being collected.",
+    background: "#eff6ff",
+    border: "#bfdbfe",
+    text: "#1d4ed8",
+  },
+  analyzing: {
+    label: "Assembling findings",
+    description: "Deterministic findings, prioritization, and scoring are being generated.",
+    background: "#eef2ff",
+    border: "#c7d2fe",
+    text: "#4338ca",
+  },
+  complete: {
+    label: "Report ready",
+    description: "Both the concise and full report views are available.",
+    background: "#f0fdf4",
+    border: "#86efac",
+    text: "#166534",
+  },
+  failed: {
+    label: "Run failed",
+    description: "The run stopped before a usable report was assembled.",
+    background: "#fef2f2",
+    border: "#fecaca",
+    text: "#991b1b",
+  },
 };
 
 const HOMEPAGE_ONLY_PREFIX = /^Homepage-only audit:\s*/i;

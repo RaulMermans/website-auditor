@@ -87,14 +87,14 @@ describe("ReportRepository interface", () => {
 describe("report data scores consistency", () => {
   it("overall score matches findings penalty", () => {
     const data = makeReportData();
-    expect(data.scores.overall).toBe(79);
+    expect(data.scores.overall).toBe(75);
   });
 
   it("category score reflects findings in that category only", () => {
     const data = makeReportData();
-    expect(data.scores.byCategory.technical_seo).toBe(83);
-    expect(data.scores.byCategory.accessibility).toBe(95);
-    expect(data.scores.byCategory.conversion).toBeLessThan(95);
+    expect(data.scores.byCategory.technical_seo).toBe(80);
+    expect(data.scores.byCategory.accessibility).toBe(92);
+    expect(data.scores.byCategory.conversion).toBeLessThan(92);
   });
 
   it("scores are re-computable deterministically from findings", () => {

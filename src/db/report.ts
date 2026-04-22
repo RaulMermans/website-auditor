@@ -140,7 +140,7 @@ function buildCategoryReview(
       reviewState: "insufficient_evidence",
       headline: "Insufficient evidence",
       summary:
-        "This category was not meaningfully inspected in the current deterministic pass. Absence of findings here should not be read as a clean result.",
+        "This category sits outside meaningful deterministic coverage in the current pass. Absence of findings here should be read as unknown, not clean.",
     };
   }
 
@@ -154,11 +154,12 @@ function buildCategoryReview(
       observedChecks,
       expectedChecks,
       reviewState: "lightly_inspected",
-      headline: findings.length > 0 ? "Light inspection with issues" : "Light inspection only",
+      headline:
+        findings.length > 0 ? "Light inspection with prioritized issues" : "Light inspection only",
       summary:
         findings.length > 0
-          ? `This category surfaced ${findings.length} finding${findings.length !== 1 ? "s" : ""}, but only ${observedChecks}/${expectedChecks} deterministic checks were covered.`
-          : `Only ${observedChecks}/${expectedChecks} deterministic checks were covered here, so the category should not be treated as fully clear.`,
+          ? `This category surfaced ${findings.length} finding${findings.length !== 1 ? "s" : ""}, but only ${observedChecks}/${expectedChecks} deterministic checks ran. The findings are useful directional signals, not a full category verdict.`
+          : `Only ${observedChecks}/${expectedChecks} deterministic checks ran here. No issues surfaced, but the evidence is too thin to call the category clear.`,
     };
   }
 
@@ -172,9 +173,9 @@ function buildCategoryReview(
       observedChecks,
       expectedChecks,
       reviewState: "inspected_clean",
-      headline: "Inspected and currently clean",
+      headline: "Inspected and clean",
       summary:
-        `No issues surfaced across ${observedChecks}/${expectedChecks} deterministic checks in this category during the current pass.`,
+        `No prioritized issues surfaced across ${observedChecks}/${expectedChecks} deterministic checks in this pass. That is a clean inspected result within the covered signals, not a blanket guarantee beyond them.`,
     };
   }
 
@@ -187,9 +188,9 @@ function buildCategoryReview(
     observedChecks,
     expectedChecks,
     reviewState: "inspected_with_findings",
-    headline: `${findings.length} prioritized finding${findings.length !== 1 ? "s" : ""}`,
+    headline: "Inspected with prioritized findings",
     summary:
-      `These findings are supported by ${observedChecks}/${expectedChecks} deterministic checks in this category.`,
+      `These findings are supported by ${observedChecks}/${expectedChecks} deterministic checks and represent the clearest issues surfaced in this category.`,
   };
 }
 

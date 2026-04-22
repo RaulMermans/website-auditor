@@ -55,7 +55,7 @@ describe("buildEnrichmentInput", () => {
   it("sets domain and scores from report data", () => {
     const input = buildEnrichmentInput(makeReportData([]));
     expect(input.domain).toBe("example.com");
-    expect(input.overallScore).toBe(88);
+    expect(input.overallScore).toBe(85);
   });
 
   it("passes homepage_only flag through", () => {
