@@ -10,13 +10,14 @@ import type {
   FindingReviewStatus,
   FindingSeverity,
   FindingSupportType,
+  LegacyPageType,
   PageEvaluatorStatus,
   PageEvidence,
   PageReviewStatus,
   PageSnapshot,
-  PageType,
   PageState,
 } from "@/lib/types";
+import { normalizePageType } from "@/server/audits/page-archetypes";
 
 interface AuditRunRow {
   id: string;
@@ -34,7 +35,7 @@ interface PageSnapshotRow {
   id: string;
   audit_run_id: string;
   url: string;
-  page_type: PageType;
+  page_type: LegacyPageType;
   page_priority: number;
   page_state: PageState;
   retry_count: number;
@@ -120,13 +121,14 @@ export interface UpdatePageReviewStateInput {
   evaluatorStatus: PageEvaluatorStatus;
 }
 
-export interface ReplaceAuditAnalysisInput {
+export interface ReplacePageAnalysisInput {
   auditRunId: string;
+  pageSnapshotId: string;
   pageEvidence: CreatePageEvidenceInput[];
   findings: CreateFindingInput[];
 }
 
-export interface ReplaceAuditAnalysisResult {
+export interface PersistedAuditAnalysisResult {
   pageEvidence: PageEvidence[];
   findings: Finding[];
 }
@@ -134,7 +136,8 @@ export interface ReplaceAuditAnalysisResult {
 export interface AuditAnalysisRepository {
   getAuditAnalysisContext(auditRunId: string): Promise<AuditAnalysisContext>;
   updatePageReviewState(input: UpdatePageReviewStateInput): Promise<void>;
-  replaceAuditAnalysis(input: ReplaceAuditAnalysisInput): Promise<ReplaceAuditAnalysisResult>;
+  replacePageAnalysis(input: ReplacePageAnalysisInput): Promise<void>;
+  getPersistedAuditAnalysis(auditRunId: string): Promise<PersistedAuditAnalysisResult>;
 }
 
 function mapAuditRun(row: AuditRunRow): AuditRun {
@@ -156,7 +159,7 @@ function mapPageSnapshot(row: PageSnapshotRow): PageSnapshot {
     id: row.id,
     auditRunId: row.audit_run_id,
     url: row.url,
-    pageType: row.page_type,
+    pageType: normalizePageType(row.page_type),
     pagePriority: row.page_priority,
     pageState: row.page_state,
     retryCount: row.retry_count,
@@ -316,14 +319,19 @@ export const auditAnalysisRepository: AuditAnalysisRepository = {
     });
   },
 
-  async replaceAuditAnalysis({ auditRunId, pageEvidence, findings }) {
+  async replacePageAnalysis({ auditRunId, pageSnapshotId, pageEvidence, findings }) {
     return withTransaction(async (client) => {
-      await client.query(`DELETE FROM findings WHERE audit_run_id = $1`, [auditRunId]);
-      await client.query(`DELETE FROM page_evidence WHERE audit_run_id = $1`, [auditRunId]);
+      await client.query(
+        `DELETE FROM findings WHERE audit_run_id = $1 AND page_snapshot_id = $2`,
+        [auditRunId, pageSnapshotId]
+      );
+      await client.query(
+        `DELETE FROM page_evidence WHERE audit_run_id = $1 AND page_snapshot_id = $2`,
+        [auditRunId, pageSnapshotId]
+      );
 
-      const insertedPageEvidence: PageEvidence[] = [];
       for (const evidence of pageEvidence) {
-        const result = await client.query<PageEvidenceRow>(
+        await client.query<PageEvidenceRow>(
           `
             INSERT INTO page_evidence (
               id,
@@ -355,13 +363,10 @@ export const auditAnalysisRepository: AuditAnalysisRepository = {
             evidence.evidenceLevel,
           ]
         );
-
-        insertedPageEvidence.push(mapPageEvidence(result.rows[0]));
       }
 
-      const insertedFindings: Finding[] = [];
       for (const finding of findings) {
-        const result = await client.query<FindingRow>(
+        await client.query<FindingRow>(
           `
             INSERT INTO findings (
               id,
@@ -419,17 +424,65 @@ export const auditAnalysisRepository: AuditAnalysisRepository = {
             finding.evaluatorStatus ?? "accepted",
             finding.evaluatorNotes ?? null,
             finding.recommendation,
-            finding.reviewStatus ?? "accepted",
-            finding.reviewReason ?? null,
+              finding.reviewStatus ?? "accepted",
+              finding.reviewReason ?? null,
           ]
         );
-
-        insertedFindings.push(mapFinding(result.rows[0]));
       }
+    });
+  },
+
+  async getPersistedAuditAnalysis(auditRunId) {
+    return withDbClient(async (client) => {
+      const pageEvidenceResult = await client.query<PageEvidenceRow>(
+        `
+          SELECT
+            id,
+            audit_run_id,
+            page_snapshot_id,
+            category,
+            key,
+            value,
+            evidence_level,
+            created_at
+          FROM page_evidence
+          WHERE audit_run_id = $1
+          ORDER BY page_snapshot_id ASC, category ASC, key ASC, created_at ASC
+        `,
+        [auditRunId]
+      );
+
+      const findingsResult = await client.query<FindingRow>(
+        `
+          SELECT
+            id,
+            audit_run_id,
+            page_snapshot_id,
+            category,
+            title,
+            description,
+            severity,
+            confidence,
+            evidence_level,
+            evidence_ref,
+            claim_posture,
+            support_type,
+            evaluator_status,
+            evaluator_notes,
+            recommendation,
+            review_status,
+            review_reason,
+            created_at
+          FROM findings
+          WHERE audit_run_id = $1
+          ORDER BY page_snapshot_id ASC, category ASC, created_at ASC
+        `,
+        [auditRunId]
+      );
 
       return {
-        pageEvidence: insertedPageEvidence,
-        findings: insertedFindings,
+        pageEvidence: pageEvidenceResult.rows.map(mapPageEvidence),
+        findings: findingsResult.rows.map(mapFinding),
       };
     });
   },

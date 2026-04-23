@@ -10,11 +10,26 @@ function createDeps(options?: {
   links?: Array<{ href: string; origin: string; pathname: string; text: string }>;
   failingUrls?: Record<string, number>;
   homepageOk?: boolean;
+  initialStatus?: "pending" | "discovering" | "capturing" | "analyzing" | "complete" | "failed";
+  existingSnapshots?: Array<Record<string, unknown>>;
 }) {
   const links = options?.links ?? [];
   const failingUrls = new Map(Object.entries(options?.failingUrls ?? {}));
   let currentUrl = "about:blank";
   let snapshotIndex = 0;
+  let runStatus =
+    options?.initialStatus ?? (options?.existingSnapshots?.length ? "capturing" : "pending");
+  let homepageOnly = true;
+  let failureReason: string | null = null;
+  const snapshots = new Map<string, any>();
+
+  for (const snapshot of options?.existingSnapshots ?? []) {
+    snapshots.set(String(snapshot.id), { ...snapshot });
+    const numericId = Number.parseInt(String(snapshot.id).replace("snapshot-", ""), 10);
+    if (Number.isFinite(numericId)) {
+      snapshotIndex = Math.max(snapshotIndex, numericId);
+    }
+  }
 
   const session = {
     navigate: vi.fn(async ({ url }: { url: string }) => {
@@ -42,46 +57,104 @@ function createDeps(options?: {
     close: vi.fn().mockResolvedValue(undefined),
   };
 
+  const sortSnapshots = () =>
+    [...snapshots.values()].sort((left, right) => {
+      const priorityDelta = (left.pagePriority ?? 999) - (right.pagePriority ?? 999);
+      if (priorityDelta !== 0) {
+        return priorityDelta;
+      }
+
+      return String(left.url).localeCompare(String(right.url));
+    });
+
   const deps = {
     auditJobs: {
-      updateAuditRunStatus: vi.fn().mockResolvedValue(undefined),
-      insertPageSnapshot: vi.fn().mockImplementation(async (input: any) => ({
-        id: `snapshot-${++snapshotIndex}`,
-        auditRunId: input.auditRunId,
-        url: input.url,
-        pageType: input.pageType,
-        pagePriority: input.pagePriority,
-        pageState: input.pageState,
-        retryCount: input.retryCount,
-        lastError: input.lastError,
-        htmlStorageKey: input.htmlStorageKey,
-        screenshotStorageKey: input.screenshotStorageKey,
-        capturedAt: input.capturedAt ?? null,
+      getAuditRunProgress: vi.fn(async (auditRunId: string) => ({
+        auditRun: {
+          id: auditRunId,
+          projectId: null,
+          targetDomainId: "target-1",
+          status: runStatus,
+          homepageOnly,
+          startedAt: new Date("2026-04-23T10:00:00.000Z"),
+          completedAt: runStatus === "complete" || runStatus === "failed" ? new Date() : null,
+          failureReason,
+          createdAt: new Date("2026-04-23T10:00:00.000Z"),
+        },
+        pageSnapshots: sortSnapshots(),
       })),
-      updatePageSnapshotState: vi.fn().mockImplementation(async (input: any) => ({
-        id: input.pageSnapshotId,
-        auditRunId: "run",
-        url: currentUrl,
-        pageType: "homepage",
-        pagePriority: 0,
-        pageState: input.pageState,
-        retryCount: input.retryCount ?? 0,
-        lastError: input.lastError,
-        capturedAt: null,
-      })),
-      completePageSnapshotCapture: vi.fn().mockImplementation(async (input: any) => ({
-        id: input.pageSnapshotId,
-        auditRunId: "run",
-        url: input.url,
-        pageType: "homepage",
-        pagePriority: 0,
-        pageState: "captured",
-        retryCount: input.retryCount ?? 0,
-        lastError: null,
-        htmlStorageKey: input.htmlStorageKey,
-        screenshotStorageKey: input.screenshotStorageKey,
-        capturedAt: new Date(),
-      })),
+      updateAuditRunStatus: vi.fn(async (input: any) => {
+        runStatus = input.status;
+        if (typeof input.homepageOnly === "boolean") {
+          homepageOnly = input.homepageOnly;
+        }
+        failureReason = input.status === "failed" ? (input.failureReason ?? failureReason) : null;
+      }),
+      insertPageSnapshot: vi.fn().mockImplementation(async (input: any) => {
+        const existing = sortSnapshots().find((snapshot) => snapshot.url === input.url);
+        if (existing) {
+          existing.pageType = input.pageType;
+          existing.pagePriority = input.pagePriority;
+          return { ...existing };
+        }
+
+        const snapshot = {
+          id: `snapshot-${++snapshotIndex}`,
+          auditRunId: input.auditRunId,
+          url: input.url,
+          pageType: input.pageType,
+          pagePriority: input.pagePriority,
+          pageState: input.pageState,
+          retryCount: input.retryCount,
+          lastError: input.lastError,
+          htmlStorageKey: input.htmlStorageKey,
+          screenshotStorageKey: input.screenshotStorageKey,
+          capturedAt: input.capturedAt ?? null,
+        };
+
+        snapshots.set(snapshot.id, snapshot);
+        return { ...snapshot };
+      }),
+      updatePageSnapshotState: vi.fn().mockImplementation(async (input: any) => {
+        const existing = snapshots.get(input.pageSnapshotId);
+        const updated = {
+          ...existing,
+          id: input.pageSnapshotId,
+          auditRunId: existing?.auditRunId ?? "run",
+          url: existing?.url ?? currentUrl,
+          pageType: existing?.pageType ?? "homepage",
+          pagePriority: existing?.pagePriority ?? 0,
+          pageState: input.pageState,
+          retryCount: input.retryCount ?? existing?.retryCount ?? 0,
+          lastError: input.lastError,
+          capturedAt: existing?.capturedAt ?? null,
+          htmlStorageKey: existing?.htmlStorageKey,
+          screenshotStorageKey: existing?.screenshotStorageKey,
+        };
+
+        snapshots.set(input.pageSnapshotId, updated);
+        return { ...updated };
+      }),
+      completePageSnapshotCapture: vi.fn().mockImplementation(async (input: any) => {
+        const existing = snapshots.get(input.pageSnapshotId);
+        const updated = {
+          ...existing,
+          id: input.pageSnapshotId,
+          auditRunId: existing?.auditRunId ?? "run",
+          url: input.url,
+          pageType: existing?.pageType ?? "homepage",
+          pagePriority: existing?.pagePriority ?? 0,
+          pageState: "captured",
+          retryCount: input.retryCount ?? existing?.retryCount ?? 0,
+          lastError: null,
+          htmlStorageKey: input.htmlStorageKey,
+          screenshotStorageKey: input.screenshotStorageKey,
+          capturedAt: new Date(),
+        };
+
+        snapshots.set(input.pageSnapshotId, updated);
+        return { ...updated };
+      }),
     },
     storage: {
       put: vi.fn().mockImplementation(async (key: string) => key),
@@ -120,6 +193,7 @@ describe("captureAuditRun", () => {
     expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenNthCalledWith(2, {
       auditRunId: "run-123",
       status: "capturing",
+      homepageOnly: true,
     });
     expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledWith({
       auditRunId: "run-123",
@@ -132,7 +206,7 @@ describe("captureAuditRun", () => {
     });
     expect(deps.auditJobs.completePageSnapshotCapture).toHaveBeenCalledWith({
       pageSnapshotId: "snapshot-1",
-      url: "https://example.com",
+      url: "https://example.com/",
       htmlStorageKey: "audit-runs/run-123/homepage/root.html",
       screenshotStorageKey: "audit-runs/run-123/homepage/root.jpg",
       retryCount: 0,
@@ -198,7 +272,7 @@ describe("captureAuditRun", () => {
     );
     expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
-        pageType: "blog_article",
+        pageType: "content",
         url: "https://example.com/blog",
       })
     );
@@ -274,6 +348,62 @@ describe("captureAuditRun", () => {
         pageSnapshotId: "snapshot-2",
         retryCount: 1,
         url: "https://example.com/contact",
+      })
+    );
+  });
+
+  it("resumes pending captures from persisted page state without rediscovery", async () => {
+    const { deps, session } = createDeps({
+      initialStatus: "capturing",
+      existingSnapshots: [
+        {
+          id: "snapshot-1",
+          auditRunId: "run-resume",
+          url: "https://example.com/",
+          pageType: "homepage",
+          pagePriority: 0,
+          pageState: "accepted",
+          retryCount: 0,
+          lastError: null,
+          htmlStorageKey: "audit-runs/run-resume/homepage/root.html",
+          screenshotStorageKey: "audit-runs/run-resume/homepage/root.jpg",
+          capturedAt: new Date("2026-04-23T10:01:00.000Z"),
+        },
+        {
+          id: "snapshot-2",
+          auditRunId: "run-resume",
+          url: "https://example.com/contact",
+          pageType: "contact",
+          pagePriority: 50,
+          pageState: "queued",
+          retryCount: 1,
+          lastError: "Timed out",
+          htmlStorageKey: null,
+          screenshotStorageKey: null,
+          capturedAt: null,
+        },
+      ],
+    });
+
+    const result = await captureAuditRun(
+      {
+        auditRunId: "run-resume",
+        domain: "example.com",
+      },
+      deps
+    );
+
+    expect(result).toEqual({
+      auditRunId: "run-resume",
+      pagesProcessed: 2,
+      homepageOnly: false,
+    });
+    expect(session.evaluate).not.toHaveBeenCalled();
+    expect(deps.auditJobs.insertPageSnapshot).not.toHaveBeenCalled();
+    expect(deps.auditJobs.completePageSnapshotCapture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pageSnapshotId: "snapshot-2",
+        retryCount: 1,
       })
     );
   });

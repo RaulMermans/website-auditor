@@ -3,6 +3,7 @@ import { withDbClient, withTransaction } from "@/db/client";
 import type {
   AuditRun,
   AuditStatus,
+  LegacyPageType,
   PageEvaluatorStatus,
   PageReviewStatus,
   PageSnapshot,
@@ -10,6 +11,7 @@ import type {
   PageType,
   TargetDomain,
 } from "@/lib/types";
+import { normalizePageType } from "@/server/audits/page-archetypes";
 
 // ─── Row types (DB shape) ────────────────────────────────────────────────────
 
@@ -35,7 +37,7 @@ interface PageSnapshotRow {
   id: string;
   audit_run_id: string;
   url: string;
-  page_type: PageType;
+  page_type: LegacyPageType;
   page_priority: number;
   page_state: PageState;
   retry_count: number;
@@ -53,6 +55,11 @@ interface PageSnapshotRow {
 export interface PendingAuditRunRecord {
   targetDomain: TargetDomain;
   auditRun: AuditRun;
+}
+
+export interface AuditRunProgress {
+  auditRun: AuditRun;
+  pageSnapshots: PageSnapshot[];
 }
 
 export interface CreatePendingAuditRunInput {
@@ -103,6 +110,7 @@ export interface CompletePageSnapshotCaptureInput {
 
 export interface AuditJobRepository {
   createPendingAuditRun(input: CreatePendingAuditRunInput): Promise<PendingAuditRunRecord>;
+  getAuditRunProgress(auditRunId: string): Promise<AuditRunProgress>;
   markAuditRunFailed(input: MarkAuditRunFailedInput): Promise<void>;
   updateAuditRunStatus(input: UpdateAuditRunStatusInput): Promise<void>;
   insertPageSnapshot(input: InsertPageSnapshotInput): Promise<PageSnapshot>;
@@ -139,7 +147,7 @@ function mapPageSnapshot(row: PageSnapshotRow): PageSnapshot {
     id: row.id,
     auditRunId: row.audit_run_id,
     url: row.url,
-    pageType: row.page_type,
+    pageType: normalizePageType(row.page_type),
     pagePriority: row.page_priority,
     pageState: row.page_state,
     retryCount: row.retry_count,
@@ -227,6 +235,62 @@ export const auditJobRepository: AuditJobRepository = {
     });
   },
 
+  async getAuditRunProgress(auditRunId) {
+    return withDbClient(async (client) => {
+      const auditRunResult = await client.query<AuditRunRow>(
+        `
+          SELECT
+            id,
+            project_id,
+            target_domain_id,
+            status,
+            homepage_only,
+            started_at,
+            completed_at,
+            failure_reason,
+            created_at
+          FROM audit_runs
+          WHERE id = $1
+        `,
+        [auditRunId]
+      );
+
+      const auditRun = auditRunResult.rows[0];
+      if (!auditRun) {
+        throw new Error(`Audit run not found: ${auditRunId}`);
+      }
+
+      const pageSnapshotResult = await client.query<PageSnapshotRow>(
+        `
+          SELECT
+            id,
+            audit_run_id,
+            url,
+            page_type,
+            page_priority,
+            page_state,
+            retry_count,
+            last_error,
+            html_storage_key,
+            screenshot_storage_key,
+            captured_at,
+            review_status,
+            escalation_reason,
+            evaluator_status
+          FROM page_snapshots
+          WHERE audit_run_id = $1
+          ORDER BY page_priority ASC, url ASC
+        `,
+        [auditRunId]
+      );
+
+      return {
+        auditRun: mapAuditRun(auditRun),
+        pageSnapshots: pageSnapshotResult.rows.map(mapPageSnapshot),
+      };
+    });
+  },
+
   async markAuditRunFailed({ auditRunId, failureReason }) {
     await withDbClient(async (client) => {
       await client.query(
@@ -250,8 +314,16 @@ export const auditJobRepository: AuditJobRepository = {
           UPDATE audit_runs
           SET status = $2,
               homepage_only = COALESCE($3, homepage_only),
-              failure_reason = COALESCE($4, failure_reason),
-              completed_at = COALESCE($5, completed_at)
+              failure_reason = CASE
+                WHEN $4 IS NOT NULL THEN $4
+                WHEN $2 = 'failed' THEN failure_reason
+                ELSE NULL
+              END,
+              completed_at = CASE
+                WHEN $5 IS NOT NULL THEN $5
+                WHEN $2 IN ('complete', 'failed') THEN completed_at
+                ELSE NULL
+              END
           WHERE id = $1
         `,
         [
@@ -277,7 +349,61 @@ export const auditJobRepository: AuditJobRepository = {
     screenshotStorageKey,
     capturedAt,
   }) {
-    return withDbClient(async (client) => {
+    return withTransaction(async (client) => {
+      const existing = await client.query<PageSnapshotRow>(
+        `
+          SELECT
+            id,
+            audit_run_id,
+            url,
+            page_type,
+            page_priority,
+            page_state,
+            retry_count,
+            last_error,
+            html_storage_key,
+            screenshot_storage_key,
+            captured_at,
+            review_status,
+            escalation_reason,
+            evaluator_status
+          FROM page_snapshots
+          WHERE audit_run_id = $1
+            AND url = $2
+          LIMIT 1
+        `,
+        [auditRunId, url]
+      );
+
+      if (existing.rows[0]) {
+        const updated = await client.query<PageSnapshotRow>(
+          `
+            UPDATE page_snapshots
+            SET page_type = $2,
+                page_priority = $3
+            WHERE id = $1
+            RETURNING
+              id,
+              audit_run_id,
+              url,
+              page_type,
+              page_priority,
+              page_state,
+              retry_count,
+              last_error,
+              html_storage_key,
+              screenshot_storage_key,
+              captured_at,
+              review_status,
+              escalation_reason,
+              evaluator_status
+          `,
+          [existing.rows[0].id, pageType, pagePriority]
+        );
+
+        return mapPageSnapshot(updated.rows[0]);
+      }
+
       const result = await client.query<PageSnapshotRow>(
         `
           INSERT INTO page_snapshots (

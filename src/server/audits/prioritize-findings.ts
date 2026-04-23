@@ -49,7 +49,6 @@ const PAGE_TYPE_PRIORITY = {
   services: 12,
   contact: 12,
   form: 11,
-  blog_article: 6,
   content: 6,
   about: 4,
   legal: 2,
@@ -124,10 +123,14 @@ function getPageSpread(finding: PrioritizableFinding) {
 }
 
 function getPageTypes(finding: PrioritizableFinding) {
+  const normalizePageType = (pageType: string) => (pageType === "blog_article" ? "content" : pageType);
   const types = [
     ...(Array.isArray(finding.evidenceRef.pageTypes) ? finding.evidenceRef.pageTypes : []),
     typeof finding.evidenceRef.pageType === "string" ? finding.evidenceRef.pageType : "",
-  ].filter(Boolean) as Array<keyof typeof PAGE_TYPE_PRIORITY>;
+  ]
+    .filter((pageType): pageType is string => Boolean(pageType))
+    .map(normalizePageType)
+    .filter((pageType): pageType is keyof typeof PAGE_TYPE_PRIORITY => pageType in PAGE_TYPE_PRIORITY);
 
   return [...new Set(types)];
 }

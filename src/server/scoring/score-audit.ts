@@ -88,8 +88,13 @@ export interface ScoreAuditByCategoryOptions {
   inspectionKeysByCategory?: Partial<Record<FindingCategory, string[]>>;
 }
 
-function filterAcceptedFindings<T extends Partial<Pick<Finding, "evaluatorStatus">>>(findings: T[]) {
-  return findings.filter((finding) => finding.evaluatorStatus !== "needs_review");
+type ReviewableFinding = Partial<Pick<Finding, "evaluatorStatus" | "reviewStatus">>;
+
+function filterAcceptedFindings<T extends ReviewableFinding>(findings: T[]) {
+  return findings.filter(
+    (finding) =>
+      finding.evaluatorStatus !== "needs_review" && finding.reviewStatus !== "needs_review"
+  );
 }
 
 function clampScore(score: number) {

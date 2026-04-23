@@ -22,6 +22,7 @@ import {
   prioritizeFindings,
   selectTopPriorityFindings,
 } from "@/server/audits/prioritize-findings";
+import { deduplicateFindings } from "@/server/audits/deduplicate-findings";
 
 interface AuditRunWithDomainRow {
   id: string;
@@ -318,8 +319,6 @@ export const reportRepository: ReportRepository = {
         [auditRunId]
       );
 
-      const findings = findingsResult.rows.map(mapFinding);
-
       const evidenceResult = await client.query<{ category: FindingCategory; key: string }>(
         `
           SELECT pe.category, pe.key
@@ -330,6 +329,7 @@ export const reportRepository: ReportRepository = {
         `,
         [auditRunId]
       );
+      const findings = deduplicateFindings(findingsResult.rows.map(mapFinding));
       const inspectionKeysByCategory = evidenceResult.rows.reduce<
         Partial<Record<FindingCategory, string[]>>
       >((acc, row) => {

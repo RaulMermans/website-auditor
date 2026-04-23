@@ -1,6 +1,31 @@
 import type { CreateFindingInput } from "@/db/analysis";
 
-const SEVERITY_RANK: Record<CreateFindingInput["severity"], number> = {
+type DeduplicableFinding = Pick<
+  CreateFindingInput,
+  | "category"
+  | "title"
+  | "description"
+  | "severity"
+  | "confidence"
+  | "evidenceLevel"
+  | "evidenceRef"
+> &
+  Partial<
+    Pick<
+      CreateFindingInput,
+      | "auditRunId"
+      | "pageSnapshotId"
+      | "claimPosture"
+      | "supportType"
+      | "evaluatorStatus"
+      | "evaluatorNotes"
+      | "recommendation"
+      | "reviewStatus"
+      | "reviewReason"
+    >
+  >;
+
+const SEVERITY_RANK: Record<DeduplicableFinding["severity"], number> = {
   critical: 4,
   high: 3,
   medium: 2,
@@ -8,13 +33,13 @@ const SEVERITY_RANK: Record<CreateFindingInput["severity"], number> = {
   info: 0,
 };
 
-const CONFIDENCE_RANK: Record<CreateFindingInput["confidence"], number> = {
+const CONFIDENCE_RANK: Record<DeduplicableFinding["confidence"], number> = {
   high: 3,
   medium: 2,
   low: 1,
 };
 
-const EVIDENCE_RANK: Record<CreateFindingInput["evidenceLevel"], number> = {
+const EVIDENCE_RANK: Record<DeduplicableFinding["evidenceLevel"], number> = {
   Measured: 3,
   Observed: 2,
   Inferred: 1,
@@ -65,7 +90,7 @@ function titleFingerprint(title: string): string {
   return normalizeText(title).replace(/\s+/g, "_").slice(0, 100);
 }
 
-function extractIssueType(finding: CreateFindingInput): string {
+function extractIssueType(finding: DeduplicableFinding): string {
   const explicitIssueType = typeof finding.evidenceRef.issueType === "string"
     ? normalizeText(finding.evidenceRef.issueType)
     : "";
@@ -86,7 +111,7 @@ function extractIssueType(finding: CreateFindingInput): string {
   return titleFingerprint(finding.title);
 }
 
-function getRepresentativeFinding(current: CreateFindingInput, incoming: CreateFindingInput) {
+function getRepresentativeFinding<T extends DeduplicableFinding>(current: T, incoming: T) {
   const severityDelta = SEVERITY_RANK[incoming.severity] - SEVERITY_RANK[current.severity];
   if (severityDelta !== 0) {
     return severityDelta > 0 ? incoming : current;
@@ -138,8 +163,8 @@ function mergeEvidenceRef(current: Record<string, unknown>, incoming: Record<str
   };
 }
 
-export function deduplicateFindings(findings: CreateFindingInput[]): CreateFindingInput[] {
-  const seen = new Map<string, CreateFindingInput>();
+export function deduplicateFindings<T extends DeduplicableFinding>(findings: T[]): T[] {
+  const seen = new Map<string, T>();
 
   for (const finding of findings) {
     const issueType = extractIssueType(finding);

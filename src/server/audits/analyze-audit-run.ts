@@ -1,23 +1,22 @@
 import type {
   AuditAnalysisContext,
   AuditAnalysisRepository,
-  CreateFindingInput,
-  CreatePageEvidenceInput,
 } from "@/db/analysis";
 import { auditAnalysisRepository } from "@/db/analysis";
 import { auditJobRepository, type AuditJobRepository } from "@/db/audits";
 import type { StorageClient } from "@/server/contracts/storage";
 import { storageClient } from "@/server/contracts/storage";
 import { extractPageArtifacts } from "@/server/audits/extract-page-evidence";
-import { deduplicateFindings } from "@/server/audits/deduplicate-findings";
-import { prioritizeFindings } from "@/server/audits/prioritize-findings";
 import { reviewPageFindings } from "@/server/audits/review-page-findings";
 import type { Finding, PageEvidence } from "@/lib/types";
 
 export interface AnalyzeAuditRunDeps {
   analysisRepository: Pick<
     AuditAnalysisRepository,
-    "getAuditAnalysisContext" | "replaceAuditAnalysis" | "updatePageReviewState"
+    | "getAuditAnalysisContext"
+    | "replacePageAnalysis"
+    | "getPersistedAuditAnalysis"
+    | "updatePageReviewState"
   >;
   storage: Pick<StorageClient, "get">;
   pageSnapshots: Pick<AuditJobRepository, "updatePageSnapshotState">;
@@ -35,20 +34,13 @@ const defaultDeps: AnalyzeAuditRunDeps = {
   pageSnapshots: auditJobRepository,
 };
 
-interface AnalyzedPageSnapshotResult {
-  pageEvidence: CreatePageEvidenceInput[];
-  reviewedFindings: CreateFindingInput[];
-  acceptedFindings: CreateFindingInput[];
-}
+const ANALYSIS_PENDING_STATES = new Set(["captured", "auditing", "evaluating"]);
 
 async function analyzePageSnapshot(
   auditRun: Pick<AuditAnalysisContext["auditRun"], "id" | "homepageOnly">,
   snapshot: AuditAnalysisContext["pageSnapshots"][number],
   deps: AnalyzeAuditRunDeps
-) : Promise<AnalyzedPageSnapshotResult> {
-  const pageEvidence: CreatePageEvidenceInput[] = [];
-  const reviewedFindings: CreateFindingInput[] = [];
-  const acceptedFindings: CreateFindingInput[] = [];
+): Promise<void> {
   const startingRetryCount = snapshot.retryCount ?? 0;
 
   for (let attempt = startingRetryCount; attempt <= 1; attempt += 1) {
@@ -101,9 +93,13 @@ async function analyzePageSnapshot(
         pageEvidence: extracted.pageEvidence,
         findings: extracted.findings,
       });
-      pageEvidence.push(...extracted.pageEvidence);
-      reviewedFindings.push(...reviewed.findings);
-      acceptedFindings.push(...reviewed.acceptedFindings);
+
+      await deps.analysisRepository.replacePageAnalysis({
+        auditRunId: auditRun.id,
+        pageSnapshotId: snapshot.id,
+        pageEvidence: extracted.pageEvidence,
+        findings: reviewed.findings,
+      });
 
       await deps.pageSnapshots.updatePageSnapshotState({
         pageSnapshotId: snapshot.id,
@@ -119,7 +115,7 @@ async function analyzePageSnapshot(
         evaluatorStatus: reviewed.evaluatorStatus,
       });
 
-      return { pageEvidence, reviewedFindings, acceptedFindings };
+      return;
     } catch (error) {
       const failureReason = error instanceof Error ? error.message : String(error);
 
@@ -140,6 +136,13 @@ async function analyzePageSnapshot(
         continue;
       }
 
+      await deps.analysisRepository.replacePageAnalysis({
+        auditRunId: auditRun.id,
+        pageSnapshotId: snapshot.id,
+        pageEvidence: [],
+        findings: [],
+      });
+
       await deps.pageSnapshots.updatePageSnapshotState({
         pageSnapshotId: snapshot.id,
         pageState: "needs_review",
@@ -154,11 +157,9 @@ async function analyzePageSnapshot(
         evaluatorStatus: "needs_review",
       });
 
-      return { pageEvidence, reviewedFindings, acceptedFindings };
+      return;
     }
   }
-
-  return { pageEvidence, reviewedFindings, acceptedFindings };
 }
 
 export async function analyzeAuditRun(
@@ -166,45 +167,23 @@ export async function analyzeAuditRun(
   deps: AnalyzeAuditRunDeps = defaultDeps
 ): Promise<AnalyzeAuditRunResult> {
   const { auditRun, pageSnapshots } = await deps.analysisRepository.getAuditAnalysisContext(auditRunId);
-  const pageEvidence: CreatePageEvidenceInput[] = [];
-  const reviewedFindings: CreateFindingInput[] = [];
-  const acceptedFindings: CreateFindingInput[] = [];
 
   for (const snapshot of pageSnapshots) {
-    if (!snapshot.htmlStorageKey || snapshot.pageState === "failed") {
+    if (
+      !snapshot.htmlStorageKey ||
+      !snapshot.pageState ||
+      !ANALYSIS_PENDING_STATES.has(snapshot.pageState)
+    ) {
       continue;
     }
 
-    const analyzed = await analyzePageSnapshot(auditRun, snapshot, deps);
-    pageEvidence.push(...analyzed.pageEvidence);
-    reviewedFindings.push(...analyzed.reviewedFindings);
-    acceptedFindings.push(...analyzed.acceptedFindings);
+    await analyzePageSnapshot(auditRun, snapshot, deps);
   }
 
-  if (pageEvidence.length === 0) {
+  const persisted = await deps.analysisRepository.getPersistedAuditAnalysis(auditRunId);
+  if (persisted.pageEvidence.length === 0) {
     throw new Error(`No HTML snapshot artifacts available for audit run ${auditRunId}`);
   }
-
-  const finalizedAcceptedFindings = deduplicateFindings(acceptedFindings).map((finding) => ({
-    ...finding,
-    supportType:
-      finding.evidenceLevel === "Inferred"
-        ? "inferred"
-        : typeof finding.evidenceRef.pageCount === "number" && finding.evidenceRef.pageCount > 1
-          ? "cross_page"
-          : finding.supportType ?? "dom",
-    evaluatorStatus: "accepted" as const,
-  }));
-  const prioritizedFindings = prioritizeFindings(finalizedAcceptedFindings);
-
-  const persisted = await deps.analysisRepository.replaceAuditAnalysis({
-    auditRunId,
-    pageEvidence,
-    findings: [
-      ...prioritizedFindings,
-      ...reviewedFindings.filter((finding) => finding.evaluatorStatus === "needs_review"),
-    ],
-  });
 
   return {
     auditRunId,

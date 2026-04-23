@@ -1,4 +1,4 @@
-import type { PageType } from "@/lib/types";
+import type { LegacyPageType, PageType } from "@/lib/types";
 
 const MAX_DISCOVERED_PAGES = 5;
 const ASSET_PATH_PATTERN = /\.(png|jpg|jpeg|gif|pdf|doc|css|js|mp4|svg|webp|ico)$/i;
@@ -24,11 +24,14 @@ export const PAGE_TYPE_PRIORITY: Record<PageType, number> = {
   about: 40,
   contact: 50,
   form: 60,
-  blog_article: 70,
   content: 70,
   legal: 80,
   other: 90,
 };
+
+export function normalizePageType(pageType: LegacyPageType): PageType {
+  return pageType === "blog_article" ? "content" : pageType;
+}
 
 function normalizeUrl(url: string) {
   const parsed = new URL(url);
@@ -59,8 +62,8 @@ function getPrioritySortValue(pageType: PageType) {
   return PAGE_TYPE_PRIORITY[pageType];
 }
 
-export function getPagePriority(pageType: PageType) {
-  return PAGE_TYPE_PRIORITY[pageType];
+export function getPagePriority(pageType: LegacyPageType) {
+  return PAGE_TYPE_PRIORITY[normalizePageType(pageType)];
 }
 
 export function classifyPageArchetype(url: string, linkText = ""): PageType {
@@ -179,7 +182,7 @@ export function classifyPageArchetype(url: string, linkText = ""): PageType {
       "news",
     ])
   ) {
-    return "blog_article";
+    return "content";
   }
 
   return "other";

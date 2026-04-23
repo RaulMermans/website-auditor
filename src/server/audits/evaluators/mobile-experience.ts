@@ -1,9 +1,13 @@
-import { pageHasCategoryEmphasis } from "@/server/audits/page-rubrics";
+import {
+  pageHasCategoryEmphasis,
+  pageHasHighIntentConversion,
+} from "@/server/audits/page-rubrics";
 import type { SpecialistEvaluator, SpecialistFindingDraft } from "./types";
 
 export const evaluateMobileExperience: SpecialistEvaluator = ({ route, metrics }) => {
   const drafts: SpecialistFindingDraft[] = [];
   const isKeyPage = pageHasCategoryEmphasis(route, "mobile_experience");
+  const isHighIntentPage = pageHasHighIntentConversion(route);
 
   if (!metrics.viewportMetaPresent) {
     drafts.push({
@@ -59,7 +63,7 @@ export const evaluateMobileExperience: SpecialistEvaluator = ({ route, metrics }
         !metrics.formFriction.hasLabels
           ? "The captured form relies on unlabeled fields, which is especially punishing on mobile where users cannot scan field context as easily."
           : `The captured form asks for ${metrics.formFriction.fieldCount} fields with ${metrics.formFriction.requiredCount} required. That is a heavy first step for a small-screen visitor.`,
-      severity: route.pageType === "contact" || route.pageType === "form" ? "high" : "medium",
+      severity: isHighIntentPage ? "high" : "medium",
       confidence: "high",
       evidenceLevel: "Observed",
       evidenceKeys: ["mobile_layout", "form_friction"],

@@ -1,9 +1,13 @@
-import { pageHasCategoryEmphasis } from "@/server/audits/page-rubrics";
+import {
+  pageHasCategoryEmphasis,
+  pageHasHighIntentConversion,
+} from "@/server/audits/page-rubrics";
 import type { SpecialistEvaluator, SpecialistFindingDraft } from "./types";
 
 export const evaluateTrustSignals: SpecialistEvaluator = ({ route, metrics }) => {
   const drafts: SpecialistFindingDraft[] = [];
   const isTrustPage = pageHasCategoryEmphasis(route, "trust_signals");
+  const isHighIntentPage = pageHasHighIntentConversion(route);
 
   if (!isTrustPage) {
     return drafts;
@@ -16,7 +20,7 @@ export const evaluateTrustSignals: SpecialistEvaluator = ({ route, metrics }) =>
       title: "Trust layer is thin on a key decision page",
       description:
         "The captured page shows at most one trust indicator across proof, reassurance, and contact cues. On a key decision page, that leaves the business under-substantiated at the point where visitors are deciding whether to continue.",
-      severity: route.pageType === "contact" || route.pageType === "form" ? "high" : "medium",
+      severity: isHighIntentPage ? "high" : "medium",
       confidence: "medium",
       evidenceLevel: "Observed",
       evidenceKeys: ["trust_signals", "contact_reassurance"],
@@ -50,7 +54,7 @@ export const evaluateTrustSignals: SpecialistEvaluator = ({ route, metrics }) =>
       title: "Direct contact cues are not easy to verify here",
       description:
         "The captured page does not surface a clear phone, email, address, or obvious contact route. That makes the business feel harder to verify at the point of evaluation.",
-      severity: route.pageType === "contact" || route.pageType === "form" ? "high" : "medium",
+      severity: isHighIntentPage ? "high" : "medium",
       confidence: "high",
       evidenceLevel: "Observed",
       evidenceKeys: ["contact_reassurance", "trust_signals"],
@@ -61,7 +65,7 @@ export const evaluateTrustSignals: SpecialistEvaluator = ({ route, metrics }) =>
   }
 
   if (
-    (route.pageType === "contact" || route.pageType === "form" || metrics.formPresent) &&
+    (isHighIntentPage || metrics.formPresent) &&
     metrics.trustSignals.reassuranceSignals === 0
   ) {
     drafts.push({

@@ -1,5 +1,5 @@
 import type { FindingCategory, PageSnapshot, PageType } from "@/lib/types";
-import { getPagePriority } from "@/server/audits/page-archetypes";
+import { getPagePriority, normalizePageType } from "@/server/audits/page-archetypes";
 
 const COMMON_CORE_RUBRIC: FindingCategory[] = [
   "technical_seo",
@@ -28,6 +28,9 @@ interface PageRubricDefinition {
   emphasisCategories: FindingCategory[];
   allowedIssuePatterns: string[];
   expectedIssuePatterns: string[];
+  highIntentConversion?: boolean;
+  primaryNarrative?: boolean;
+  primaryActionClarity?: boolean;
 }
 
 export interface PageRubric {
@@ -35,6 +38,9 @@ export interface PageRubric {
   emphasisCategories: FindingCategory[];
   allowedIssuePatterns: string[];
   expectedIssuePatterns: string[];
+  highIntentConversion: boolean;
+  primaryNarrative: boolean;
+  primaryActionClarity: boolean;
 }
 
 export interface RoutedPageContext {
@@ -79,6 +85,8 @@ const RUBRIC_BY_PAGE_TYPE: Record<PageType, PageRubricDefinition> = {
       "weak_next_step_conversion_path",
       "low_trust_signal_density",
     ],
+    primaryNarrative: true,
+    primaryActionClarity: true,
   },
   pricing: {
     emphasisCategories: ["messaging_content", "conversion", "trust_signals", "mobile_experience"],
@@ -185,6 +193,8 @@ const RUBRIC_BY_PAGE_TYPE: Record<PageType, PageRubricDefinition> = {
       "conversion_area_overload",
     ],
     expectedIssuePatterns: ["form_usability_friction", "missing_reassurance_near_conversion"],
+    highIntentConversion: true,
+    primaryActionClarity: true,
   },
   form: {
     emphasisCategories: ["conversion", "trust_signals", "mobile_experience"],
@@ -202,11 +212,7 @@ const RUBRIC_BY_PAGE_TYPE: Record<PageType, PageRubricDefinition> = {
       "stacked_section_heaviness",
     ],
     expectedIssuePatterns: ["long_form_friction", "form_usability_friction"],
-  },
-  blog_article: {
-    emphasisCategories: ["messaging_content"],
-    allowedIssuePatterns: ["offer_sprawl"],
-    expectedIssuePatterns: [],
+    highIntentConversion: true,
   },
   content: {
     emphasisCategories: ["messaging_content"],
@@ -229,10 +235,6 @@ function dedupe(values: string[]) {
   return [...new Set(values)];
 }
 
-function normalizePageType(pageType: PageType): PageType {
-  return pageType === "content" ? "blog_article" : pageType;
-}
-
 export function getPageRubric(pageType: PageType): PageRubric {
   const normalizedPageType = normalizePageType(pageType);
   const rubric = RUBRIC_BY_PAGE_TYPE[normalizedPageType];
@@ -245,6 +247,9 @@ export function getPageRubric(pageType: PageType): PageRubric {
       ...rubric.allowedIssuePatterns,
     ]),
     expectedIssuePatterns: rubric.expectedIssuePatterns,
+    highIntentConversion: rubric.highIntentConversion ?? false,
+    primaryNarrative: rubric.primaryNarrative ?? false,
+    primaryActionClarity: rubric.primaryActionClarity ?? false,
   };
 }
 
@@ -265,6 +270,18 @@ export function pageHasCategoryEmphasis(
   category: FindingCategory
 ) {
   return route.rubric.emphasisCategories.includes(category);
+}
+
+export function pageHasHighIntentConversion(route: RoutedPageContext) {
+  return route.rubric.highIntentConversion;
+}
+
+export function pageHasPrimaryNarrativeRole(route: RoutedPageContext) {
+  return route.rubric.primaryNarrative;
+}
+
+export function pageRequiresStrongPrimaryActionClarity(route: RoutedPageContext) {
+  return route.rubric.primaryActionClarity;
 }
 
 export function pageAllowsIssuePattern(route: RoutedPageContext, issueType: string) {

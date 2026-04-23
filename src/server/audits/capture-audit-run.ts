@@ -1,9 +1,9 @@
-import type { AuditJobRepository } from "@/db/audits";
+import type { AuditJobRepository, AuditRunProgress } from "@/db/audits";
 import { auditJobRepository } from "@/db/audits";
 import type { StorageClient } from "@/server/contracts/storage";
 import { storageClient } from "@/server/contracts/storage";
-import type { PageType } from "@/lib/types";
-import { buildCapturePlan, type RoutedPageTarget } from "@/server/audits/page-archetypes";
+import type { PageSnapshot, PageState, PageType } from "@/lib/types";
+import { buildCapturePlan, getPagePriority } from "@/server/audits/page-archetypes";
 import { browserDriver } from "@/server/browser/create-browser-driver";
 import type {
   BrowserDiscoveredLink,
@@ -12,6 +12,7 @@ import type {
 } from "@/server/browser/types";
 
 const DEFAULT_MAX_PAGES = 5;
+const CAPTURE_PENDING_STATES = new Set<PageState>(["queued", "capturing"]);
 const DISCOVER_LINKS_EXPRESSION = `({ baseUrl }) => {
   const anchors = Array.from(document.querySelectorAll("a"));
   return anchors
@@ -47,6 +48,7 @@ export interface AuditCaptureResult {
 export interface CaptureAuditRunDeps {
   auditJobs: Pick<
     AuditJobRepository,
+    | "getAuditRunProgress"
     | "updateAuditRunStatus"
     | "insertPageSnapshot"
     | "updatePageSnapshotState"
@@ -81,31 +83,59 @@ async function waitForSettledDom(timeoutMs: number) {
   await new Promise((resolve) => setTimeout(resolve, timeoutMs));
 }
 
+function compareSnapshots(left: PageSnapshot, right: PageSnapshot) {
+  const priorityDelta =
+    (left.pagePriority ?? getPagePriority(left.pageType)) -
+    (right.pagePriority ?? getPagePriority(right.pageType));
+  if (priorityDelta !== 0) {
+    return priorityDelta;
+  }
+
+  return left.url.localeCompare(right.url);
+}
+
+function summarizeCaptureProgress(progress: AuditRunProgress): AuditCaptureResult {
+  const capturedPages = progress.pageSnapshots.filter((snapshot) => snapshot.htmlStorageKey);
+  const homepageOnly = !progress.pageSnapshots.some(
+    (snapshot) => snapshot.pageType !== "homepage" && snapshot.htmlStorageKey
+  );
+
+  return {
+    auditRunId: progress.auditRun.id,
+    pagesProcessed: capturedPages.length,
+    homepageOnly,
+  };
+}
+
+function shouldDiscoverPages(progress: AuditRunProgress) {
+  return progress.pageSnapshots.length === 0 || progress.auditRun.status === "discovering";
+}
+
 async function captureQueuedPage(
   session: BrowserSession,
   auditRunId: string,
-  target: RoutedPageTarget & { snapshotId: string },
+  snapshot: Pick<PageSnapshot, "id" | "url" | "pageType" | "retryCount">,
   deps: CaptureAuditRunDeps
 ) {
-  for (let attempt = 0; attempt <= 1; attempt += 1) {
+  const startingRetryCount = Math.min(snapshot.retryCount ?? 0, 1);
+
+  for (let attempt = startingRetryCount; attempt <= 1; attempt += 1) {
     await deps.auditJobs.updatePageSnapshotState({
-      pageSnapshotId: target.snapshotId,
+      pageSnapshotId: snapshot.id,
       pageState: "capturing",
       retryCount: attempt,
       lastError: null,
     });
 
     try {
-      if (!(target.pageType === "homepage" && attempt === 0)) {
-        const response = await session.navigate({
-          url: target.url,
-          waitUntil: "load",
-          timeoutMs: target.pageType === "homepage" ? 30000 : 20000,
-        });
+      const response = await session.navigate({
+        url: snapshot.url,
+        waitUntil: "load",
+        timeoutMs: snapshot.pageType === "homepage" ? 30000 : 20000,
+      });
 
-        if (!response.ok) {
-          throw new Error(`Failed to load ${target.url}. Status: ${response.status}`);
-        }
+      if (!response.ok) {
+        throw new Error(`Failed to load ${snapshot.url}. Status: ${response.status}`);
       }
 
       await deps.waitAfterNavigation(2000);
@@ -121,18 +151,18 @@ async function captureQueuedPage(
       });
 
       const htmlStorageKey = await deps.storage.put(
-        buildArtifactKey(auditRunId, target.pageType, currentUrl, "html"),
+        buildArtifactKey(auditRunId, snapshot.pageType, currentUrl, "html"),
         html,
         "text/html"
       );
       const screenshotStorageKey = await deps.storage.put(
-        buildArtifactKey(auditRunId, target.pageType, currentUrl, "jpg"),
+        buildArtifactKey(auditRunId, snapshot.pageType, currentUrl, "jpg"),
         screenshot.data,
         screenshot.contentType
       );
 
       await deps.auditJobs.completePageSnapshotCapture({
-        pageSnapshotId: target.snapshotId,
+        pageSnapshotId: snapshot.id,
         url: currentUrl,
         htmlStorageKey,
         screenshotStorageKey,
@@ -145,7 +175,7 @@ async function captureQueuedPage(
 
       if (attempt === 0) {
         await deps.auditJobs.updatePageSnapshotState({
-          pageSnapshotId: target.snapshotId,
+          pageSnapshotId: snapshot.id,
           pageState: "queued",
           retryCount: 1,
           lastError: failureReason,
@@ -154,17 +184,17 @@ async function captureQueuedPage(
       }
 
       await deps.auditJobs.updatePageSnapshotState({
-        pageSnapshotId: target.snapshotId,
-        pageState: target.pageType === "homepage" ? "failed" : "needs_review",
+        pageSnapshotId: snapshot.id,
+        pageState: snapshot.pageType === "homepage" ? "failed" : "needs_review",
         retryCount: 1,
         lastError: failureReason,
       });
 
-      if (target.pageType === "homepage") {
+      if (snapshot.pageType === "homepage") {
         throw error;
       }
 
-      console.error(`[audit-capture] Failed to capture ${target.url}`, error);
+      console.error(`[audit-capture] Failed to capture ${snapshot.url}`, error);
       return false;
     }
   }
@@ -179,89 +209,95 @@ export async function captureAuditRun(
   const { auditRunId, domain, maxPages = DEFAULT_MAX_PAGES } = request;
   const baseUrl = domain.startsWith("http") ? domain : `https://${domain}`;
 
-  await deps.auditJobs.updateAuditRunStatus({
-    auditRunId,
-    status: "discovering",
-  });
-
   let session: BrowserSession | undefined;
-  let homepageOnly = true;
-  let pagesProcessed = 0;
 
   try {
+    let progress = await deps.auditJobs.getAuditRunProgress(auditRunId);
     session = await deps.browser.createSession();
 
-    const response = await session.navigate({
-      url: baseUrl,
-      waitUntil: "load",
-      timeoutMs: 30000,
-    });
+    if (shouldDiscoverPages(progress)) {
+      await deps.auditJobs.updateAuditRunStatus({
+        auditRunId,
+        status: "discovering",
+      });
 
-    if (!response.ok) {
-      throw new Error(`Failed to load homepage. Status: ${response.status}`);
+      const response = await session.navigate({
+        url: baseUrl,
+        waitUntil: "load",
+        timeoutMs: 30000,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to load homepage. Status: ${response.status}`);
+      }
+
+      const { value: discoveredLinks } = await session.evaluate<
+        BrowserDiscoveredLink[],
+        { baseUrl: string }
+      >({
+        expression: DISCOVER_LINKS_EXPRESSION,
+        arg: { baseUrl },
+      });
+
+      await Promise.all(
+        buildCapturePlan(response.url, discoveredLinks, maxPages).map((target) =>
+          deps.auditJobs.insertPageSnapshot({
+            auditRunId,
+            url: target.url,
+            pageType: target.pageType,
+            pagePriority: target.pagePriority,
+            pageState: "queued",
+            retryCount: 0,
+            lastError: null,
+          })
+        )
+      );
+
+      progress = await deps.auditJobs.getAuditRunProgress(auditRunId);
     }
 
-    const { value: discoveredLinks } = await session.evaluate<
-      BrowserDiscoveredLink[],
-      { baseUrl: string }
-    >({
-      expression: DISCOVER_LINKS_EXPRESSION,
-      arg: { baseUrl },
-    });
-    const captureQueue = buildCapturePlan(response.url, discoveredLinks, maxPages);
-    const queuedPages = await Promise.all(
-      captureQueue.map(async (target) => {
-        const snapshot = await deps.auditJobs.insertPageSnapshot({
-          auditRunId,
-          url: target.url,
-          pageType: target.pageType,
-          pagePriority: target.pagePriority,
-          pageState: "queued",
-          retryCount: 0,
-          lastError: null,
-        });
+    const captureTargets = progress.pageSnapshots
+      .filter(
+        (snapshot) => snapshot.pageState && CAPTURE_PENDING_STATES.has(snapshot.pageState)
+      )
+      .sort(compareSnapshots);
 
-        return {
-          ...target,
-          snapshotId: snapshot.id,
-        };
-      })
-    );
+    if (captureTargets.length === 0) {
+      return summarizeCaptureProgress(progress);
+    }
 
     await deps.auditJobs.updateAuditRunStatus({
       auditRunId,
       status: "capturing",
+      homepageOnly: summarizeCaptureProgress(progress).homepageOnly,
     });
 
-    for (const target of queuedPages) {
-      const captured = await captureQueuedPage(session, auditRunId, target, deps);
-
-      if (captured) {
-        pagesProcessed += 1;
-        if (target.pageType !== "homepage") {
-          homepageOnly = false;
-        }
-      }
+    for (const snapshot of captureTargets) {
+      await captureQueuedPage(session, auditRunId, snapshot, deps);
     }
 
-    return {
-      auditRunId,
-      pagesProcessed,
-      homepageOnly,
-    };
+    progress = await deps.auditJobs.getAuditRunProgress(auditRunId);
+    return summarizeCaptureProgress(progress);
   } catch (error) {
     const failureReason = error instanceof Error ? error.message : String(error);
+    const progress = await deps.auditJobs.getAuditRunProgress(auditRunId).catch(() => null);
+    const summary = progress
+      ? summarizeCaptureProgress(progress)
+      : {
+          auditRunId,
+          pagesProcessed: 0,
+          homepageOnly: true,
+        };
+
     await deps.auditJobs.updateAuditRunStatus({
       auditRunId,
       status: "failed",
       failureReason,
-      homepageOnly: true,
+      homepageOnly: summary.homepageOnly,
     });
 
     return {
-      auditRunId,
-      pagesProcessed,
-      homepageOnly: true,
+      ...summary,
       errorMessage: failureReason,
     };
   } finally {

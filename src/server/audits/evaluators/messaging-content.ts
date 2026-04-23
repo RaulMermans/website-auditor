@@ -4,8 +4,7 @@ import type { SpecialistEvaluator, SpecialistFindingDraft } from "./types";
 export const evaluateMessagingContent: SpecialistEvaluator = ({ route, metrics }) => {
   const drafts: SpecialistFindingDraft[] = [];
   const isHomepage = pageAllowsIssuePattern(route, "weak_value_proposition");
-  const isOfferPage =
-    pageAllowsIssuePattern(route, "offer_sprawl") || route.pageType === "homepage";
+  const isOfferPage = pageAllowsIssuePattern(route, "offer_sprawl");
   const weakHeroAlignment = metrics.messagingQuality.titleAlignment < 0.2;
   const weakHeroValue =
     metrics.messagingQuality.genericIntroDetected ||

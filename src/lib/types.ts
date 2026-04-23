@@ -43,10 +43,11 @@ export type PageType =
   | "services"
   | "contact"
   | "form"
-  | "blog_article"
-  | "legal"
   | "content"
+  | "legal"
   | "other";
+
+export type LegacyPageType = PageType | "blog_article";
 
 export type PageReviewStatus =
   | "queued"

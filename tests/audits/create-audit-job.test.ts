@@ -28,6 +28,10 @@ const persistedRecord = {
 function createDeps() {
   const auditJobs: AuditJobRepository = {
     createPendingAuditRun: vi.fn().mockResolvedValue(persistedRecord),
+    getAuditRunProgress: vi.fn().mockResolvedValue({
+      auditRun: persistedRecord.auditRun,
+      pageSnapshots: [],
+    }),
     markAuditRunFailed: vi.fn().mockResolvedValue(undefined),
     updateAuditRunStatus: vi.fn().mockResolvedValue(undefined),
     insertPageSnapshot: vi.fn().mockResolvedValue(undefined),

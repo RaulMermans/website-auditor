@@ -1,9 +1,14 @@
-import { pageAllowsIssuePattern, pageHasCategoryEmphasis } from "@/server/audits/page-rubrics";
+import {
+  pageAllowsIssuePattern,
+  pageHasCategoryEmphasis,
+  pageHasPrimaryNarrativeRole,
+} from "@/server/audits/page-rubrics";
 import type { SpecialistEvaluator, SpecialistFindingDraft } from "./types";
 
 export const evaluateUxUi: SpecialistEvaluator = ({ route, metrics }) => {
   const drafts: SpecialistFindingDraft[] = [];
   const isStructureHeavyPage = pageHasCategoryEmphasis(route, "ux_ui");
+  const hasPrimaryNarrativeRole = pageHasPrimaryNarrativeRole(route);
 
   if (
     isStructureHeavyPage &&
@@ -19,7 +24,7 @@ export const evaluateUxUi: SpecialistEvaluator = ({ route, metrics }) => {
         metrics.pageStructure.duplicateHeadingCount >= 2
           ? "The captured page repeats section-heading patterns, which makes the layout feel more templated and slower to scan with confidence."
           : `The captured page stacks ${metrics.pageStructure.sectionCount} sections and several long copy blocks. That combination weakens scan flow because multiple sections compete for similar visual weight.`,
-      severity: route.pageType === "homepage" ? "medium" : "low",
+      severity: hasPrimaryNarrativeRole ? "medium" : "low",
       confidence: "medium",
       evidenceLevel: "Observed",
       evidenceKeys: ["content_hierarchy", "heading_structure"],

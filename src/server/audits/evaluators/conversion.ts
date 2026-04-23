@@ -1,9 +1,15 @@
-import { pageHasCategoryEmphasis } from "@/server/audits/page-rubrics";
+import {
+  pageHasCategoryEmphasis,
+  pageHasHighIntentConversion,
+  pageRequiresStrongPrimaryActionClarity,
+} from "@/server/audits/page-rubrics";
 import type { SpecialistEvaluator, SpecialistFindingDraft } from "./types";
 
 export const evaluateConversion: SpecialistEvaluator = ({ route, metrics }) => {
   const drafts: SpecialistFindingDraft[] = [];
   const isKeyConversionPage = pageHasCategoryEmphasis(route, "conversion");
+  const isHighIntentPage = pageHasHighIntentConversion(route);
+  const requiresStrongPrimaryActionClarity = pageRequiresStrongPrimaryActionClarity(route);
   const hasMultipleDistinctCtas =
     metrics.ctaInventory.count >= 4 && metrics.ctaInventory.uniqueCount >= 3;
 
@@ -14,7 +20,7 @@ export const evaluateConversion: SpecialistEvaluator = ({ route, metrics }) => {
       title: "Primary next step is not yet clear on this page",
       description:
         "The captured DOM did not surface a standard CTA/button pattern or form. That suggests the page may not be giving visitors an obvious next step, although this remains a directional judgment rather than a measured conversion benchmark.",
-      severity: route.pageType === "contact" || route.pageType === "form" ? "high" : "medium",
+      severity: isHighIntentPage ? "high" : "medium",
       confidence: "medium",
       evidenceLevel: "Inferred",
       evidenceKeys: ["cta_present", "form_present", "button_count"],
@@ -31,10 +37,7 @@ export const evaluateConversion: SpecialistEvaluator = ({ route, metrics }) => {
       title: "Primary action is not clearly distinguished from secondary actions",
       description:
         `The captured page exposes ${metrics.ctaInventory.count} CTA-pattern elements across ${metrics.ctaInventory.uniqueCount} distinct labels. That spread makes it harder to tell which action should lead the page and which ones are supporting options.`,
-      severity:
-        route.pageType === "homepage" || route.pageType === "contact"
-          ? "medium"
-          : "low",
+      severity: requiresStrongPrimaryActionClarity ? "medium" : "low",
       confidence: "high",
       evidenceLevel: "Observed",
       evidenceKeys: ["cta_inventory", "conversion_path"],
@@ -109,7 +112,7 @@ export const evaluateConversion: SpecialistEvaluator = ({ route, metrics }) => {
         !metrics.formFriction.hasLabels
           ? "The captured form includes fields without matching label elements. On lead forms, unlabeled inputs make completion feel less certain and slower to process."
           : `The captured form marks ${metrics.formFriction.requiredCount} fields as required. That is a demanding first-step ask for visitors who have not committed yet.`,
-      severity: route.pageType === "contact" || route.pageType === "form" ? "medium" : "low",
+      severity: isHighIntentPage ? "medium" : "low",
       confidence: "high",
       evidenceLevel: "Observed",
       evidenceKeys: ["form_friction", "conversion_path"],
@@ -131,7 +134,7 @@ export const evaluateConversion: SpecialistEvaluator = ({ route, metrics }) => {
       title: "The page appears to rely on a relatively high-friction next step",
       description:
         `The captured page appears to rely on a ${metrics.formFriction.fieldCount}-field form as the main next step, with little evidence of a lower-friction alternative such as a simple contact CTA or booking link. This is a directional risk call based on the captured structure.`,
-      severity: route.pageType === "contact" || route.pageType === "form" ? "high" : "medium",
+      severity: isHighIntentPage ? "high" : "medium",
       confidence: "medium",
       evidenceLevel: "Inferred",
       evidenceKeys: ["form_friction", "cta_inventory", "conversion_path"],
