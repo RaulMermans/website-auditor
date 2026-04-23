@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { enrichmentRepository } from "@/db/enrichment";
 import { reportRepository } from "@/db/report";
+import { getAuditFailurePresentation } from "@/lib/audit-failure";
 import type { OutreachAsset } from "@/lib/types";
 import {
   AUDIT_STATUS_META,
@@ -11,7 +12,11 @@ import {
   scoreColor,
   SEVERITY_COLORS,
 } from "@/lib/report-presentation";
-import { buildFullReportData, type FullReportFinding } from "@/server/audits/build-full-report";
+import {
+  buildFullReportData,
+  type FullReportFinding,
+  type FullReportFindingGroup,
+} from "@/server/audits/build-full-report";
 
 interface BadgePresentation {
   label: string;
@@ -122,6 +127,19 @@ function FindingCard({ finding }: { finding: FullReportFinding }) {
           style={{
             padding: "4px 8px",
             borderRadius: 999,
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            color: "#475569",
+            fontSize: "0.74rem",
+            fontWeight: 700,
+          }}
+        >
+          {finding.claimLabel}
+        </span>
+        <span
+          style={{
+            padding: "4px 8px",
+            borderRadius: 999,
             background: `${EVIDENCE_COLORS[finding.evidenceLevel]}1a`,
             color: EVIDENCE_COLORS[finding.evidenceLevel],
             fontSize: "0.74rem",
@@ -186,6 +204,158 @@ function FindingCard({ finding }: { finding: FullReportFinding }) {
   );
 }
 
+function FindingGroupSection({ group }: { group: FullReportFindingGroup }) {
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <div
+        style={{
+          padding: "14px 16px",
+          borderRadius: 16,
+          background: "#f8fafc",
+          border: "1px solid #e2e8f0",
+        }}
+      >
+        <p style={{ margin: "0 0 6px", fontWeight: 800, color: "#0f172a" }}>{group.label}</p>
+        <p style={{ margin: 0, color: "#64748b", lineHeight: 1.55 }}>{group.description}</p>
+      </div>
+      {group.findings.map((finding) => (
+        <FindingCard key={finding.id} finding={finding} />
+      ))}
+    </div>
+  );
+}
+
+function RunStatusView({
+  auditRunId,
+  domain,
+  statusMeta,
+  homepageOnly,
+  failurePresentation,
+}: {
+  auditRunId: string;
+  domain: string;
+  statusMeta: BadgePresentation & { description: string };
+  homepageOnly: boolean;
+  failurePresentation: ReturnType<typeof getAuditFailurePresentation>;
+}) {
+  return (
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "linear-gradient(180deg, #f8fafc 0%, #eef2ff 220px, #ffffff 220px)",
+        padding: "40px 24px 72px",
+      }}
+    >
+      <div style={{ maxWidth: 960, margin: "0 auto", display: "grid", gap: 24 }}>
+        <section
+          style={{
+            padding: "28px 30px",
+            borderRadius: 24,
+            background: "rgba(255,255,255,0.94)",
+            border: "1px solid rgba(148, 163, 184, 0.2)",
+            boxShadow: "0 20px 50px rgba(15, 23, 42, 0.06)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              gap: 16,
+              flexWrap: "wrap",
+              marginBottom: 18,
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  margin: "0 0 6px",
+                  fontSize: "0.76rem",
+                  fontWeight: 800,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: "#6366f1",
+                }}
+              >
+                Audit Run Status
+              </p>
+              <h1 style={{ margin: "0 0 8px", fontSize: "2.25rem", fontWeight: 800 }}>{domain}</h1>
+              <p style={{ margin: 0, color: "#64748b", fontSize: "0.92rem" }}>Run: {auditRunId}</p>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <Link href="/audits" style={secondaryLinkStyle}>
+                Back to audits
+              </Link>
+              <Link href="/intake" style={primaryLinkStyle}>
+                Start another audit
+              </Link>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 18 }}>
+            <StatusBadge {...statusMeta} />
+            {homepageOnly && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  background: "#fffbeb",
+                  border: "1px solid #fcd34d",
+                  color: "#92400e",
+                  fontSize: "0.76rem",
+                  fontWeight: 700,
+                }}
+              >
+                Homepage-only scope
+              </span>
+            )}
+          </div>
+
+          <div style={summaryPanelStyle}>
+            <p style={panelEyebrowStyle}>Current Status</p>
+            <p style={{ margin: "0 0 10px", color: "#334155", lineHeight: 1.6 }}>
+              {failurePresentation?.explanation ?? statusMeta.description}
+            </p>
+            <p style={{ margin: 0, color: "#64748b", lineHeight: 1.6 }}>
+              Deterministic findings and report narrative stay hidden until the run completes with
+              enough trustworthy evidence.
+            </p>
+          </div>
+        </section>
+
+        {failurePresentation && (
+          <section style={sectionStyle}>
+            <div style={sectionHeaderStyle}>
+              <div>
+                <p style={sectionEyebrowStyle}>{failurePresentation.stageLabel}</p>
+                <h2 style={sectionTitleStyle}>{failurePresentation.label}</h2>
+                <p style={sectionIntroStyle}>{failurePresentation.explanation}</p>
+              </div>
+            </div>
+            {failurePresentation.retryGuidance && (
+              <div
+                style={{
+                  padding: "14px 16px",
+                  borderRadius: 16,
+                  background: "#fefce8",
+                  border: "1px solid #fde68a",
+                  color: "#92400e",
+                  lineHeight: 1.6,
+                }}
+              >
+                {failurePresentation.retryGuidance}
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+    </main>
+  );
+}
+
 const findingSectionStyle: React.CSSProperties = {
   padding: "12px 14px",
   borderRadius: 14,
@@ -224,6 +394,21 @@ export default async function ReportPage({
     notFound();
   }
 
+  const statusMeta = AUDIT_STATUS_META[data.auditRun.status];
+  const failurePresentation = getAuditFailurePresentation(data.auditRun);
+
+  if (data.auditRun.status !== "complete") {
+    return (
+      <RunStatusView
+        auditRunId={auditRunId}
+        domain={data.domain}
+        statusMeta={statusMeta}
+        homepageOnly={data.auditRun.homepageOnly}
+        failurePresentation={failurePresentation}
+      />
+    );
+  }
+
   const fullReport = buildFullReportData(data);
   const assetMap = Object.fromEntries(
     enrichmentAssets.map((asset) => [asset.type, asset.content])
@@ -234,7 +419,6 @@ export default async function ReportPage({
     Boolean(assetMap.email) ||
     Boolean(assetMap.collaboration) ||
     Boolean(assetMap.loom_script);
-  const statusMeta = AUDIT_STATUS_META[data.auditRun.status];
   const reviewStateCounts = data.categoryReviews.reduce<
     Record<keyof typeof REVIEW_STATE_META, number>
   >(
@@ -468,8 +652,8 @@ export default async function ReportPage({
             </p>
           ) : (
             <div style={{ display: "grid", gap: 14 }}>
-              {fullReport.topPriorities.map((finding) => (
-                <FindingCard key={finding.id} finding={finding} />
+              {fullReport.topPriorityGroups.map((group) => (
+                <FindingGroupSection key={group.posture} group={group} />
               ))}
             </div>
           )}
@@ -668,8 +852,8 @@ export default async function ReportPage({
 
                   {section.findings.length > 0 ? (
                     <div style={{ display: "grid", gap: 14 }}>
-                      {section.findings.map((finding) => (
-                        <FindingCard key={finding.id} finding={finding} />
+                      {section.findingGroups.map((group) => (
+                        <FindingGroupSection key={group.posture} group={group} />
                       ))}
                     </div>
                   ) : (

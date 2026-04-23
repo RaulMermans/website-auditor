@@ -110,6 +110,7 @@ describe("buildEnrichmentInput", () => {
     const findings = [makeFinding({ evidenceLevel: "Inferred" })];
     const input = buildEnrichmentInput(makeReportData(findings));
     expect(input.findingSummaries[0].evidenceLevel).toBe("Inferred");
+    expect(input.findingSummaries[0].claimPosture).toBe("directional");
   });
 
   it("includes confidence and support details for top priorities", () => {

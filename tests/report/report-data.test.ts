@@ -87,7 +87,7 @@ describe("ReportRepository interface", () => {
 describe("report data scores consistency", () => {
   it("overall score matches findings penalty", () => {
     const data = makeReportData();
-    expect(data.scores.overall).toBe(75);
+    expect(data.scores.overall).toBe(72);
   });
 
   it("category score reflects findings in that category only", () => {

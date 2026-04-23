@@ -1,5 +1,5 @@
 import type { FindingCategory, PageSnapshot, PageType } from "@/lib/types";
-import { getPagePriority, normalizePageType } from "@/server/audits/page-archetypes";
+import { getPagePriority } from "@/server/audits/page-archetypes";
 
 const COMMON_CORE_RUBRIC: FindingCategory[] = [
   "technical_seo",
@@ -236,8 +236,7 @@ function dedupe(values: string[]) {
 }
 
 export function getPageRubric(pageType: PageType): PageRubric {
-  const normalizedPageType = normalizePageType(pageType);
-  const rubric = RUBRIC_BY_PAGE_TYPE[normalizedPageType];
+  const rubric = RUBRIC_BY_PAGE_TYPE[pageType];
 
   return {
     commonCoreRubric: COMMON_CORE_RUBRIC,
@@ -256,12 +255,10 @@ export function getPageRubric(pageType: PageType): PageRubric {
 export function getRoutedPageContext(
   snapshot: Pick<PageSnapshot, "pageType" | "pagePriority">
 ): RoutedPageContext {
-  const pageType = normalizePageType(snapshot.pageType);
-
   return {
-    pageType,
-    pagePriority: snapshot.pagePriority ?? getPagePriority(pageType),
-    rubric: getPageRubric(pageType),
+    pageType: snapshot.pageType,
+    pagePriority: snapshot.pagePriority ?? getPagePriority(snapshot.pageType),
+    rubric: getPageRubric(snapshot.pageType),
   };
 }
 

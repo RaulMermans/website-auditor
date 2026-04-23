@@ -113,6 +113,11 @@ describe("buildFullReportData", () => {
     expect(fullReport.executiveSummary.overview).toContain("captured page set");
     expect(fullReport.executiveSummary.whatIsLimiting[0]).toContain("Messaging & Content:");
     expect(fullReport.topPriorities).toHaveLength(3);
+    expect(fullReport.topPriorityGroups.map((group) => group.label)).toEqual([
+      "Confirmed",
+      "Observed Pattern",
+      "Directional",
+    ]);
     expect(fullReport.scoreSummary.lightlyInspectedCategories).toContain("Conversion");
     expect(fullReport.scoreSummary.insufficientEvidenceCategories).toContain("UX / UI");
     expect(fullReport.strategicReadout.map((item) => item.title)).toEqual([
@@ -124,6 +129,9 @@ describe("buildFullReportData", () => {
     expect(fullReport.nextActions.quickWins[0]).toContain("Technical SEO:");
     expect(fullReport.topPriorities[0]?.evidenceNote).toContain("visible page patterns");
     expect(fullReport.topPriorities[2]?.risk).toContain("directional");
+    expect(
+      fullReport.categorySections.find((section) => section.category === "conversion")?.findingGroups[0]?.label
+    ).toBe("Directional");
   });
 
   it("keeps full report findings grounded in the underlying deterministic findings", () => {

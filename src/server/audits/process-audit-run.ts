@@ -1,5 +1,6 @@
 import type { AuditJobRepository, AuditRunProgress } from "@/db/audits";
 import { auditJobRepository } from "@/db/audits";
+import { toAuditFailure } from "@/lib/audit-failure";
 import { analyzeAuditRun } from "@/server/audits/analyze-audit-run";
 import type {
   AuditCaptureRequest,
@@ -50,6 +51,22 @@ function summarizeProgress(progress: AuditRunProgress): AuditCaptureResult {
   };
 }
 
+function getProcessFailureStage(progress: AuditRunProgress | null) {
+  if (!progress) {
+    return "capture" as const;
+  }
+
+  if (hasPendingAnalysis(progress) && !hasPendingCapture(progress)) {
+    return "analyze" as const;
+  }
+
+  if (hasPendingCapture(progress)) {
+    return progress.pageSnapshots.length === 0 ? "discover" as const : "capture" as const;
+  }
+
+  return progress.auditRun.status === "analyzing" ? "analyze" as const : "capture" as const;
+}
+
 export async function processAuditRun(
   request: AuditCaptureRequest,
   deps: ProcessAuditRunDeps = defaultDeps
@@ -91,8 +108,10 @@ export async function processAuditRun(
 
     return result;
   } catch (error) {
-    const failureReason = error instanceof Error ? error.message : "Unknown error";
     progress = await deps.auditJobs.getAuditRunProgress(request.auditRunId).catch(() => progress);
+    const failure = toAuditFailure(error, {
+      stage: getProcessFailureStage(progress),
+    });
     const result = progress
       ? summarizeProgress(progress)
       : {
@@ -105,12 +124,15 @@ export async function processAuditRun(
       auditRunId: request.auditRunId,
       status: "failed",
       homepageOnly: result.homepageOnly,
-      failureReason,
+      failureReason: failure.failureReason,
+      failureKind: failure.failureKind,
+      failureStage: failure.failureStage,
+      failureDetails: failure.failureDetails,
     });
 
     return {
       ...result,
-      errorMessage: failureReason,
+      errorMessage: failure.failureReason,
     };
   }
 }

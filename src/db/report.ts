@@ -2,6 +2,9 @@ import { withDbClient } from "@/db/client";
 import type {
   AuditRun,
   AuditStatus,
+  AuditFailureDetails,
+  AuditFailureKind,
+  AuditFailureStage,
   ClaimPosture,
   EvidenceLabel,
   Finding,
@@ -33,6 +36,9 @@ interface AuditRunWithDomainRow {
   started_at: Date;
   completed_at: Date | null;
   failure_reason: string | null;
+  failure_kind: AuditFailureKind | null;
+  failure_stage: AuditFailureStage | null;
+  failure_details: AuditFailureDetails | null;
   created_at: Date;
   domain: string;
 }
@@ -66,6 +72,9 @@ export interface AuditRunListItem {
   completedAt: Date | null;
   homepageOnly: boolean;
   failureReason: string | null;
+  failureKind: AuditFailureKind | null;
+  failureStage: AuditFailureStage | null;
+  failureDetails: AuditFailureDetails | null;
 }
 
 export interface ReportData {
@@ -109,6 +118,9 @@ function mapAuditRun(row: AuditRunWithDomainRow): AuditRun {
     startedAt: row.started_at,
     completedAt: row.completed_at,
     failureReason: row.failure_reason,
+    failureKind: row.failure_kind,
+    failureStage: row.failure_stage,
+    failureDetails: row.failure_details,
     createdAt: row.created_at,
   };
 }
@@ -175,8 +187,8 @@ function buildCategoryReview(
         findings.length > 0 ? "Light inspection with prioritized issues" : "Light inspection only",
       summary:
         findings.length > 0
-          ? `This category surfaced ${findings.length} finding${findings.length !== 1 ? "s" : ""}, but only ${observedChecks}/${expectedChecks} deterministic checks ran. The findings are useful directional signals, not a full category verdict.`
-          : `Only ${observedChecks}/${expectedChecks} deterministic checks ran here. No issues surfaced, but the evidence is too thin to call the category clear.`,
+          ? `This category surfaced ${findings.length} finding${findings.length !== 1 ? "s" : ""}, but only ${observedChecks}/${expectedChecks} deterministic checks ran. The listed issues are grounded in the captured signals, yet the category was not fully assessed.`
+          : `Only ${observedChecks}/${expectedChecks} deterministic checks ran here. No issues surfaced, but the category was not fully assessed and should not be treated as clear.`,
     };
   }
 
@@ -231,6 +243,9 @@ export async function listRecentAuditRuns(limit = 50): Promise<AuditRunListItem[
       completed_at: Date | null;
       homepage_only: boolean;
       failure_reason: string | null;
+      failure_kind: AuditFailureKind | null;
+      failure_stage: AuditFailureStage | null;
+      failure_details: AuditFailureDetails | null;
     }>(
       `
         SELECT
@@ -240,7 +255,10 @@ export async function listRecentAuditRuns(limit = 50): Promise<AuditRunListItem[
           ar.created_at,
           ar.completed_at,
           ar.homepage_only,
-          ar.failure_reason
+          ar.failure_reason,
+          ar.failure_kind,
+          ar.failure_stage,
+          ar.failure_details
         FROM audit_runs ar
         JOIN target_domains td ON td.id = ar.target_domain_id
         ORDER BY ar.created_at DESC
@@ -257,6 +275,9 @@ export async function listRecentAuditRuns(limit = 50): Promise<AuditRunListItem[
       completedAt: row.completed_at,
       homepageOnly: row.homepage_only,
       failureReason: row.failure_reason,
+      failureKind: row.failure_kind,
+      failureStage: row.failure_stage,
+      failureDetails: row.failure_details,
     }));
   });
 }
@@ -275,6 +296,9 @@ export const reportRepository: ReportRepository = {
             ar.started_at,
             ar.completed_at,
             ar.failure_reason,
+            ar.failure_kind,
+            ar.failure_stage,
+            ar.failure_details,
             ar.created_at,
             td.domain
           FROM audit_runs ar

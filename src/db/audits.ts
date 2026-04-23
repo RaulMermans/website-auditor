@@ -2,8 +2,10 @@ import type { PoolClient } from "pg";
 import { withDbClient, withTransaction } from "@/db/client";
 import type {
   AuditRun,
+  AuditFailureDetails,
+  AuditFailureKind,
+  AuditFailureStage,
   AuditStatus,
-  LegacyPageType,
   PageEvaluatorStatus,
   PageReviewStatus,
   PageSnapshot,
@@ -11,7 +13,6 @@ import type {
   PageType,
   TargetDomain,
 } from "@/lib/types";
-import { normalizePageType } from "@/server/audits/page-archetypes";
 
 // ─── Row types (DB shape) ────────────────────────────────────────────────────
 
@@ -30,6 +31,9 @@ interface AuditRunRow {
   started_at: Date;
   completed_at: Date | null;
   failure_reason: string | null;
+  failure_kind: AuditFailureKind | null;
+  failure_stage: AuditFailureStage | null;
+  failure_details: AuditFailureDetails | null;
   created_at: Date;
 }
 
@@ -37,7 +41,7 @@ interface PageSnapshotRow {
   id: string;
   audit_run_id: string;
   url: string;
-  page_type: LegacyPageType;
+  page_type: PageType;
   page_priority: number;
   page_state: PageState;
   retry_count: number;
@@ -70,6 +74,9 @@ export interface CreatePendingAuditRunInput {
 export interface MarkAuditRunFailedInput {
   auditRunId: string;
   failureReason: string;
+  failureKind?: AuditFailureKind | null;
+  failureStage?: AuditFailureStage | null;
+  failureDetails?: AuditFailureDetails | null;
 }
 
 export interface UpdateAuditRunStatusInput {
@@ -77,6 +84,9 @@ export interface UpdateAuditRunStatusInput {
   status: AuditStatus;
   homepageOnly?: boolean;
   failureReason?: string | null;
+  failureKind?: AuditFailureKind | null;
+  failureStage?: AuditFailureStage | null;
+  failureDetails?: AuditFailureDetails | null;
 }
 
 export interface InsertPageSnapshotInput {
@@ -138,6 +148,9 @@ function mapAuditRun(row: AuditRunRow): AuditRun {
     startedAt: row.started_at,
     completedAt: row.completed_at,
     failureReason: row.failure_reason,
+    failureKind: row.failure_kind,
+    failureStage: row.failure_stage,
+    failureDetails: row.failure_details,
     createdAt: row.created_at,
   };
 }
@@ -147,7 +160,7 @@ function mapPageSnapshot(row: PageSnapshotRow): PageSnapshot {
     id: row.id,
     auditRunId: row.audit_run_id,
     url: row.url,
-    pageType: normalizePageType(row.page_type),
+    pageType: row.page_type,
     pagePriority: row.page_priority,
     pageState: row.page_state,
     retryCount: row.retry_count,
@@ -223,6 +236,9 @@ export const auditJobRepository: AuditJobRepository = {
             started_at,
             completed_at,
             failure_reason,
+            failure_kind,
+            failure_stage,
+            failure_details,
             created_at
         `,
         [auditRunId, projectId ?? null, targetDomainRow.id, now]
@@ -248,6 +264,9 @@ export const auditJobRepository: AuditJobRepository = {
             started_at,
             completed_at,
             failure_reason,
+            failure_kind,
+            failure_stage,
+            failure_details,
             created_at
           FROM audit_runs
           WHERE id = $1
@@ -291,22 +310,46 @@ export const auditJobRepository: AuditJobRepository = {
     });
   },
 
-  async markAuditRunFailed({ auditRunId, failureReason }) {
+  async markAuditRunFailed({
+    auditRunId,
+    failureReason,
+    failureKind,
+    failureStage,
+    failureDetails,
+  }) {
     await withDbClient(async (client) => {
       await client.query(
         `
           UPDATE audit_runs
           SET status = 'failed',
               failure_reason = $2,
-              completed_at = $3
+              failure_kind = COALESCE($3, failure_kind),
+              failure_stage = COALESCE($4, failure_stage),
+              failure_details = COALESCE($5::jsonb, failure_details),
+              completed_at = $6
           WHERE id = $1
         `,
-        [auditRunId, failureReason, new Date()]
+        [
+          auditRunId,
+          failureReason,
+          failureKind ?? null,
+          failureStage ?? null,
+          failureDetails ? JSON.stringify(failureDetails) : null,
+          new Date(),
+        ]
       );
     });
   },
 
-  async updateAuditRunStatus({ auditRunId, status, homepageOnly, failureReason }) {
+  async updateAuditRunStatus({
+    auditRunId,
+    status,
+    homepageOnly,
+    failureReason,
+    failureKind,
+    failureStage,
+    failureDetails,
+  }) {
     await withDbClient(async (client) => {
       const completed = status === "complete" || status === "failed" ? new Date() : null;
       await client.query(
@@ -319,8 +362,23 @@ export const auditJobRepository: AuditJobRepository = {
                 WHEN $2 = 'failed' THEN failure_reason
                 ELSE NULL
               END,
-              completed_at = CASE
+              failure_kind = CASE
                 WHEN $5 IS NOT NULL THEN $5
+                WHEN $2 = 'failed' THEN failure_kind
+                ELSE NULL
+              END,
+              failure_stage = CASE
+                WHEN $6 IS NOT NULL THEN $6
+                WHEN $2 = 'failed' THEN failure_stage
+                ELSE NULL
+              END,
+              failure_details = CASE
+                WHEN $7::jsonb IS NOT NULL THEN $7::jsonb
+                WHEN $2 = 'failed' THEN failure_details
+                ELSE NULL
+              END,
+              completed_at = CASE
+                WHEN $8 IS NOT NULL THEN $8
                 WHEN $2 IN ('complete', 'failed') THEN completed_at
                 ELSE NULL
               END
@@ -331,6 +389,9 @@ export const auditJobRepository: AuditJobRepository = {
           status,
           homepageOnly ?? null,
           failureReason ?? null,
+          failureKind ?? null,
+          failureStage ?? null,
+          failureDetails ? JSON.stringify(failureDetails) : null,
           completed,
         ]
       );

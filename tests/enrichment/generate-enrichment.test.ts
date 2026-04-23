@@ -41,6 +41,7 @@ function baseInput(overrides: Partial<EnrichmentPromptInput> = {}): EnrichmentPr
     findingSummaries: [
       {
         category: "technical_seo",
+        claimPosture: "confirmed",
         severity: "high",
         title: "Missing meta description",
         evidenceLevel: "Measured",

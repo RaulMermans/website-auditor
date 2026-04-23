@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   buildCapturePlan,
   classifyPageArchetype,
-  normalizePageType,
 } from "@/server/audits/page-archetypes";
 
 describe("page archetypes", () => {
@@ -14,7 +13,6 @@ describe("page archetypes", () => {
     expect(classifyPageArchetype("https://example.com/book-demo", "Book Demo")).toBe("form");
     expect(classifyPageArchetype("https://example.com/blog/how-to-audit", "Blog")).toBe("content");
     expect(classifyPageArchetype("https://example.com/privacy", "Privacy")).toBe("legal");
-    expect(normalizePageType("blog_article")).toBe("content");
   });
 
   it("builds a deterministic capture plan ordered by archetype priority", () => {

@@ -44,6 +44,9 @@ describe("AuditsPage", () => {
         completedAt: now,
         homepageOnly: false,
         failureReason: null,
+        failureKind: null,
+        failureStage: null,
+        failureDetails: null,
       },
       {
         auditRunId: "run-progress",
@@ -53,6 +56,9 @@ describe("AuditsPage", () => {
         completedAt: null,
         homepageOnly: true,
         failureReason: null,
+        failureKind: null,
+        failureStage: null,
+        failureDetails: null,
       },
       {
         auditRunId: "run-failed",
@@ -62,6 +68,13 @@ describe("AuditsPage", () => {
         completedAt: now,
         homepageOnly: false,
         failureReason: "Browser capture failed.",
+        failureKind: "unknown",
+        failureStage: "capture",
+        failureDetails: {
+          source: "unknown",
+          marker: "unknown",
+          retryable: true,
+        },
       },
     ]);
 
@@ -74,6 +87,6 @@ describe("AuditsPage", () => {
     expect(html).toContain("Open full report");
     expect(html).toContain("Assembling findings");
     expect(html).toContain("Homepage-only");
-    expect(html).toContain("Failure reason");
+    expect(html).toContain("Capture");
   });
 });

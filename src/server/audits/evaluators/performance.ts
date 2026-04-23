@@ -10,8 +10,8 @@ export const evaluatePerformance: SpecialistEvaluator = ({ metrics }) => {
       title: "Script footprint is heavier than expected",
       description:
         metrics.assetWeight.thirdPartyScriptCount >= 4
-          ? `The captured HTML includes ${metrics.scriptCount} script elements, with ${metrics.assetWeight.thirdPartyScriptCount} loading from third-party origins. That measured footprint suggests the page is carrying more client-side work than a focused marketing page usually needs.`
-          : `The captured HTML includes ${metrics.scriptCount} script elements. That measured footprint suggests the page may be asking the browser to do more work than necessary, especially on mobile connections.`,
+          ? `The captured HTML includes ${metrics.scriptCount} script elements, with ${metrics.assetWeight.thirdPartyScriptCount} loading from third-party origins. That measured footprint can add more client-side work than a focused marketing page usually needs.`
+          : `The captured HTML includes ${metrics.scriptCount} script elements. That measured footprint can ask the browser to do more work than necessary, especially on mobile connections.`,
       severity: metrics.scriptCount > 20 ? "medium" : "low",
       confidence: "high",
       evidenceLevel: "Measured",
@@ -32,7 +32,7 @@ export const evaluatePerformance: SpecialistEvaluator = ({ metrics }) => {
       issueType: "heavy_asset_mix",
       title: "Asset mix is heavier than it needs to be for a fast first render",
       description:
-        `The captured page carries ${metrics.assetWeight.stylesheetCount} stylesheet references, ${metrics.assetWeight.imageCount} images, and ${metrics.assetWeight.eagerImageCount} images without lazy-loading hints. That measured asset mix points to a heavier first render, especially on mobile.`,
+        `The captured page carries ${metrics.assetWeight.stylesheetCount} stylesheet references, ${metrics.assetWeight.imageCount} images, and ${metrics.assetWeight.eagerImageCount} images without lazy-loading hints. That measured asset mix can make the first render heavier, especially on mobile.`,
       severity:
         metrics.assetWeight.imageCount >= 24 || metrics.assetWeight.eagerImageCount >= 14
           ? "medium"
@@ -55,7 +55,7 @@ export const evaluatePerformance: SpecialistEvaluator = ({ metrics }) => {
       issueType: "complex_render_path",
       title: "DOM complexity is high enough to add rendering overhead",
       description:
-        `The captured DOM contains roughly ${metrics.pageStructure.domElementCount} elements across ${metrics.pageStructure.sectionCount} sections. That level of complexity increases the amount of layout and paint work the browser may need to do, even though Core Web Vitals were not directly measured in this audit.`,
+        `The captured DOM contains roughly ${metrics.pageStructure.domElementCount} elements across ${metrics.pageStructure.sectionCount} sections. That level of complexity can increase layout and paint work in the browser, even though Core Web Vitals were not directly measured in this audit.`,
       severity: "low",
       confidence: "medium",
       evidenceLevel: "Measured",

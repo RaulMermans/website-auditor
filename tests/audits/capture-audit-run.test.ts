@@ -10,11 +10,15 @@ function createDeps(options?: {
   links?: Array<{ href: string; origin: string; pathname: string; text: string }>;
   failingUrls?: Record<string, number>;
   homepageOk?: boolean;
+  statusByUrl?: Record<string, number>;
+  htmlByUrl?: Record<string, string>;
   initialStatus?: "pending" | "discovering" | "capturing" | "analyzing" | "complete" | "failed";
   existingSnapshots?: Array<Record<string, unknown>>;
 }) {
   const links = options?.links ?? [];
   const failingUrls = new Map(Object.entries(options?.failingUrls ?? {}));
+  const statusByUrl = new Map(Object.entries(options?.statusByUrl ?? {}));
+  const htmlByUrl = new Map(Object.entries(options?.htmlByUrl ?? {}));
   let currentUrl = "about:blank";
   let snapshotIndex = 0;
   let runStatus =
@@ -41,14 +45,18 @@ function createDeps(options?: {
         throw new Error(`Failed to capture ${url}`);
       }
 
+      const status = statusByUrl.get(url) ?? (options?.homepageOk === false ? 500 : 200);
+
       return {
         url,
-        ok: options?.homepageOk !== false,
-        status: options?.homepageOk === false ? 500 : 200,
+        ok: status >= 200 && status < 400,
+        status,
       };
     }),
     getUrl: vi.fn(async () => currentUrl),
-    extractHtml: vi.fn(async () => ({ value: `<html data-url="${currentUrl}"></html>` })),
+    extractHtml: vi.fn(async () => ({
+      value: htmlByUrl.get(currentUrl) ?? `<html data-url="${currentUrl}"></html>`,
+    })),
     screenshot: vi.fn().mockResolvedValue({
       data: Buffer.from("fake-image"),
       contentType: "image/jpeg",
@@ -427,6 +435,52 @@ describe("captureAuditRun", () => {
       auditRunId: "run-999",
       status: "failed",
       failureReason: "Failed to load homepage. Status: 500",
+      failureKind: "unknown",
+      failureStage: "discover",
+      failureDetails: {
+        driver: "playwright",
+        marker: "unknown",
+        message: "Failed to load homepage. Status: 500",
+        retryable: true,
+        source: "unknown",
+        statusCode: undefined,
+        url: "https://example.com",
+      },
+      homepageOnly: true,
+    });
+  });
+
+  it("classifies 403 homepage responses as target access denial during discovery", async () => {
+    const { deps } = createDeps({
+      statusByUrl: {
+        "https://example.com": 403,
+      },
+    });
+
+    const result = await captureAuditRun(
+      {
+        auditRunId: "run-403",
+        domain: "example.com",
+      },
+      deps
+    );
+
+    expect(result.errorMessage).toMatch(/target denied this audit request/i);
+    expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith({
+      auditRunId: "run-403",
+      status: "failed",
+      failureReason: "The target denied this audit request. That does not prove the site is broken for regular visitors.",
+      failureKind: "access_denied",
+      failureStage: "discover",
+      failureDetails: {
+        driver: "playwright",
+        marker: "http_403",
+        message: undefined,
+        retryable: false,
+        source: "target",
+        statusCode: 403,
+        url: "https://example.com",
+      },
       homepageOnly: true,
     });
   });
@@ -456,6 +510,17 @@ describe("captureAuditRun", () => {
       auditRunId: "run-browser-missing",
       status: "failed",
       failureReason: expect.stringContaining("Playwright Chromium is unavailable in this deployment"),
+      failureKind: "runtime_error",
+      failureStage: "discover",
+      failureDetails: {
+        driver: "playwright",
+        marker: "browser_launch",
+        message: expect.stringContaining("Playwright Chromium is unavailable in this deployment"),
+        retryable: true,
+        source: "runtime",
+        statusCode: undefined,
+        url: "https://example.com",
+      },
       homepageOnly: true,
     });
   });

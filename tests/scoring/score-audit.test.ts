@@ -27,7 +27,7 @@ describe("scoreAudit", () => {
       rubricId: "r",
       findings: [{ id: "1", severity: "high", confidence: "low", evidenceLevel: "Inferred" }],
     });
-    expect(result.totalScore).toBe(87);
+    expect(result.totalScore).toBe(88);
   });
 
   it("clamps to 0 on extreme penalty", () => {
@@ -93,8 +93,21 @@ describe("scoreAuditByCategory", () => {
     });
 
     expect(result.byCategory.technical_seo).toBeLessThan(result.byCategory.accessibility);
+    expect(result.byCategory.technical_seo).toBeLessThan(70);
     expect(result.inspectionSummaryByCategory.technical_seo.status).toBe("lightly_inspected");
     expect(result.inspectionSummaryByCategory.accessibility.status).toBe("inspected");
+  });
+
+  it("caps lightly inspected categories well below fully inspected ceilings even without findings", () => {
+    const result = scoreAuditByCategory([], {
+      inspectionKeysByCategory: {
+        conversion: ["cta_present", "button_count"],
+      },
+    });
+
+    expect(result.inspectionSummaryByCategory.conversion.status).toBe("lightly_inspected");
+    expect(result.byCategory.conversion).toBeLessThan(70);
+    expect(result.byCategory.technical_seo).toBe(0);
   });
 
   it("marks categories with no meaningful evidence as not inspected", () => {
@@ -177,7 +190,7 @@ describe("scoreAuditByCategory", () => {
     );
 
     expect(result.byCategory.technical_seo).toBe(80);
-    expect(result.byCategory.messaging_content).toBe(83);
+    expect(result.byCategory.messaging_content).toBe(84);
     expect(result.overall).toBeLessThan(80);
   });
 

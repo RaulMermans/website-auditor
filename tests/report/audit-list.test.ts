@@ -13,6 +13,9 @@ function makeListItem(overrides: Partial<AuditRunListItem> = {}): AuditRunListIt
     completedAt: now,
     homepageOnly: false,
     failureReason: null,
+    failureKind: null,
+    failureStage: null,
+    failureDetails: null,
     ...overrides,
   };
 }

@@ -5,6 +5,35 @@ export type EvidenceLabel = "Measured" | "Observed" | "Inferred";
 export type ClaimPosture = "confirmed" | "observed_pattern" | "directional";
 export type FindingSupportType = "dom" | "cross_page" | "inferred";
 export type FindingEvaluatorStatus = "accepted" | "needs_review";
+export type AuditFailureKind =
+  | "blocked"
+  | "access_denied"
+  | "auth_wall"
+  | "capture_blocked"
+  | "runtime_error"
+  | "analysis_error"
+  | "unknown";
+export type AuditFailureStage = "discover" | "capture" | "analyze" | "report";
+export interface AuditFailureDetails {
+  source?: "target" | "runtime" | "analysis" | "network" | "unknown";
+  url?: string;
+  statusCode?: number;
+  driver?: string;
+  marker?:
+    | "http_401"
+    | "http_403"
+    | "http_429"
+    | "bot_challenge"
+    | "auth_wall"
+    | "access_denied"
+    | "dns_error"
+    | "navigation_timeout"
+    | "browser_launch"
+    | "analysis_exception"
+    | "unknown";
+  retryable?: boolean;
+  message?: string;
+}
 export type FindingCategory =
   | "performance"
   | "technical_seo"
@@ -47,8 +76,6 @@ export type PageType =
   | "legal"
   | "other";
 
-export type LegacyPageType = PageType | "blog_article";
-
 export type PageReviewStatus =
   | "queued"
   | "capturing"
@@ -88,6 +115,9 @@ export interface AuditRun {
   startedAt: Date;
   completedAt?: Date | null;
   failureReason?: string | null;
+  failureKind?: AuditFailureKind | null;
+  failureStage?: AuditFailureStage | null;
+  failureDetails?: AuditFailureDetails | null;
   createdAt: Date;
 }
 

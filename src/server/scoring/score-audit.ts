@@ -16,12 +16,13 @@ const CONFIDENCE_MULTIPLIER: Record<FindingConfidence, number> = {
 
 const EVIDENCE_MULTIPLIER: Record<EvidenceLabel, number> = {
   Measured: 1,
-  Observed: 0.9,
-  Inferred: 0.75,
+  Observed: 0.82,
+  Inferred: 0.55,
 };
 
 const MAX_SCORE = 92;
-const MIN_LIGHT_INSPECTION_SCORE = 64;
+const MAX_LIGHT_INSPECTION_SCORE = 78;
+const MIN_LIGHT_INSPECTION_SCORE = 52;
 
 export interface ScoreAuditInput {
   auditRunId: string;
@@ -182,7 +183,19 @@ function getInspectionCeiling(summary: InspectionSummary) {
     return 0;
   }
 
-  return MIN_LIGHT_INSPECTION_SCORE + summary.depth * (MAX_SCORE - MIN_LIGHT_INSPECTION_SCORE);
+  if (summary.status === "lightly_inspected") {
+    const normalizedDepth = Math.min(summary.depth / 0.7, 1);
+    return (
+      MIN_LIGHT_INSPECTION_SCORE +
+      normalizedDepth * (MAX_LIGHT_INSPECTION_SCORE - MIN_LIGHT_INSPECTION_SCORE)
+    );
+  }
+
+  const normalizedDepth = Math.min(Math.max((summary.depth - 0.7) / 0.3, 0), 1);
+  return (
+    MAX_LIGHT_INSPECTION_SCORE +
+    normalizedDepth * (MAX_SCORE - MAX_LIGHT_INSPECTION_SCORE)
+  );
 }
 
 export function scoreAuditByCategory(

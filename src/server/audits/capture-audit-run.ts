@@ -1,5 +1,10 @@
 import type { AuditJobRepository, AuditRunProgress } from "@/db/audits";
 import { auditJobRepository } from "@/db/audits";
+import {
+  AuditFailureError,
+  detectAuditCaptureBarrier,
+  toAuditFailure,
+} from "@/lib/audit-failure";
 import type { StorageClient } from "@/server/contracts/storage";
 import { storageClient } from "@/server/contracts/storage";
 import type { PageSnapshot, PageState, PageType } from "@/lib/types";
@@ -111,6 +116,14 @@ function shouldDiscoverPages(progress: AuditRunProgress) {
   return progress.pageSnapshots.length === 0 || progress.auditRun.status === "discovering";
 }
 
+function getCaptureFailureStage(progress: AuditRunProgress | null) {
+  if (!progress || shouldDiscoverPages(progress)) {
+    return "discover" as const;
+  }
+
+  return "capture" as const;
+}
+
 async function captureQueuedPage(
   session: BrowserSession,
   auditRunId: string,
@@ -133,6 +146,15 @@ async function captureQueuedPage(
         waitUntil: "load",
         timeoutMs: snapshot.pageType === "homepage" ? 30000 : 20000,
       });
+      const statusBarrier = detectAuditCaptureBarrier({
+        stage: "capture",
+        statusCode: response.status,
+        url: response.url,
+        driver: deps.browser.name,
+      });
+      if (statusBarrier) {
+        throw new AuditFailureError(statusBarrier);
+      }
 
       if (!response.ok) {
         throw new Error(`Failed to load ${snapshot.url}. Status: ${response.status}`);
@@ -142,6 +164,16 @@ async function captureQueuedPage(
 
       const currentUrl = await session.getUrl();
       const { value: html } = await session.extractHtml();
+      const htmlBarrier = detectAuditCaptureBarrier({
+        stage: "capture",
+        statusCode: response.status,
+        html,
+        url: currentUrl,
+        driver: deps.browser.name,
+      });
+      if (htmlBarrier) {
+        throw new AuditFailureError(htmlBarrier);
+      }
 
       const screenshot = await session.screenshot({
         fullPage: true,
@@ -171,7 +203,12 @@ async function captureQueuedPage(
 
       return true;
     } catch (error) {
-      const failureReason = error instanceof Error ? error.message : String(error);
+      const failure = toAuditFailure(error, {
+        stage: "capture",
+        url: snapshot.url,
+        driver: deps.browser.name,
+      });
+      const failureReason = failure.failureReason;
 
       if (attempt === 0) {
         await deps.auditJobs.updatePageSnapshotState({
@@ -191,7 +228,7 @@ async function captureQueuedPage(
       });
 
       if (snapshot.pageType === "homepage") {
-        throw error;
+        throw new AuditFailureError(failure);
       }
 
       console.error(`[audit-capture] Failed to capture ${snapshot.url}`, error);
@@ -210,9 +247,10 @@ export async function captureAuditRun(
   const baseUrl = domain.startsWith("http") ? domain : `https://${domain}`;
 
   let session: BrowserSession | undefined;
+  let progress: AuditRunProgress | null = null;
 
   try {
-    let progress = await deps.auditJobs.getAuditRunProgress(auditRunId);
+    progress = await deps.auditJobs.getAuditRunProgress(auditRunId);
     session = await deps.browser.createSession();
 
     if (shouldDiscoverPages(progress)) {
@@ -226,21 +264,53 @@ export async function captureAuditRun(
         waitUntil: "load",
         timeoutMs: 30000,
       });
+      const discoveryStatusBarrier = detectAuditCaptureBarrier({
+        stage: "discover",
+        statusCode: response.status,
+        url: response.url,
+        driver: deps.browser.name,
+      });
+      if (discoveryStatusBarrier) {
+        throw new AuditFailureError(discoveryStatusBarrier);
+      }
 
       if (!response.ok) {
         throw new Error(`Failed to load homepage. Status: ${response.status}`);
       }
 
-      const { value: discoveredLinks } = await session.evaluate<
-        BrowserDiscoveredLink[],
-        { baseUrl: string }
-      >({
-        expression: DISCOVER_LINKS_EXPRESSION,
-        arg: { baseUrl },
+      const { value: homepageHtml } = await session.extractHtml();
+      const discoveryHtmlBarrier = detectAuditCaptureBarrier({
+        stage: "discover",
+        statusCode: response.status,
+        html: homepageHtml,
+        url: response.url,
+        driver: deps.browser.name,
       });
+      if (discoveryHtmlBarrier) {
+        throw new AuditFailureError(discoveryHtmlBarrier);
+      }
+
+      let captureTargets = buildCapturePlan(response.url, [], maxPages);
+
+      try {
+        const { value: discoveredLinks } = await session.evaluate<
+          BrowserDiscoveredLink[],
+          { baseUrl: string }
+        >({
+          expression: DISCOVER_LINKS_EXPRESSION,
+          arg: { baseUrl },
+        });
+
+        captureTargets = buildCapturePlan(response.url, discoveredLinks, maxPages);
+      } catch (error) {
+        console.warn(
+          "[audit-capture] Discovery failed, falling back to homepage-only capture",
+          error
+        );
+      }
 
       await Promise.all(
-        buildCapturePlan(response.url, discoveredLinks, maxPages).map((target) =>
+        captureTargets.map((target) =>
           deps.auditJobs.insertPageSnapshot({
             auditRunId,
             url: target.url,
@@ -279,10 +349,16 @@ export async function captureAuditRun(
     progress = await deps.auditJobs.getAuditRunProgress(auditRunId);
     return summarizeCaptureProgress(progress);
   } catch (error) {
-    const failureReason = error instanceof Error ? error.message : String(error);
-    const progress = await deps.auditJobs.getAuditRunProgress(auditRunId).catch(() => null);
-    const summary = progress
-      ? summarizeCaptureProgress(progress)
+    const refreshedProgress = await deps.auditJobs
+      .getAuditRunProgress(auditRunId)
+      .catch(() => progress);
+    const failure = toAuditFailure(error, {
+      stage: getCaptureFailureStage(refreshedProgress),
+      url: baseUrl,
+      driver: deps.browser.name,
+    });
+    const summary = refreshedProgress
+      ? summarizeCaptureProgress(refreshedProgress)
       : {
           auditRunId,
           pagesProcessed: 0,
@@ -292,13 +368,16 @@ export async function captureAuditRun(
     await deps.auditJobs.updateAuditRunStatus({
       auditRunId,
       status: "failed",
-      failureReason,
+      failureReason: failure.failureReason,
+      failureKind: failure.failureKind,
+      failureStage: failure.failureStage,
+      failureDetails: failure.failureDetails,
       homepageOnly: summary.homepageOnly,
     });
 
     return {
       ...summary,
-      errorMessage: failureReason,
+      errorMessage: failure.failureReason,
     };
   } finally {
     await session?.close().catch(() => undefined);

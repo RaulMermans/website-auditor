@@ -173,4 +173,33 @@ describe("ReportPage", () => {
     ).rejects.toThrow("NEXT_NOT_FOUND");
     expect(notFoundMock).toHaveBeenCalledTimes(1);
   });
+
+  it("renders a status view instead of report narrative for failed runs", async () => {
+    getReportDataMock.mockResolvedValue({
+      ...makeReportData(),
+      auditRun: {
+        ...makeReportData().auditRun,
+        status: "failed",
+        failureReason:
+          "The target denied this audit request. That does not prove the site is broken for regular visitors.",
+        failureKind: "access_denied",
+        failureStage: "discover",
+        failureDetails: {
+          source: "target",
+          marker: "http_403",
+          retryable: false,
+        },
+      },
+    });
+    getAssetsForAuditRunMock.mockResolvedValue([]);
+
+    const element = await ReportPage({
+      params: Promise.resolve({ auditRunId: "run-1" }),
+    });
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("Audit Run Status");
+    expect(html).toContain("Access denied by target");
+    expect(html).not.toContain("Main Conclusion");
+  });
 });

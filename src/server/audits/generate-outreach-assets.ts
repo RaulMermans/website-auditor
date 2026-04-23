@@ -53,11 +53,16 @@ export async function generateOutreachAssets(
     .slice(0, 5)
     .map(
       (f) =>
-        `- [${f.evidenceLevel}/${f.confidence} confidence] ${f.title} (${f.support})`
+        `- [${f.claimPosture}/${f.evidenceLevel}/${f.confidence} confidence] ${f.title} (${f.support})`
     )
     .join("\n");
 
   const prompt = `You are a B2B outreach specialist. Write short, specific outreach assets for a web audit engagement. Base copy ONLY on the audit data below — no invented metrics or revenue claims.
+
+Respect certainty exactly:
+- confirmed = strongest support
+- observed_pattern = visible pattern, not a benchmarked outcome
+- directional = conditional risk language only
 
 Domain: ${input.domain}${scopeLine}
 Overall score: ${input.overallScore}/100

@@ -101,7 +101,7 @@ export const AUDIT_STATUS_META: Record<
   },
   failed: {
     label: "Run failed",
-    description: "The run stopped before a usable report was assembled.",
+    description: "The run stopped before a trustworthy report could be assembled.",
     background: "#fef2f2",
     border: "#fecaca",
     text: "#991b1b",

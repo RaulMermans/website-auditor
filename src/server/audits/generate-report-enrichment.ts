@@ -13,6 +13,7 @@ export interface EnrichmentPromptInput {
   categoryReviewSummaries?: string[];
   findingSummaries: Array<{
     category: string;
+    claimPosture: string;
     severity: string;
     title: string;
     evidenceLevel: string;
@@ -45,6 +46,24 @@ function describeFindingSupport(finding: ReportData["findings"][number]) {
   return parts.join(" · ") || "single-page signal";
 }
 
+function deriveClaimPosture(
+  finding: Pick<ReportData["findings"][number], "claimPosture" | "evidenceLevel">
+) {
+  if (finding.claimPosture) {
+    return finding.claimPosture;
+  }
+
+  if (finding.evidenceLevel === "Measured") {
+    return "confirmed";
+  }
+
+  if (finding.evidenceLevel === "Observed") {
+    return "observed_pattern";
+  }
+
+  return "directional";
+}
+
 export function buildEnrichmentInput(data: ReportData): EnrichmentPromptInput {
   const prioritized = data.topPriorities.length > 0 ? data.topPriorities : data.findings;
   const top = prioritized.slice(0, 10);
@@ -68,6 +87,7 @@ export function buildEnrichmentInput(data: ReportData): EnrichmentPromptInput {
     ),
     findingSummaries: top.map((f) => ({
       category: f.category,
+      claimPosture: deriveClaimPosture(f),
       severity: f.severity,
       title: f.title,
       evidenceLevel: f.evidenceLevel,
@@ -140,7 +160,7 @@ export async function generateReportEnrichment(
   const findingLines = input.findingSummaries
     .map(
       (f) =>
-        `- [${f.severity.toUpperCase()}/${f.evidenceLevel}/${f.confidence} confidence] ${f.category}: ${f.title} (${f.support})`
+        `- [${f.claimPosture}/${f.severity.toUpperCase()}/${f.evidenceLevel}/${f.confidence} confidence] ${f.category}: ${f.title} (${f.support})`
     )
     .join("\n");
   const categoryReviewLines =
@@ -158,11 +178,12 @@ export async function generateReportEnrichment(
 RULES:
 1. Each finding listed is already deduplicated — do not repeat the same issue in different words.
 2. Evidence labels matter: Measured = directly observed data; Observed = pattern detected in DOM; Inferred = logical conclusion. Do not present Inferred findings as Measured facts.
-3. Do not add generic filler ("this is important for SEO", "users expect...") unless it ties directly to a listed finding.
-4. Do not speculate about categories not in the findings list.
-5. Keep the executive summary to 2-3 sentences maximum.
-6. Quick wins must reference specific issues from the findings, not generic advice.
-7. If evidence is light or insufficient for a category, be explicit about that limitation instead of implying a clean bill of health.
+3. Claim posture matters: confirmed > observed_pattern > directional. Preserve that certainty boundary in both sections.
+4. Do not add generic filler ("this is important for SEO", "users expect...") unless it ties directly to a listed finding.
+5. Do not speculate about categories not in the findings list.
+6. Keep the executive summary to 2-3 sentences maximum.
+7. Quick wins must reference specific issues from the findings, not generic advice.
+8. If evidence is light or insufficient for a category, be explicit about that limitation instead of implying a clean bill of health.
 
 Domain: ${input.domain}
 ${scopeLine}

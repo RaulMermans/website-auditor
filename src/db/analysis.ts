@@ -1,6 +1,9 @@
 import { withDbClient, withTransaction } from "@/db/client";
 import type {
   AuditRun,
+  AuditFailureDetails,
+  AuditFailureKind,
+  AuditFailureStage,
   ClaimPosture,
   EvidenceLabel,
   Finding,
@@ -10,14 +13,12 @@ import type {
   FindingReviewStatus,
   FindingSeverity,
   FindingSupportType,
-  LegacyPageType,
   PageEvaluatorStatus,
   PageEvidence,
   PageReviewStatus,
   PageSnapshot,
   PageState,
 } from "@/lib/types";
-import { normalizePageType } from "@/server/audits/page-archetypes";
 
 interface AuditRunRow {
   id: string;
@@ -28,6 +29,9 @@ interface AuditRunRow {
   started_at: Date;
   completed_at: Date | null;
   failure_reason: string | null;
+  failure_kind: AuditFailureKind | null;
+  failure_stage: AuditFailureStage | null;
+  failure_details: AuditFailureDetails | null;
   created_at: Date;
 }
 
@@ -35,7 +39,7 @@ interface PageSnapshotRow {
   id: string;
   audit_run_id: string;
   url: string;
-  page_type: LegacyPageType;
+  page_type: PageSnapshot["pageType"];
   page_priority: number;
   page_state: PageState;
   retry_count: number;
@@ -150,6 +154,9 @@ function mapAuditRun(row: AuditRunRow): AuditRun {
     startedAt: row.started_at,
     completedAt: row.completed_at,
     failureReason: row.failure_reason,
+    failureKind: row.failure_kind,
+    failureStage: row.failure_stage,
+    failureDetails: row.failure_details,
     createdAt: row.created_at,
   };
 }
@@ -159,7 +166,7 @@ function mapPageSnapshot(row: PageSnapshotRow): PageSnapshot {
     id: row.id,
     auditRunId: row.audit_run_id,
     url: row.url,
-    pageType: normalizePageType(row.page_type),
+    pageType: row.page_type,
     pagePriority: row.page_priority,
     pageState: row.page_state,
     retryCount: row.retry_count,
@@ -253,6 +260,9 @@ export const auditAnalysisRepository: AuditAnalysisRepository = {
             started_at,
             completed_at,
             failure_reason,
+            failure_kind,
+            failure_stage,
+            failure_details,
             created_at
           FROM audit_runs
           WHERE id = $1

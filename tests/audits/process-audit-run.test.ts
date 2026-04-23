@@ -237,9 +237,20 @@ describe("processAuditRun", () => {
       auditRunId: "run-123",
       status: "failed",
       homepageOnly: false,
-      failureReason: "analysis failed",
+      failureReason: "The analysis step failed: analysis failed",
+      failureKind: "analysis_error",
+      failureStage: "analyze",
+      failureDetails: {
+        driver: undefined,
+        marker: "analysis_exception",
+        message: "analysis failed",
+        retryable: true,
+        source: "analysis",
+        statusCode: undefined,
+        url: undefined,
+      },
     });
-    expect(result.errorMessage).toBe("analysis failed");
+    expect(result.errorMessage).toBe("The analysis step failed: analysis failed");
   });
 
   it("marks the run failed if capture throws before returning a result", async () => {
@@ -267,6 +278,17 @@ describe("processAuditRun", () => {
       status: "failed",
       homepageOnly: true,
       failureReason: "browser launch failed",
+      failureKind: "runtime_error",
+      failureStage: "discover",
+      failureDetails: {
+        driver: undefined,
+        marker: "browser_launch",
+        message: "browser launch failed",
+        retryable: true,
+        source: "runtime",
+        statusCode: undefined,
+        url: undefined,
+      },
     });
     expect(analyze).not.toHaveBeenCalled();
     expect(result).toEqual({

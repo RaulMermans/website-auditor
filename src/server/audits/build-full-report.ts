@@ -1,5 +1,6 @@
 import type { ReportCategoryReview, ReportData } from "@/db/report";
 import type {
+  ClaimPosture,
   EvidenceLabel,
   Finding,
   FindingCategory,
@@ -107,10 +108,36 @@ const STRATEGIC_LENSES: Array<{
   },
 ];
 
+const CLAIM_POSTURE_ORDER: ClaimPosture[] = [
+  "confirmed",
+  "observed_pattern",
+  "directional",
+];
+
+const CLAIM_POSTURE_META: Record<
+  ClaimPosture,
+  { label: string; description: string }
+> = {
+  confirmed: {
+    label: "Confirmed",
+    description: "Directly supported by measured capture evidence in this audit.",
+  },
+  observed_pattern: {
+    label: "Observed Pattern",
+    description: "Visible in the captured experience, even where downstream impact was not benchmarked.",
+  },
+  directional: {
+    label: "Directional",
+    description: "Inference-backed risk from the captured signals rather than a directly measured defect.",
+  },
+};
+
 export interface FullReportFinding {
   id: string;
   category: FindingCategory;
   categoryLabel: string;
+  claimPosture: ClaimPosture;
+  claimLabel: string;
   title: string;
   summary: string;
   severity: Finding["severity"];
@@ -123,6 +150,13 @@ export interface FullReportFinding {
   evidenceNote: string;
 }
 
+export interface FullReportFindingGroup {
+  posture: ClaimPosture;
+  label: string;
+  description: string;
+  findings: FullReportFinding[];
+}
+
 export interface FullReportCategorySection {
   category: FindingCategory;
   label: string;
@@ -133,6 +167,7 @@ export interface FullReportCategorySection {
   interpretation: string;
   recommendations: string[];
   findings: FullReportFinding[];
+  findingGroups: FullReportFindingGroup[];
 }
 
 export interface FullReportData {
@@ -145,6 +180,7 @@ export interface FullReportData {
     inspectionFrame: string;
   };
   topPriorities: FullReportFinding[];
+  topPriorityGroups: FullReportFindingGroup[];
   scoreSummary: {
     overall: number;
     inspectedCleanCategories: string[];
@@ -184,6 +220,15 @@ function joinLabels(labels: string[]) {
   }
 
   return `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)}`;
+}
+
+function groupFindingsByClaimPosture(findings: FullReportFinding[]) {
+  return CLAIM_POSTURE_ORDER.map((posture) => ({
+    posture,
+    label: CLAIM_POSTURE_META[posture].label,
+    description: CLAIM_POSTURE_META[posture].description,
+    findings: findings.filter((finding) => finding.claimPosture === posture),
+  })).filter((group) => group.findings.length > 0);
 }
 
 function describeOverallCondition(score: number) {
@@ -265,6 +310,24 @@ function getEvidenceCalibration(finding: Finding) {
   return "Supported by visible page patterns in the capture rather than a direct benchmark-style measurement.";
 }
 
+function deriveClaimPosture(
+  finding: Pick<Finding, "claimPosture" | "evidenceLevel">
+): ClaimPosture {
+  if (finding.claimPosture) {
+    return finding.claimPosture;
+  }
+
+  if (finding.evidenceLevel === "Measured") {
+    return "confirmed";
+  }
+
+  if (finding.evidenceLevel === "Observed") {
+    return "observed_pattern";
+  }
+
+  return "directional";
+}
+
 function buildRiskStatement(finding: Finding) {
   const severityRisk = getSeverityRisk(finding.severity);
 
@@ -280,10 +343,14 @@ function buildRiskStatement(finding: Finding) {
 }
 
 function buildNarrativeFinding(finding: Finding): FullReportFinding {
+  const claimPosture = deriveClaimPosture(finding);
+
   return {
     id: finding.id,
     category: finding.category,
     categoryLabel: CATEGORY_LABELS[finding.category],
+    claimPosture,
+    claimLabel: CLAIM_POSTURE_META[claimPosture].label,
     title: stripHomepageScopePrefix(finding.title),
     summary: stripHomepageScopePrefix(finding.description),
     severity: finding.severity,
@@ -307,8 +374,8 @@ function buildCategoryInterpretation(
 
   if (review.reviewState === "lightly_inspected") {
     return review.findingCount > 0
-      ? "This category surfaced credible issues, but inspection depth was only partial. The findings are useful directional signals; the absence of additional issues is not a clean bill of health."
-      : "Only limited checks ran here. No issues surfaced, but the evidence is too thin to call the category clean.";
+      ? "This category surfaced credible issues, but inspection depth was only partial. The listed findings are usable within the captured signals, yet the category was not fully assessed and the absence of additional issues is not a clean bill of health."
+      : "Only limited checks ran here. No issues surfaced, but the category was not fully assessed and should not be treated as clean.";
   }
 
   if (review.reviewState === "inspected_clean") {
@@ -316,9 +383,19 @@ function buildCategoryInterpretation(
   }
 
   const leadFinding = narrativeFindings[0];
-  return leadFinding
-    ? `${CATEGORY_LABELS[review.category]} is a genuine pressure point in this audit. The lead issue is "${leadFinding.title}", and inspection depth is strong enough to treat the surfaced problems as credible category friction rather than isolated noise.`
-    : `${CATEGORY_LABELS[review.category]} shows credible pressure in the current deterministic pass.`;
+  if (!leadFinding) {
+    return `${CATEGORY_LABELS[review.category]} shows credible pressure in the current deterministic pass.`;
+  }
+
+  if (leadFinding.claimPosture === "directional") {
+    return `${CATEGORY_LABELS[review.category]} surfaced directional pressure in the current pass. The lead concern is "${leadFinding.title}", but the impact call stays conditional because the strongest support here is inference-backed rather than directly measured.`;
+  }
+
+  if (leadFinding.claimPosture === "observed_pattern") {
+    return `${CATEGORY_LABELS[review.category]} shows visible pattern-level friction in this audit. The lead issue is "${leadFinding.title}", and inspection depth is strong enough to treat the surfaced pattern as meaningful even without downstream benchmarking.`;
+  }
+
+  return `${CATEGORY_LABELS[review.category]} is a genuine pressure point in this audit. The lead issue is "${leadFinding.title}", and inspection depth is strong enough to treat the surfaced problems as credible category friction rather than isolated noise.`;
 }
 
 function buildExecutiveSummary(
@@ -337,7 +414,9 @@ function buildExecutiveSummary(
       : ["No inspected category reads fully settled yet in the current pass."];
   const whatIsLimiting =
     topPriorities.length > 0
-      ? topPriorities.slice(0, 3).map((finding) => `${finding.categoryLabel}: ${finding.summary}`)
+      ? topPriorities
+          .slice(0, 3)
+          .map((finding) => `${finding.claimLabel}: ${finding.categoryLabel}: ${finding.summary}`)
       : ["No prioritized issues were generated from the current deterministic findings set."];
   const lightlyInspectedCount = categorySections.filter(
     (section) => section.inspectionStatus === "lightly_inspected"
@@ -349,14 +428,25 @@ function buildExecutiveSummary(
     (section) => section.inspectionStatus === "inspected"
   ).length;
 
+  const limitingFrame =
+    topPriorities.length === 0
+      ? "The current pass did not surface prioritized issues."
+      : topPriorities.some((finding) => finding.claimPosture === "confirmed")
+        ? `The clearest confirmed issues sit in ${joinLabels(
+            dedupeStrings(topPriorities.slice(0, 3).map((finding) => finding.categoryLabel))
+          )}.`
+        : topPriorities.some((finding) => finding.claimPosture === "observed_pattern")
+          ? `The clearest observed patterns sit in ${joinLabels(
+              dedupeStrings(topPriorities.slice(0, 3).map((finding) => finding.categoryLabel))
+            )}.`
+          : `The current pass surfaced mainly directional concerns in ${joinLabels(
+              dedupeStrings(topPriorities.slice(0, 3).map((finding) => finding.categoryLabel))
+            )}.`;
+
   return {
     overview:
       `${getScopeSubject(data)} ${describeOverallCondition(data.scores.overall)}. ` +
-      (topPriorities.length > 0
-        ? `The clearest current constraints sit in ${joinLabels(
-            dedupeStrings(topPriorities.slice(0, 3).map((finding) => finding.categoryLabel))
-          )}.`
-        : "The current pass did not surface prioritized issues."),
+      limitingFrame,
     whatIsWorking,
     whatIsLimiting,
     inspectionFrame:
@@ -441,6 +531,7 @@ function buildStrategicReadout(
 
 export function buildFullReportData(data: ReportData): FullReportData {
   const topPriorities = data.topPriorities.map(buildNarrativeFinding);
+  const topPriorityGroups = groupFindingsByClaimPosture(topPriorities);
   const categorySections = data.categoryReviews.map((review) => {
     const findings = review.findings.map(buildNarrativeFinding);
 
@@ -454,6 +545,7 @@ export function buildFullReportData(data: ReportData): FullReportData {
       interpretation: buildCategoryInterpretation(review, findings),
       recommendations: dedupeStrings(findings.map((finding) => finding.nextStep)).slice(0, 3),
       findings,
+      findingGroups: groupFindingsByClaimPosture(findings),
     };
   });
   const inspectedCleanCategories = categorySections
@@ -515,6 +607,7 @@ export function buildFullReportData(data: ReportData): FullReportData {
     domain: data.domain,
     executiveSummary: buildExecutiveSummary(data, topPriorities, categorySections),
     topPriorities,
+    topPriorityGroups,
     scoreSummary: {
       overall: data.scores.overall,
       inspectedCleanCategories,
@@ -546,7 +639,7 @@ export function buildFullReportData(data: ReportData): FullReportData {
       inspectionNotes: [
         `Inspected and clean: ${inspectedCleanCategories.length > 0 ? joinLabels(inspectedCleanCategories) : "none"}.`,
         `Lightly inspected: ${lightlyInspectedCategories.length > 0 ? joinLabels(lightlyInspectedCategories) : "none"}.`,
-        `Insufficient evidence: ${insufficientEvidenceCategories.length > 0 ? joinLabels(insufficientEvidenceCategories) : "none"}.`,
+        `Not fully assessed / insufficient evidence: ${insufficientEvidenceCategories.length > 0 ? joinLabels(insufficientEvidenceCategories) : "none"}.`,
       ],
     },
   };

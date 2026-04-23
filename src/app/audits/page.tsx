@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listRecentAuditRuns } from "@/db/report";
+import { getAuditFailurePresentation } from "@/lib/audit-failure";
 import { AUDIT_STATUS_META } from "@/lib/report-presentation";
 import type { AuditRunListItem } from "@/db/report";
 import type { AuditStatus } from "@/lib/types";
@@ -83,6 +84,7 @@ function renderActionLinks(run: AuditRunListItem) {
 
 function AuditRunCard({ run }: { run: AuditRunListItem }) {
   const statusMeta = AUDIT_STATUS_META[run.status];
+  const failurePresentation = getAuditFailurePresentation(run);
 
   return (
     <article
@@ -156,7 +158,9 @@ function AuditRunCard({ run }: { run: AuditRunListItem }) {
           fontSize: "0.9rem",
         }}
       >
-        {statusMeta.description}
+        {run.status === "failed" && failurePresentation
+          ? failurePresentation.explanation
+          : statusMeta.description}
       </p>
 
       <div
@@ -181,13 +185,14 @@ function AuditRunCard({ run }: { run: AuditRunListItem }) {
             {run.status === "complete"
               ? "Review the concise report first, then open the full report."
               : run.status === "failed"
-                ? "Open the run details, inspect the failure reason, then re-run if needed."
+                ? failurePresentation?.retryGuidance ??
+                  "Open the run details and inspect the failure status before retrying."
                 : "Open the run to monitor progress and refresh when the status advances."}
           </p>
         </div>
       </div>
 
-      {run.status === "failed" && run.failureReason && (
+      {run.status === "failed" && failurePresentation && (
         <div
           style={{
             marginBottom: 16,
@@ -199,9 +204,17 @@ function AuditRunCard({ run }: { run: AuditRunListItem }) {
           }}
         >
           <p style={{ margin: "0 0 4px", fontSize: "0.76rem", fontWeight: 700, textTransform: "uppercase" }}>
-            Failure reason
+            {failurePresentation.stageLabel}
           </p>
-          <p style={{ margin: 0, fontSize: "0.9rem" }}>{run.failureReason}</p>
+          <p style={{ margin: "0 0 4px", fontSize: "0.9rem", fontWeight: 700 }}>
+            {failurePresentation.label}
+          </p>
+          <p style={{ margin: 0, fontSize: "0.9rem" }}>{failurePresentation.explanation}</p>
+          {failurePresentation.retryGuidance && (
+            <p style={{ margin: "8px 0 0", fontSize: "0.84rem", color: "#7f1d1d" }}>
+              {failurePresentation.retryGuidance}
+            </p>
+          )}
         </div>
       )}
 

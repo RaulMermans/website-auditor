@@ -20,9 +20,9 @@ const CONFIDENCE_PRIORITY: Record<FindingConfidence, number> = {
 };
 
 const EVIDENCE_PRIORITY: Record<EvidenceLabel, number> = {
-  Measured: 14,
-  Observed: 10,
-  Inferred: 6,
+  Measured: 18,
+  Observed: 11,
+  Inferred: 3,
 };
 
 const CATEGORY_IMPACT_PRIORITY: Record<Finding["category"], number> = {
@@ -123,13 +123,11 @@ function getPageSpread(finding: PrioritizableFinding) {
 }
 
 function getPageTypes(finding: PrioritizableFinding) {
-  const normalizePageType = (pageType: string) => (pageType === "blog_article" ? "content" : pageType);
   const types = [
     ...(Array.isArray(finding.evidenceRef.pageTypes) ? finding.evidenceRef.pageTypes : []),
     typeof finding.evidenceRef.pageType === "string" ? finding.evidenceRef.pageType : "",
   ]
     .filter((pageType): pageType is string => Boolean(pageType))
-    .map(normalizePageType)
     .filter((pageType): pageType is keyof typeof PAGE_TYPE_PRIORITY => pageType in PAGE_TYPE_PRIORITY);
 
   return [...new Set(types)];

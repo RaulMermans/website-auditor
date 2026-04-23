@@ -152,4 +152,31 @@ describe("FullReportPage", () => {
     ).rejects.toThrow("NEXT_NOT_FOUND");
     expect(notFoundMock).toHaveBeenCalledTimes(1);
   });
+
+  it("renders a status view instead of the full document for failed runs", async () => {
+    getReportDataMock.mockResolvedValue({
+      ...makeReportData(),
+      auditRun: {
+        ...makeReportData().auditRun,
+        status: "failed",
+        failureReason: "Browser capture failed.",
+        failureKind: "unknown",
+        failureStage: "capture",
+        failureDetails: {
+          source: "unknown",
+          marker: "unknown",
+          retryable: true,
+        },
+      },
+    });
+
+    const element = await FullReportPage({
+      params: Promise.resolve({ auditRunId: "run-1" }),
+    });
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("Audit Run Status");
+    expect(html).toContain("Browser capture failed.");
+    expect(html).not.toContain("Executive Summary");
+  });
 });

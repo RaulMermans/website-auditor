@@ -131,7 +131,7 @@ describe("prioritizeFindings", () => {
       evidenceRef: {
         issueType: "missing_meta_description",
         businessImpact: "medium",
-        pageType: "blog_article",
+        pageType: "content",
         pageCount: 3,
         evidenceKeys: ["meta_description"],
       },

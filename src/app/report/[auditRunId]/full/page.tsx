@@ -1,14 +1,19 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { reportRepository } from "@/db/report";
+import { getAuditFailurePresentation } from "@/lib/audit-failure";
 import {
+  AUDIT_STATUS_META,
   CATEGORY_LABELS,
   EVIDENCE_COLORS,
   REVIEW_STATE_META,
   scoreColor,
   SEVERITY_COLORS,
 } from "@/lib/report-presentation";
-import { buildFullReportData } from "@/server/audits/build-full-report";
+import {
+  buildFullReportData,
+  type FullReportFindingGroup,
+} from "@/server/audits/build-full-report";
 
 function renderStatList(items: string[], emptyLabel: string) {
   if (items.length === 0) {
@@ -46,6 +51,140 @@ function renderCountRow(label: string, value: number, color: string) {
   );
 }
 
+function renderFindingGroup(group: FullReportFindingGroup) {
+  return (
+    <div key={group.posture} style={{ display: "grid", gap: 18 }}>
+      <div
+        style={{
+          padding: "14px 16px",
+          borderRadius: 14,
+          background: "#f8fafc",
+          border: "1px solid #e2e8f0",
+          fontFamily:
+            'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        }}
+      >
+        <strong>{group.label}</strong>
+        <span style={{ display: "block", marginTop: 4, color: "#64748b", fontSize: "0.84rem" }}>
+          {group.description}
+        </span>
+      </div>
+      {group.findings.map((finding, index) => (
+        <article
+          key={finding.id}
+          style={{
+            padding: 22,
+            borderRadius: 18,
+            background: "#fff",
+            border: "1px solid #e5e7eb",
+            boxShadow: "0 10px 24px rgba(15, 23, 42, 0.04)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              alignItems: "center",
+              marginBottom: 12,
+              fontFamily:
+                'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            }}
+          >
+            <span style={{ color: "#6b7280", fontWeight: 700 }}>#{index + 1}</span>
+            <span
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                background: "#eff6ff",
+                color: "#1d4ed8",
+                fontSize: "0.75rem",
+                fontWeight: 700,
+              }}
+            >
+              {finding.categoryLabel}
+            </span>
+            <span
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                color: "#475569",
+                fontSize: "0.75rem",
+                fontWeight: 700,
+              }}
+            >
+              {finding.claimLabel}
+            </span>
+            <span
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                background: `${SEVERITY_COLORS[finding.severity]}1a`,
+                color: SEVERITY_COLORS[finding.severity],
+                fontSize: "0.75rem",
+                fontWeight: 700,
+              }}
+            >
+              {finding.severity.toUpperCase()}
+            </span>
+            <span
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                background: `${EVIDENCE_COLORS[finding.evidenceLevel]}1a`,
+                color: EVIDENCE_COLORS[finding.evidenceLevel],
+                fontSize: "0.75rem",
+                fontWeight: 700,
+              }}
+            >
+              {finding.evidenceLevel} · {finding.confidence}
+            </span>
+            <span
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                color: "#475569",
+                fontSize: "0.75rem",
+                fontWeight: 700,
+              }}
+            >
+              {finding.supportLabel}
+            </span>
+          </div>
+          <h3 style={{ margin: "0 0 10px", fontSize: "1.25rem" }}>{finding.title}</h3>
+          <p style={{ margin: "0 0 10px", color: "#374151" }}>
+            <strong>What we found:</strong> {finding.summary}
+          </p>
+          <p style={{ margin: "0 0 10px", color: "#374151" }}>
+            <strong>Why it matters:</strong> {finding.whyItMatters}
+          </p>
+          <p style={{ margin: "0 0 10px", color: "#374151" }}>
+            <strong>Risk if unchanged:</strong> {finding.risk}
+          </p>
+          <p style={{ margin: "0 0 10px", color: "#065f46" }}>
+            <strong>Recommended move:</strong> {finding.nextStep}
+          </p>
+          <p
+            style={{
+              margin: 0,
+              color: "#6b7280",
+              fontSize: "0.88rem",
+              fontFamily:
+                'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            }}
+          >
+            Evidence framing: {finding.evidenceNote} Support: {finding.supportLabel}.
+          </p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export default async function FullReportPage({
   params,
 }: {
@@ -56,6 +195,179 @@ export default async function FullReportPage({
 
   if (!data) {
     notFound();
+  }
+
+  const statusMeta = AUDIT_STATUS_META[data.auditRun.status];
+  const failurePresentation = getAuditFailurePresentation(data.auditRun);
+
+  if (data.auditRun.status !== "complete") {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          background:
+            "linear-gradient(180deg, #f6f1e8 0%, #fbfaf7 220px, #ffffff 220px)",
+          padding: "48px 24px 80px",
+        }}
+      >
+        <article
+          style={{
+            maxWidth: 980,
+            margin: "0 auto",
+            color: "#1f2937",
+            fontFamily: 'Georgia, Cambria, "Times New Roman", serif',
+            lineHeight: 1.65,
+          }}
+        >
+          <header
+            style={{
+              marginBottom: 32,
+              padding: "28px 32px",
+              borderRadius: 20,
+              background: "rgba(255,255,255,0.92)",
+              border: "1px solid rgba(148, 163, 184, 0.25)",
+              boxShadow: "0 18px 45px rgba(15, 23, 42, 0.06)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 16,
+                alignItems: "flex-start",
+                flexWrap: "wrap",
+                marginBottom: 18,
+              }}
+            >
+              <div>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: "0.75rem",
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    color: "#92400e",
+                    fontFamily:
+                      'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                    fontWeight: 700,
+                  }}
+                >
+                  Audit Run Status
+                </p>
+                <h1 style={{ margin: "8px 0 4px", fontSize: "2.5rem", lineHeight: 1.1 }}>
+                  {data.domain}
+                </h1>
+                <p
+                  style={{
+                    margin: 0,
+                    color: "#6b7280",
+                    fontSize: "0.95rem",
+                    fontFamily:
+                      'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                  }}
+                >
+                  Run: {auditRunId} · Status: {statusMeta.label}
+                </p>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  fontFamily:
+                    'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                }}
+              >
+                <Link
+                  href="/audits"
+                  style={{
+                    textDecoration: "none",
+                    padding: "10px 14px",
+                    borderRadius: 999,
+                    border: "1px solid #cbd5e1",
+                    color: "#334155",
+                    fontWeight: 600,
+                    background: "#fff",
+                  }}
+                >
+                  Back to audits
+                </Link>
+                <Link
+                  href="/intake"
+                  style={{
+                    textDecoration: "none",
+                    padding: "10px 14px",
+                    borderRadius: 999,
+                    border: "1px solid #bfdbfe",
+                    color: "#1d4ed8",
+                    fontWeight: 600,
+                    background: "#eff6ff",
+                  }}
+                >
+                  Start another audit
+                </Link>
+              </div>
+            </div>
+
+            <p
+              style={{
+                margin: 0,
+                padding: "14px 16px",
+                borderRadius: 14,
+                background: statusMeta.background,
+                border: `1px solid ${statusMeta.border}`,
+                color: statusMeta.text,
+                fontFamily:
+                  'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                fontSize: "0.9rem",
+              }}
+            >
+              {failurePresentation?.explanation ?? statusMeta.description}
+            </p>
+          </header>
+
+          {failurePresentation && (
+            <section
+              style={{
+                padding: 22,
+                borderRadius: 18,
+                background: "#fff",
+                border: "1px solid #e5e7eb",
+              }}
+            >
+              <h2
+                style={{
+                  marginTop: 0,
+                  fontSize: "1.4rem",
+                  fontFamily:
+                    'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                }}
+              >
+                {failurePresentation.stageLabel}: {failurePresentation.label}
+              </h2>
+              <p style={{ margin: "0 0 12px", color: "#374151" }}>{failurePresentation.explanation}</p>
+              {failurePresentation.retryGuidance && (
+                <p
+                  style={{
+                    margin: 0,
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    background: "#fefce8",
+                    border: "1px solid #fde68a",
+                    color: "#92400e",
+                    fontFamily:
+                      'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                  }}
+                >
+                  {failurePresentation.retryGuidance}
+                </p>
+              )}
+            </section>
+          )}
+        </article>
+      </main>
+    );
   }
 
   const fullReport = buildFullReportData(data);
@@ -474,105 +786,7 @@ export default async function FullReportPage({
             </p>
           ) : (
             <div style={{ display: "grid", gap: 18 }}>
-              {fullReport.topPriorities.map((finding, index) => (
-                <article
-                  key={finding.id}
-                  style={{
-                    padding: 22,
-                    borderRadius: 18,
-                    background: "#fff",
-                    border: "1px solid #e5e7eb",
-                    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.04)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 10,
-                      flexWrap: "wrap",
-                      alignItems: "center",
-                      marginBottom: 12,
-                      fontFamily:
-                        'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                    }}
-                  >
-                    <span style={{ color: "#6b7280", fontWeight: 700 }}>#{index + 1}</span>
-                    <span
-                      style={{
-                        padding: "4px 8px",
-                        borderRadius: 999,
-                        background: "#eff6ff",
-                        color: "#1d4ed8",
-                        fontSize: "0.75rem",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {finding.categoryLabel}
-                    </span>
-                    <span
-                      style={{
-                        padding: "4px 8px",
-                        borderRadius: 999,
-                        background: `${SEVERITY_COLORS[finding.severity]}1a`,
-                        color: SEVERITY_COLORS[finding.severity],
-                        fontSize: "0.75rem",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {finding.severity.toUpperCase()}
-                    </span>
-                    <span
-                      style={{
-                        padding: "4px 8px",
-                        borderRadius: 999,
-                        background: `${EVIDENCE_COLORS[finding.evidenceLevel]}1a`,
-                        color: EVIDENCE_COLORS[finding.evidenceLevel],
-                        fontSize: "0.75rem",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {finding.evidenceLevel} · {finding.confidence}
-                    </span>
-                    <span
-                      style={{
-                        padding: "4px 8px",
-                        borderRadius: 999,
-                        background: "#f8fafc",
-                        border: "1px solid #e2e8f0",
-                        color: "#475569",
-                        fontSize: "0.75rem",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {finding.supportLabel}
-                    </span>
-                  </div>
-                  <h3 style={{ margin: "0 0 10px", fontSize: "1.25rem" }}>{finding.title}</h3>
-                  <p style={{ margin: "0 0 10px", color: "#374151" }}>
-                    <strong>What we found:</strong> {finding.summary}
-                  </p>
-                  <p style={{ margin: "0 0 10px", color: "#374151" }}>
-                    <strong>Why it matters:</strong> {finding.whyItMatters}
-                  </p>
-                  <p style={{ margin: "0 0 10px", color: "#374151" }}>
-                    <strong>Risk if unchanged:</strong> {finding.risk}
-                  </p>
-                  <p style={{ margin: "0 0 10px", color: "#065f46" }}>
-                    <strong>Recommended move:</strong> {finding.nextStep}
-                  </p>
-                  <p
-                    style={{
-                      margin: 0,
-                      color: "#6b7280",
-                      fontSize: "0.88rem",
-                      fontFamily:
-                        'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                    }}
-                  >
-                    Evidence framing: {finding.evidenceNote} Support: {finding.supportLabel}.
-                  </p>
-                </article>
-              ))}
+              {fullReport.topPriorityGroups.map(renderFindingGroup)}
             </div>
           )}
         </section>
@@ -873,93 +1087,7 @@ export default async function FullReportPage({
 
                 {section.findings.length > 0 ? (
                   <div style={{ display: "grid", gap: 14 }}>
-                    {section.findings.map((finding) => (
-                      <article
-                        key={finding.id}
-                        style={{
-                          padding: 18,
-                          borderRadius: 14,
-                          background: "#fcfcfb",
-                          border: "1px solid #eceff3",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 10,
-                            flexWrap: "wrap",
-                            alignItems: "center",
-                            marginBottom: 10,
-                            fontFamily:
-                              'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                          }}
-                        >
-                          <span
-                            style={{
-                              padding: "4px 8px",
-                              borderRadius: 999,
-                              background: `${SEVERITY_COLORS[finding.severity]}1a`,
-                              color: SEVERITY_COLORS[finding.severity],
-                              fontWeight: 700,
-                              fontSize: "0.72rem",
-                            }}
-                          >
-                            {finding.severity.toUpperCase()}
-                          </span>
-                          <span
-                            style={{
-                              padding: "4px 8px",
-                              borderRadius: 999,
-                              background: `${EVIDENCE_COLORS[finding.evidenceLevel]}1a`,
-                              color: EVIDENCE_COLORS[finding.evidenceLevel],
-                              fontWeight: 700,
-                              fontSize: "0.72rem",
-                            }}
-                            >
-                              {finding.evidenceLevel} · {finding.confidence}
-                            </span>
-                            <span
-                              style={{
-                                padding: "4px 8px",
-                                borderRadius: 999,
-                                background: "#f8fafc",
-                                border: "1px solid #e2e8f0",
-                                color: "#475569",
-                                fontWeight: 700,
-                                fontSize: "0.72rem",
-                              }}
-                            >
-                              {finding.supportLabel}
-                            </span>
-                          </div>
-                        <h4 style={{ margin: "0 0 8px", fontSize: "1.02rem" }}>
-                          {finding.title}
-                        </h4>
-                        <p style={{ margin: "0 0 8px", color: "#374151" }}>
-                          <strong>What we found:</strong> {finding.summary}
-                        </p>
-                        <p style={{ margin: "0 0 8px", color: "#374151" }}>
-                          <strong>Why it matters:</strong> {finding.whyItMatters}
-                        </p>
-                        <p style={{ margin: "0 0 8px", color: "#374151" }}>
-                          <strong>Risk if unchanged:</strong> {finding.risk}
-                        </p>
-                        <p style={{ margin: "0 0 8px", color: "#065f46" }}>
-                          <strong>Next step:</strong> {finding.nextStep}
-                        </p>
-                        <p
-                          style={{
-                            margin: 0,
-                            color: "#6b7280",
-                            fontSize: "0.85rem",
-                            fontFamily:
-                              'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                          }}
-                        >
-                          Evidence framing: {finding.evidenceNote} Support: {finding.supportLabel}.
-                        </p>
-                      </article>
-                    ))}
+                    {section.findingGroups.map(renderFindingGroup)}
                   </div>
                 ) : (
                   <p style={{ marginBottom: 0, color: "#6b7280" }}>
