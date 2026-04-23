@@ -91,7 +91,7 @@ describe("reviewPageFindings", () => {
           title: "Primary next step is not yet clear on this page",
           description:
             "The captured DOM does not surface a standard CTA/button pattern or form. That suggests the page is not giving visitors an obvious next step.",
-          severity: "high",
+          severity: "medium",
           confidence: "high",
           evidenceLevel: "Inferred",
           evidenceRef: {
