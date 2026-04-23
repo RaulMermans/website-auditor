@@ -5,6 +5,7 @@ import type {
   FindingSeverity,
   PageSnapshot,
 } from "@/lib/types";
+import type { RoutedPageContext } from "@/server/audits/page-rubrics";
 
 export type FindingBusinessImpact = "high" | "medium" | "low";
 
@@ -114,7 +115,8 @@ export interface SpecialistFindingDraft {
 }
 
 export interface EvaluatorContext {
-  snapshot: Pick<PageSnapshot, "url" | "pageType">;
+  snapshot: Pick<PageSnapshot, "url" | "pageType" | "pagePriority">;
+  route: RoutedPageContext;
   metrics: ParsedPageMetrics;
 }
 

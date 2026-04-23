@@ -8,18 +8,21 @@ afterEach(() => {
 
 function createDeps(options?: {
   links?: Array<{ href: string; origin: string; pathname: string; text: string }>;
-  failingUrls?: Set<string>;
+  failingUrls?: Record<string, number>;
   homepageOk?: boolean;
 }) {
   const links = options?.links ?? [];
-  const failingUrls = options?.failingUrls ?? new Set<string>();
+  const failingUrls = new Map(Object.entries(options?.failingUrls ?? {}));
   let currentUrl = "about:blank";
+  let snapshotIndex = 0;
 
   const session = {
     navigate: vi.fn(async ({ url }: { url: string }) => {
       currentUrl = url;
 
-      if (failingUrls.has(url)) {
+      const remainingFailures = failingUrls.get(url) ?? 0;
+      if (remainingFailures > 0) {
+        failingUrls.set(url, remainingFailures - 1);
         throw new Error(`Failed to capture ${url}`);
       }
 
@@ -42,7 +45,43 @@ function createDeps(options?: {
   const deps = {
     auditJobs: {
       updateAuditRunStatus: vi.fn().mockResolvedValue(undefined),
-      insertPageSnapshot: vi.fn().mockResolvedValue(undefined),
+      insertPageSnapshot: vi.fn().mockImplementation(async (input: any) => ({
+        id: `snapshot-${++snapshotIndex}`,
+        auditRunId: input.auditRunId,
+        url: input.url,
+        pageType: input.pageType,
+        pagePriority: input.pagePriority,
+        pageState: input.pageState,
+        retryCount: input.retryCount,
+        lastError: input.lastError,
+        htmlStorageKey: input.htmlStorageKey,
+        screenshotStorageKey: input.screenshotStorageKey,
+        capturedAt: input.capturedAt ?? null,
+      })),
+      updatePageSnapshotState: vi.fn().mockImplementation(async (input: any) => ({
+        id: input.pageSnapshotId,
+        auditRunId: "run",
+        url: currentUrl,
+        pageType: "homepage",
+        pagePriority: 0,
+        pageState: input.pageState,
+        retryCount: input.retryCount ?? 0,
+        lastError: input.lastError,
+        capturedAt: null,
+      })),
+      completePageSnapshotCapture: vi.fn().mockImplementation(async (input: any) => ({
+        id: input.pageSnapshotId,
+        auditRunId: "run",
+        url: input.url,
+        pageType: "homepage",
+        pagePriority: 0,
+        pageState: "captured",
+        retryCount: input.retryCount ?? 0,
+        lastError: null,
+        htmlStorageKey: input.htmlStorageKey,
+        screenshotStorageKey: input.screenshotStorageKey,
+        capturedAt: new Date(),
+      })),
     },
     storage: {
       put: vi.fn().mockImplementation(async (key: string) => key),
@@ -84,10 +123,19 @@ describe("captureAuditRun", () => {
     });
     expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledWith({
       auditRunId: "run-123",
-      url: "https://example.com",
+      url: "https://example.com/",
       pageType: "homepage",
+      pagePriority: 0,
+      pageState: "queued",
+      retryCount: 0,
+      lastError: null,
+    });
+    expect(deps.auditJobs.completePageSnapshotCapture).toHaveBeenCalledWith({
+      pageSnapshotId: "snapshot-1",
+      url: "https://example.com",
       htmlStorageKey: "audit-runs/run-123/homepage/root.html",
       screenshotStorageKey: "audit-runs/run-123/homepage/root.jpg",
+      retryCount: 0,
     });
   });
 
@@ -121,7 +169,7 @@ describe("captureAuditRun", () => {
           text: "Blog",
         },
       ],
-      failingUrls: new Set(["https://example.com/services"]),
+      failingUrls: { "https://example.com/services": 2 },
     });
 
     const result = await captureAuditRun(
@@ -135,7 +183,7 @@ describe("captureAuditRun", () => {
     expect(result.auditRunId).toBe("run-456");
     expect(result.pagesProcessed).toBe(4);
     expect(result.homepageOnly).toBe(false);
-    expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledTimes(4);
+    expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledTimes(5);
     expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         pageType: "about",
@@ -150,8 +198,15 @@ describe("captureAuditRun", () => {
     );
     expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
-        pageType: "content",
+        pageType: "blog_article",
         url: "https://example.com/blog",
+      })
+    );
+    expect(deps.auditJobs.updatePageSnapshotState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pageState: "needs_review",
+        retryCount: 1,
+        lastError: "Failed to capture https://example.com/services",
       })
     );
   });
@@ -180,8 +235,45 @@ describe("captureAuditRun", () => {
     expect(result.homepageOnly).toBe(false);
     expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
-        pageType: "other",
+        pageType: "about",
         url: "https://example.com/team",
+      })
+    );
+  });
+
+  it("retries a recoverable secondary-page failure once before succeeding", async () => {
+    const { deps } = createDeps({
+      links: [
+        {
+          href: "https://example.com/contact",
+          origin: "https://example.com",
+          pathname: "/contact",
+          text: "Contact",
+        },
+      ],
+      failingUrls: { "https://example.com/contact": 1 },
+    });
+
+    const result = await captureAuditRun(
+      {
+        auditRunId: "run-retry",
+        domain: "example.com",
+      },
+      deps
+    );
+
+    expect(result.pagesProcessed).toBe(2);
+    expect(deps.auditJobs.updatePageSnapshotState).toHaveBeenCalledWith({
+      pageSnapshotId: "snapshot-2",
+      pageState: "queued",
+      retryCount: 1,
+      lastError: "Failed to capture https://example.com/contact",
+    });
+    expect(deps.auditJobs.completePageSnapshotCapture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pageSnapshotId: "snapshot-2",
+        retryCount: 1,
+        url: "https://example.com/contact",
       })
     );
   });

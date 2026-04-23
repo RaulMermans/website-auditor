@@ -1,9 +1,9 @@
+import { pageHasCategoryEmphasis } from "@/server/audits/page-rubrics";
 import type { SpecialistEvaluator, SpecialistFindingDraft } from "./types";
 
-export const evaluateTrustSignals: SpecialistEvaluator = ({ snapshot, metrics }) => {
+export const evaluateTrustSignals: SpecialistEvaluator = ({ route, metrics }) => {
   const drafts: SpecialistFindingDraft[] = [];
-  const trustKeyPages: typeof snapshot.pageType[] = ["homepage", "services", "contact"];
-  const isTrustPage = trustKeyPages.includes(snapshot.pageType);
+  const isTrustPage = pageHasCategoryEmphasis(route, "trust_signals");
 
   if (!isTrustPage) {
     return drafts;
@@ -16,7 +16,7 @@ export const evaluateTrustSignals: SpecialistEvaluator = ({ snapshot, metrics })
       title: "Trust layer is thin on a key decision page",
       description:
         "The captured page shows at most one trust indicator across proof, reassurance, and contact cues. On a key decision page, that leaves the business under-substantiated at the point where visitors are deciding whether to continue.",
-      severity: snapshot.pageType === "contact" ? "high" : "medium",
+      severity: route.pageType === "contact" || route.pageType === "form" ? "high" : "medium",
       confidence: "medium",
       evidenceLevel: "Observed",
       evidenceKeys: ["trust_signals", "contact_reassurance"],
@@ -50,7 +50,7 @@ export const evaluateTrustSignals: SpecialistEvaluator = ({ snapshot, metrics })
       title: "Direct contact cues are not easy to verify here",
       description:
         "The captured page does not surface a clear phone, email, address, or obvious contact route. That makes the business feel harder to verify at the point of evaluation.",
-      severity: snapshot.pageType === "contact" ? "high" : "medium",
+      severity: route.pageType === "contact" || route.pageType === "form" ? "high" : "medium",
       confidence: "high",
       evidenceLevel: "Observed",
       evidenceKeys: ["contact_reassurance", "trust_signals"],
@@ -61,7 +61,7 @@ export const evaluateTrustSignals: SpecialistEvaluator = ({ snapshot, metrics })
   }
 
   if (
-    (snapshot.pageType === "contact" || metrics.formPresent) &&
+    (route.pageType === "contact" || route.pageType === "form" || metrics.formPresent) &&
     metrics.trustSignals.reassuranceSignals === 0
   ) {
     drafts.push({

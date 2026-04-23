@@ -8,7 +8,9 @@ import type {
   PageEvaluatorStatus,
   PageReviewStatus,
   PageSnapshot,
+  PageState,
 } from "@/lib/types";
+import { getRoutedPageContext, pageAllowsIssuePattern } from "@/server/audits/page-rubrics";
 
 const SEVERITY_RANK: Record<FindingSeverity, number> = {
   critical: 4,
@@ -46,7 +48,8 @@ const CONTRADICTION_MAP: Record<string, string[]> = {
 };
 
 export interface PageFindingReviewInput {
-  snapshot: Pick<PageSnapshot, "id" | "url" | "pageType"> & Partial<Pick<PageSnapshot, "retryCount">>;
+  snapshot: Pick<PageSnapshot, "id" | "url" | "pageType" | "pagePriority"> &
+    Partial<Pick<PageSnapshot, "retryCount">>;
   pageEvidence: CreatePageEvidenceInput[];
   findings: CreateFindingInput[];
 }
@@ -58,6 +61,7 @@ export interface PageFindingReviewResult {
   evaluatorStatus: PageEvaluatorStatus;
   retryCount: number;
   escalationReason: string | null;
+  pageState: Extract<PageState, "accepted" | "needs_review">;
 }
 
 function normalizeText(value: string) {
@@ -128,6 +132,10 @@ function mergeEvaluatorNotes(...notes: Array<string | null | undefined>) {
   return normalized.length > 0 ? normalized.join(" ") : null;
 }
 
+function dedupe(values: string[]) {
+  return [...new Set(values.filter(Boolean))];
+}
+
 function softenDirectionalText(text: string) {
   return text
     .replace(/\bis not yet\b/gi, "may not yet be")
@@ -183,6 +191,8 @@ function calibrateFinding(finding: CreateFindingInput): CreateFindingInput {
     supportType: deriveSupportType(finding),
     evaluatorStatus: "accepted",
     evaluatorNotes: mergeEvaluatorNotes(finding.evaluatorNotes, ...evaluatorNotes),
+    reviewStatus: "accepted",
+    reviewReason: null,
   };
 }
 
@@ -193,6 +203,8 @@ function buildNeedsReviewFinding(finding: CreateFindingInput, note: string): Cre
     supportType: finding.supportType ?? deriveSupportType(finding),
     evaluatorStatus: "needs_review",
     evaluatorNotes: mergeEvaluatorNotes(finding.evaluatorNotes, note),
+    reviewStatus: "needs_review",
+    reviewReason: note,
   };
 }
 
@@ -208,6 +220,38 @@ function areContradictory(leftIssueType: string, rightIssueType: string) {
     CONTRADICTION_MAP[leftIssueType]?.includes(rightIssueType) === true ||
     CONTRADICTION_MAP[rightIssueType]?.includes(leftIssueType) === true
   );
+}
+
+function getRoutingReviewReasons(
+  snapshot: PageFindingReviewInput["snapshot"],
+  rawFinding: CreateFindingInput,
+  issueType: string
+) {
+  const route = getRoutedPageContext(snapshot);
+  const reasons: string[] = [];
+
+  if (issueType && !pageAllowsIssuePattern(route, issueType)) {
+    reasons.push(
+      `${route.pageType} routing does not accept the "${issueType}" issue pattern without review`
+    );
+  }
+
+  if (
+    rawFinding.evidenceLevel === "Inferred" &&
+    SEVERITY_RANK[rawFinding.severity] > SEVERITY_RANK.medium
+  ) {
+    reasons.push(
+      `high-severity inferred finding "${rawFinding.title}" requires review before it becomes report truth`
+    );
+  }
+
+  if (rawFinding.evidenceLevel === "Inferred" && rawFinding.confidence === "low") {
+    reasons.push(
+      `low-confidence inferred finding "${rawFinding.title}" requires review before it becomes report truth`
+    );
+  }
+
+  return dedupe(reasons);
 }
 
 export function reviewPageFindings({
@@ -227,6 +271,17 @@ export function reviewPageFindings({
     const issueType = getIssueType(finding);
     const issueKey = `${finding.category}::${issueType}`;
     const missingEvidenceKeys = getEvidenceKeys(finding).filter((key) => !evidenceKeys.has(key));
+    const routingReviewReasons = getRoutingReviewReasons(snapshot, rawFinding, issueType);
+
+    if (routingReviewReasons.length > 0) {
+      const reviewedFinding = buildNeedsReviewFinding(
+        finding,
+        routingReviewReasons.join(" ")
+      );
+      escalationReasons.push(...routingReviewReasons);
+      reviewedFindings.push(reviewedFinding);
+      continue;
+    }
 
     if (missingEvidenceKeys.length > 0) {
       const reviewedFinding = buildNeedsReviewFinding(
@@ -278,6 +333,7 @@ export function reviewPageFindings({
     reviewStatus: needsReview ? "needs_review" : "accepted",
     evaluatorStatus: needsReview ? "needs_review" : "accepted",
     retryCount: needsReview ? currentRetryCount + 1 : currentRetryCount,
-    escalationReason: needsReview ? [...new Set(escalationReasons)].join("; ") : null,
+    escalationReason: needsReview ? dedupe(escalationReasons).join("; ") : null,
+    pageState: needsReview ? "needs_review" : "accepted",
   };
 }

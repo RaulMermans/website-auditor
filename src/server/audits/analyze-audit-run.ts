@@ -1,9 +1,11 @@
 import type {
+  AuditAnalysisContext,
   AuditAnalysisRepository,
   CreateFindingInput,
   CreatePageEvidenceInput,
 } from "@/db/analysis";
 import { auditAnalysisRepository } from "@/db/analysis";
+import { auditJobRepository, type AuditJobRepository } from "@/db/audits";
 import type { StorageClient } from "@/server/contracts/storage";
 import { storageClient } from "@/server/contracts/storage";
 import { extractPageArtifacts } from "@/server/audits/extract-page-evidence";
@@ -18,6 +20,7 @@ export interface AnalyzeAuditRunDeps {
     "getAuditAnalysisContext" | "replaceAuditAnalysis" | "updatePageReviewState"
   >;
   storage: Pick<StorageClient, "get">;
+  pageSnapshots: Pick<AuditJobRepository, "updatePageSnapshotState">;
 }
 
 export interface AnalyzeAuditRunResult {
@@ -29,7 +32,134 @@ export interface AnalyzeAuditRunResult {
 const defaultDeps: AnalyzeAuditRunDeps = {
   analysisRepository: auditAnalysisRepository,
   storage: storageClient,
+  pageSnapshots: auditJobRepository,
 };
+
+interface AnalyzedPageSnapshotResult {
+  pageEvidence: CreatePageEvidenceInput[];
+  reviewedFindings: CreateFindingInput[];
+  acceptedFindings: CreateFindingInput[];
+}
+
+async function analyzePageSnapshot(
+  auditRun: Pick<AuditAnalysisContext["auditRun"], "id" | "homepageOnly">,
+  snapshot: AuditAnalysisContext["pageSnapshots"][number],
+  deps: AnalyzeAuditRunDeps
+) : Promise<AnalyzedPageSnapshotResult> {
+  const pageEvidence: CreatePageEvidenceInput[] = [];
+  const reviewedFindings: CreateFindingInput[] = [];
+  const acceptedFindings: CreateFindingInput[] = [];
+  const startingRetryCount = snapshot.retryCount ?? 0;
+
+  for (let attempt = startingRetryCount; attempt <= 1; attempt += 1) {
+    await deps.pageSnapshots.updatePageSnapshotState({
+      pageSnapshotId: snapshot.id,
+      pageState: "auditing",
+      retryCount: attempt,
+      lastError: null,
+    });
+    await deps.analysisRepository.updatePageReviewState({
+      pageSnapshotId: snapshot.id,
+      reviewStatus: "auditing",
+      retryCount: attempt,
+      escalationReason: null,
+      evaluatorStatus: "queued",
+    });
+
+    try {
+      if (!snapshot.htmlStorageKey) {
+        throw new Error(`Missing HTML snapshot for ${snapshot.url}`);
+      }
+
+      const htmlBuffer = await deps.storage.get(snapshot.htmlStorageKey);
+      if (!htmlBuffer) {
+        throw new Error(`Stored HTML snapshot not found for ${snapshot.url}`);
+      }
+
+      const extracted = extractPageArtifacts(
+        auditRun,
+        snapshot,
+        htmlBuffer.toString("utf8")
+      );
+
+      await deps.pageSnapshots.updatePageSnapshotState({
+        pageSnapshotId: snapshot.id,
+        pageState: "evaluating",
+        retryCount: attempt,
+        lastError: null,
+      });
+      await deps.analysisRepository.updatePageReviewState({
+        pageSnapshotId: snapshot.id,
+        reviewStatus: "evaluating",
+        retryCount: attempt,
+        escalationReason: null,
+        evaluatorStatus: "evaluating",
+      });
+
+      const reviewed = reviewPageFindings({
+        snapshot,
+        pageEvidence: extracted.pageEvidence,
+        findings: extracted.findings,
+      });
+      pageEvidence.push(...extracted.pageEvidence);
+      reviewedFindings.push(...reviewed.findings);
+      acceptedFindings.push(...reviewed.acceptedFindings);
+
+      await deps.pageSnapshots.updatePageSnapshotState({
+        pageSnapshotId: snapshot.id,
+        pageState: reviewed.pageState,
+        retryCount: reviewed.retryCount,
+        lastError: reviewed.escalationReason,
+      });
+      await deps.analysisRepository.updatePageReviewState({
+        pageSnapshotId: snapshot.id,
+        reviewStatus: reviewed.reviewStatus,
+        retryCount: reviewed.retryCount,
+        escalationReason: reviewed.escalationReason,
+        evaluatorStatus: reviewed.evaluatorStatus,
+      });
+
+      return { pageEvidence, reviewedFindings, acceptedFindings };
+    } catch (error) {
+      const failureReason = error instanceof Error ? error.message : String(error);
+
+      if (attempt === 0) {
+        await deps.pageSnapshots.updatePageSnapshotState({
+          pageSnapshotId: snapshot.id,
+          pageState: "captured",
+          retryCount: 1,
+          lastError: failureReason,
+        });
+        await deps.analysisRepository.updatePageReviewState({
+          pageSnapshotId: snapshot.id,
+          reviewStatus: "queued",
+          retryCount: 1,
+          escalationReason: failureReason,
+          evaluatorStatus: "queued",
+        });
+        continue;
+      }
+
+      await deps.pageSnapshots.updatePageSnapshotState({
+        pageSnapshotId: snapshot.id,
+        pageState: "needs_review",
+        retryCount: 1,
+        lastError: failureReason,
+      });
+      await deps.analysisRepository.updatePageReviewState({
+        pageSnapshotId: snapshot.id,
+        reviewStatus: "needs_review",
+        retryCount: 1,
+        escalationReason: failureReason,
+        evaluatorStatus: "needs_review",
+      });
+
+      return { pageEvidence, reviewedFindings, acceptedFindings };
+    }
+  }
+
+  return { pageEvidence, reviewedFindings, acceptedFindings };
+}
 
 export async function analyzeAuditRun(
   auditRunId: string,
@@ -41,63 +171,14 @@ export async function analyzeAuditRun(
   const acceptedFindings: CreateFindingInput[] = [];
 
   for (const snapshot of pageSnapshots) {
-    if (!snapshot.htmlStorageKey) {
-      await deps.analysisRepository.updatePageReviewState({
-        pageSnapshotId: snapshot.id,
-        reviewStatus: "failed",
-        retryCount: (snapshot.retryCount ?? 0) + 1,
-        escalationReason: "HTML snapshot storage key is missing.",
-        evaluatorStatus: "failed",
-      });
+    if (!snapshot.htmlStorageKey || snapshot.pageState === "failed") {
       continue;
     }
 
-    await deps.analysisRepository.updatePageReviewState({
-      pageSnapshotId: snapshot.id,
-      reviewStatus: "auditing",
-      retryCount: snapshot.retryCount ?? 0,
-      escalationReason: null,
-      evaluatorStatus: snapshot.evaluatorStatus ?? "queued",
-    });
-
-    const htmlBuffer = await deps.storage.get(snapshot.htmlStorageKey);
-    if (!htmlBuffer) {
-      await deps.analysisRepository.updatePageReviewState({
-        pageSnapshotId: snapshot.id,
-        reviewStatus: "failed",
-        retryCount: (snapshot.retryCount ?? 0) + 1,
-        escalationReason: `HTML snapshot artifact missing for ${snapshot.url}.`,
-        evaluatorStatus: "failed",
-      });
-      continue;
-    }
-
-    const extracted = extractPageArtifacts(auditRun, snapshot, htmlBuffer.toString("utf8"));
-    await deps.analysisRepository.updatePageReviewState({
-      pageSnapshotId: snapshot.id,
-      reviewStatus: "evaluating",
-      retryCount: snapshot.retryCount ?? 0,
-      escalationReason: null,
-      evaluatorStatus: "evaluating",
-    });
-
-    const pageReview = reviewPageFindings({
-      snapshot,
-      pageEvidence: extracted.pageEvidence,
-      findings: extracted.findings,
-    });
-
-    pageEvidence.push(...extracted.pageEvidence);
-    reviewedFindings.push(...pageReview.findings);
-    acceptedFindings.push(...pageReview.acceptedFindings);
-
-    await deps.analysisRepository.updatePageReviewState({
-      pageSnapshotId: snapshot.id,
-      reviewStatus: pageReview.reviewStatus,
-      retryCount: pageReview.retryCount,
-      escalationReason: pageReview.escalationReason,
-      evaluatorStatus: pageReview.evaluatorStatus,
-    });
+    const analyzed = await analyzePageSnapshot(auditRun, snapshot, deps);
+    pageEvidence.push(...analyzed.pageEvidence);
+    reviewedFindings.push(...analyzed.reviewedFindings);
+    acceptedFindings.push(...analyzed.acceptedFindings);
   }
 
   if (pageEvidence.length === 0) {
@@ -119,7 +200,10 @@ export async function analyzeAuditRun(
   const persisted = await deps.analysisRepository.replaceAuditAnalysis({
     auditRunId,
     pageEvidence,
-    findings: [...prioritizedFindings, ...reviewedFindings.filter((finding) => finding.evaluatorStatus === "needs_review")],
+    findings: [
+      ...prioritizedFindings,
+      ...reviewedFindings.filter((finding) => finding.evaluatorStatus === "needs_review"),
+    ],
   });
 
   return {

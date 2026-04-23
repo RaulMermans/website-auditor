@@ -9,6 +9,7 @@ import {
   evaluateTrustSignals,
   evaluateUxUi,
 } from "@/server/audits/evaluators";
+import { getRoutedPageContext } from "@/server/audits/page-rubrics";
 import type { EvaluatorContext, ParsedPageMetrics } from "@/server/audits/evaluators/types";
 
 const BASE_METRICS: ParsedPageMetrics = {
@@ -95,7 +96,9 @@ function makeContext(
     snapshot: {
       url: "https://example.com/",
       pageType,
+      pagePriority: 0,
     },
+    route: getRoutedPageContext({ pageType, pagePriority: 0 }),
     metrics: {
       ...BASE_METRICS,
       ...overrides,

@@ -44,10 +44,15 @@ const BUSINESS_IMPACT_PRIORITY = {
 
 const PAGE_TYPE_PRIORITY = {
   homepage: 18,
+  pricing: 16,
+  product: 14,
   services: 12,
   contact: 12,
+  form: 11,
+  blog_article: 6,
   content: 6,
   about: 4,
+  legal: 2,
   other: 2,
 } as const;
 

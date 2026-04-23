@@ -7,6 +7,7 @@ import type {
   FindingCategory,
   FindingConfidence,
   FindingEvaluatorStatus,
+  FindingReviewStatus,
   FindingSeverity,
   FindingSupportType,
   PageEvaluatorStatus,
@@ -14,6 +15,7 @@ import type {
   PageReviewStatus,
   PageSnapshot,
   PageType,
+  PageState,
 } from "@/lib/types";
 
 interface AuditRunRow {
@@ -33,11 +35,14 @@ interface PageSnapshotRow {
   audit_run_id: string;
   url: string;
   page_type: PageType;
+  page_priority: number;
+  page_state: PageState;
+  retry_count: number;
+  last_error: string | null;
   html_storage_key: string | null;
   screenshot_storage_key: string | null;
-  captured_at: Date;
+  captured_at: Date | null;
   review_status: PageReviewStatus;
-  retry_count: number;
   escalation_reason: string | null;
   evaluator_status: PageEvaluatorStatus;
 }
@@ -69,6 +74,8 @@ interface FindingRow {
   evaluator_status: FindingEvaluatorStatus;
   evaluator_notes: string | null;
   recommendation: string;
+  review_status: FindingReviewStatus;
+  review_reason: string | null;
   created_at: Date;
 }
 
@@ -101,6 +108,8 @@ export interface CreateFindingInput {
   evaluatorStatus?: FindingEvaluatorStatus;
   evaluatorNotes?: string | null;
   recommendation: string;
+  reviewStatus?: FindingReviewStatus;
+  reviewReason?: string | null;
 }
 
 export interface UpdatePageReviewStateInput {
@@ -148,11 +157,14 @@ function mapPageSnapshot(row: PageSnapshotRow): PageSnapshot {
     auditRunId: row.audit_run_id,
     url: row.url,
     pageType: row.page_type,
+    pagePriority: row.page_priority,
+    pageState: row.page_state,
+    retryCount: row.retry_count,
+    lastError: row.last_error,
     htmlStorageKey: row.html_storage_key ?? undefined,
     screenshotStorageKey: row.screenshot_storage_key ?? undefined,
     capturedAt: row.captured_at,
     reviewStatus: row.review_status,
-    retryCount: row.retry_count,
     escalationReason: row.escalation_reason,
     evaluatorStatus: row.evaluator_status,
   };
@@ -188,6 +200,8 @@ function mapFinding(row: FindingRow): Finding {
     evaluatorStatus: row.evaluator_status,
     evaluatorNotes: row.evaluator_notes,
     recommendation: row.recommendation,
+    reviewStatus: row.review_status,
+    reviewReason: row.review_reason,
     createdAt: row.created_at,
   };
 }
@@ -256,16 +270,19 @@ export const auditAnalysisRepository: AuditAnalysisRepository = {
             audit_run_id,
             url,
             page_type,
+            page_priority,
+            page_state,
+            retry_count,
+            last_error,
             html_storage_key,
             screenshot_storage_key,
             captured_at,
             review_status,
-            retry_count,
             escalation_reason,
             evaluator_status
           FROM page_snapshots
           WHERE audit_run_id = $1
-          ORDER BY captured_at ASC, url ASC
+          ORDER BY page_priority ASC, url ASC
         `,
         [auditRunId]
       );
@@ -361,9 +378,11 @@ export const auditAnalysisRepository: AuditAnalysisRepository = {
               support_type,
               evaluator_status,
               evaluator_notes,
-              recommendation
+              recommendation,
+              review_status,
+              review_reason
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $17)
             RETURNING
               id,
               audit_run_id,
@@ -380,6 +399,8 @@ export const auditAnalysisRepository: AuditAnalysisRepository = {
               evaluator_status,
               evaluator_notes,
               recommendation,
+              review_status,
+              review_reason,
               created_at
           `,
           [
@@ -398,6 +419,8 @@ export const auditAnalysisRepository: AuditAnalysisRepository = {
             finding.evaluatorStatus ?? "accepted",
             finding.evaluatorNotes ?? null,
             finding.recommendation,
+            finding.reviewStatus ?? "accepted",
+            finding.reviewReason ?? null,
           ]
         );
 

@@ -6,6 +6,7 @@ import type {
   PageEvaluatorStatus,
   PageReviewStatus,
   PageSnapshot,
+  PageState,
   PageType,
   TargetDomain,
 } from "@/lib/types";
@@ -35,11 +36,14 @@ interface PageSnapshotRow {
   audit_run_id: string;
   url: string;
   page_type: PageType;
+  page_priority: number;
+  page_state: PageState;
+  retry_count: number;
+  last_error: string | null;
   html_storage_key: string | null;
   screenshot_storage_key: string | null;
-  captured_at: Date;
+  captured_at: Date | null;
   review_status: PageReviewStatus;
-  retry_count: number;
   escalation_reason: string | null;
   evaluator_status: PageEvaluatorStatus;
 }
@@ -72,8 +76,29 @@ export interface InsertPageSnapshotInput {
   auditRunId: string;
   url: string;
   pageType: PageType;
+  pagePriority: number;
+  pageState?: PageState;
+  retryCount?: number;
+  lastError?: string | null;
   htmlStorageKey?: string;
   screenshotStorageKey?: string;
+  capturedAt?: Date | null;
+}
+
+export interface UpdatePageSnapshotStateInput {
+  pageSnapshotId: string;
+  pageState: PageState;
+  retryCount?: number;
+  lastError: string | null;
+}
+
+export interface CompletePageSnapshotCaptureInput {
+  pageSnapshotId: string;
+  url: string;
+  htmlStorageKey: string;
+  screenshotStorageKey: string;
+  retryCount?: number;
+  capturedAt?: Date;
 }
 
 export interface AuditJobRepository {
@@ -81,6 +106,8 @@ export interface AuditJobRepository {
   markAuditRunFailed(input: MarkAuditRunFailedInput): Promise<void>;
   updateAuditRunStatus(input: UpdateAuditRunStatusInput): Promise<void>;
   insertPageSnapshot(input: InsertPageSnapshotInput): Promise<PageSnapshot>;
+  updatePageSnapshotState(input: UpdatePageSnapshotStateInput): Promise<PageSnapshot>;
+  completePageSnapshotCapture(input: CompletePageSnapshotCaptureInput): Promise<PageSnapshot>;
 }
 
 // ─── Mappers ─────────────────────────────────────────────────────────────────
@@ -113,11 +140,14 @@ function mapPageSnapshot(row: PageSnapshotRow): PageSnapshot {
     auditRunId: row.audit_run_id,
     url: row.url,
     pageType: row.page_type,
+    pagePriority: row.page_priority,
+    pageState: row.page_state,
+    retryCount: row.retry_count,
+    lastError: row.last_error,
     htmlStorageKey: row.html_storage_key ?? undefined,
     screenshotStorageKey: row.screenshot_storage_key ?? undefined,
     capturedAt: row.captured_at,
     reviewStatus: row.review_status,
-    retryCount: row.retry_count,
     escalationReason: row.escalation_reason,
     evaluatorStatus: row.evaluator_status,
   };
@@ -235,7 +265,18 @@ export const auditJobRepository: AuditJobRepository = {
     });
   },
 
-  async insertPageSnapshot({ auditRunId, url, pageType, htmlStorageKey, screenshotStorageKey }) {
+  async insertPageSnapshot({
+    auditRunId,
+    url,
+    pageType,
+    pagePriority,
+    pageState,
+    retryCount,
+    lastError,
+    htmlStorageKey,
+    screenshotStorageKey,
+    capturedAt,
+  }) {
     return withDbClient(async (client) => {
       const result = await client.query<PageSnapshotRow>(
         `
@@ -244,25 +285,31 @@ export const auditJobRepository: AuditJobRepository = {
             audit_run_id,
             url,
             page_type,
+            page_priority,
+            page_state,
+            retry_count,
+            last_error,
             html_storage_key,
             screenshot_storage_key,
             captured_at,
             review_status,
-            retry_count,
             escalation_reason,
             evaluator_status
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, 'capturing', 0, NULL, 'queued')
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'queued', NULL, 'queued')
           RETURNING
             id,
             audit_run_id,
             url,
             page_type,
+            page_priority,
+            page_state,
+            retry_count,
+            last_error,
             html_storage_key,
             screenshot_storage_key,
             captured_at,
             review_status,
-            retry_count,
             escalation_reason,
             evaluator_status
         `,
@@ -271,11 +318,97 @@ export const auditJobRepository: AuditJobRepository = {
           auditRunId,
           url,
           pageType,
+          pagePriority,
+          pageState ?? "queued",
+          retryCount ?? 0,
+          lastError ?? null,
           htmlStorageKey ?? null,
           screenshotStorageKey ?? null,
-          new Date(),
+          capturedAt ?? null,
         ]
       );
+      return mapPageSnapshot(result.rows[0]);
+    });
+  },
+
+  async updatePageSnapshotState({ pageSnapshotId, pageState, retryCount, lastError }) {
+    return withDbClient(async (client) => {
+      const result = await client.query<PageSnapshotRow>(
+        `
+          UPDATE page_snapshots
+          SET page_state = $2,
+              retry_count = COALESCE($3, retry_count),
+              last_error = $4
+          WHERE id = $1
+          RETURNING
+            id,
+            audit_run_id,
+            url,
+            page_type,
+            page_priority,
+            page_state,
+            retry_count,
+            last_error,
+            html_storage_key,
+            screenshot_storage_key,
+            captured_at,
+            review_status,
+            escalation_reason,
+            evaluator_status
+        `,
+        [pageSnapshotId, pageState, retryCount ?? null, lastError]
+      );
+
+      return mapPageSnapshot(result.rows[0]);
+    });
+  },
+
+  async completePageSnapshotCapture({
+    pageSnapshotId,
+    url,
+    htmlStorageKey,
+    screenshotStorageKey,
+    retryCount,
+    capturedAt,
+  }) {
+    return withDbClient(async (client) => {
+      const result = await client.query<PageSnapshotRow>(
+        `
+          UPDATE page_snapshots
+          SET url = $2,
+              html_storage_key = $3,
+              screenshot_storage_key = $4,
+              page_state = 'captured',
+              retry_count = COALESCE($5, retry_count),
+              last_error = NULL,
+              captured_at = $6
+          WHERE id = $1
+          RETURNING
+            id,
+            audit_run_id,
+            url,
+            page_type,
+            page_priority,
+            page_state,
+            retry_count,
+            last_error,
+            html_storage_key,
+            screenshot_storage_key,
+            captured_at,
+            review_status,
+            escalation_reason,
+            evaluator_status
+        `,
+        [
+          pageSnapshotId,
+          url,
+          htmlStorageKey,
+          screenshotStorageKey,
+          retryCount ?? null,
+          capturedAt ?? new Date(),
+        ]
+      );
+
       return mapPageSnapshot(result.rows[0]);
     });
   },

@@ -27,6 +27,10 @@ function createContext(): AuditAnalysisContext {
         auditRunId: "run-123",
         url: "https://example.com/",
         pageType: "homepage",
+        pagePriority: 0,
+        pageState: "captured",
+        retryCount: 0,
+        lastError: null,
         htmlStorageKey: "shot_run-123_homepage.html",
         screenshotStorageKey: "shot_run-123_homepage.jpg",
         capturedAt: now,
@@ -73,6 +77,8 @@ describe("analyzeAuditRun", () => {
             evaluatorStatus: item.evaluatorStatus,
             evaluatorNotes: item.evaluatorNotes ?? null,
             recommendation: item.recommendation,
+            reviewStatus: item.reviewStatus,
+            reviewReason: item.reviewReason ?? null,
             createdAt: new Date("2026-04-19T10:05:00.000Z"),
           })),
         };
@@ -98,11 +104,17 @@ describe("analyzeAuditRun", () => {
           )
         ),
       },
+      pageSnapshots: {
+        updatePageSnapshotState: vi.fn().mockResolvedValue(context.pageSnapshots[0]),
+      },
     });
 
     expect(persistedInput).not.toBeNull();
     expect(persistedInput!.pageEvidence.length).toBeGreaterThan(0);
     expect(persistedInput!.findings.length).toBeGreaterThan(0);
+    expect(
+      persistedInput!.findings.every((finding) => finding.reviewStatus === "accepted")
+    ).toBe(true);
     expect(result.findings.every((finding) => finding.title.startsWith("Homepage-only audit:"))).toBe(
       true
     );
@@ -151,5 +163,6 @@ describe("analyzeAuditRun", () => {
 
     const scopeValues = result.findings.map((finding) => finding.evidenceRef.scope);
     expect(scopeValues.every((scope) => scope === "homepage_only")).toBe(true);
+    expect(result.findings.every((finding) => finding.reviewStatus === "accepted")).toBe(true);
   });
 });

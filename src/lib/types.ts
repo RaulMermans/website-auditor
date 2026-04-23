@@ -25,11 +25,26 @@ export type AuditStatus =
   | "complete"
   | "failed";
 
+export type PageState =
+  | "queued"
+  | "capturing"
+  | "captured"
+  | "auditing"
+  | "evaluating"
+  | "accepted"
+  | "needs_review"
+  | "failed";
+
 export type PageType =
   | "homepage"
+  | "pricing"
+  | "product"
   | "about"
   | "services"
   | "contact"
+  | "form"
+  | "blog_article"
+  | "legal"
   | "content"
   | "other";
 
@@ -48,6 +63,8 @@ export type PageEvaluatorStatus =
   | "accepted"
   | "needs_review"
   | "failed";
+
+export type FindingReviewStatus = "accepted" | "needs_review";
 
 export interface Project {
   id: string;
@@ -78,11 +95,14 @@ export interface PageSnapshot {
   auditRunId: string;
   url: string;
   pageType: PageType;
+  pagePriority?: number;
+  pageState?: PageState;
+  retryCount?: number;
+  lastError?: string | null;
   htmlStorageKey?: string;
   screenshotStorageKey?: string;
-  capturedAt: Date;
+  capturedAt?: Date | null;
   reviewStatus?: PageReviewStatus;
-  retryCount?: number;
   escalationReason?: string | null;
   evaluatorStatus?: PageEvaluatorStatus;
 }
@@ -114,6 +134,8 @@ export interface Finding {
   evaluatorStatus?: FindingEvaluatorStatus;
   evaluatorNotes?: string | null;
   recommendation: string;
+  reviewStatus?: FindingReviewStatus;
+  reviewReason?: string | null;
   createdAt: Date;
 }
 

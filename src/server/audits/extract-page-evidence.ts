@@ -4,6 +4,8 @@ import type {
 } from "@/lib/types";
 import type { CreateFindingInput, CreatePageEvidenceInput } from "@/db/analysis";
 import { runSpecialistEvaluators } from "@/server/audits/evaluators";
+import { getPagePriority } from "@/server/audits/page-archetypes";
+import { getRoutedPageContext } from "@/server/audits/page-rubrics";
 import type {
   AssetWeightMetrics,
   CTAInventoryMetrics,
@@ -903,9 +905,11 @@ function scopeText(auditRun: Pick<AuditRun, "homepageOnly">, text: string) {
 
 function buildFinding(
   auditRun: Pick<AuditRun, "id" | "homepageOnly">,
-  snapshot: Pick<PageSnapshot, "id" | "url" | "pageType">,
+  snapshot: Pick<PageSnapshot, "id" | "url" | "pageType" | "pagePriority">,
   draft: SpecialistFindingDraft
 ): CreateFindingInput {
+  const route = getRoutedPageContext(snapshot);
+
   return {
     auditRunId: auditRun.id,
     pageSnapshotId: snapshot.id,
@@ -917,7 +921,8 @@ function buildFinding(
     evidenceLevel: draft.evidenceLevel,
     evidenceRef: {
       pageUrl: snapshot.url,
-      pageType: snapshot.pageType,
+      pageType: route.pageType,
+      pagePriority: snapshot.pagePriority ?? getPagePriority(route.pageType),
       pageCount: 1,
       scope: auditRun.homepageOnly ? "homepage_only" : "captured_pages",
       evidenceKeys: draft.evidenceKeys,
@@ -930,12 +935,13 @@ function buildFinding(
 
 export function extractPageArtifacts(
   auditRun: Pick<AuditRun, "id" | "homepageOnly">,
-  snapshot: Pick<PageSnapshot, "id" | "url" | "pageType">,
+  snapshot: Pick<PageSnapshot, "id" | "url" | "pageType" | "pagePriority">,
   html: string
 ): ExtractedPageArtifacts {
   const metrics = parseMetrics(snapshot, html);
+  const route = getRoutedPageContext(snapshot);
   const pageEvidence = buildPageEvidence(auditRun.id, snapshot.id, metrics);
-  const findings = runSpecialistEvaluators({ snapshot, metrics }).map((draft) =>
+  const findings = runSpecialistEvaluators({ snapshot, route, metrics }).map((draft) =>
     buildFinding(auditRun, snapshot, draft)
   );
 

@@ -1,9 +1,11 @@
+import { pageAllowsIssuePattern } from "@/server/audits/page-rubrics";
 import type { SpecialistEvaluator, SpecialistFindingDraft } from "./types";
 
-export const evaluateMessagingContent: SpecialistEvaluator = ({ snapshot, metrics }) => {
+export const evaluateMessagingContent: SpecialistEvaluator = ({ route, metrics }) => {
   const drafts: SpecialistFindingDraft[] = [];
-  const isHomepage = snapshot.pageType === "homepage";
-  const isOfferPage = isHomepage || snapshot.pageType === "services";
+  const isHomepage = pageAllowsIssuePattern(route, "weak_value_proposition");
+  const isOfferPage =
+    pageAllowsIssuePattern(route, "offer_sprawl") || route.pageType === "homepage";
   const weakHeroAlignment = metrics.messagingQuality.titleAlignment < 0.2;
   const weakHeroValue =
     metrics.messagingQuality.genericIntroDetected ||
@@ -67,7 +69,7 @@ export const evaluateMessagingContent: SpecialistEvaluator = ({ snapshot, metric
   }
 
   if (
-    isHomepage &&
+    pageAllowsIssuePattern(route, "headline_section_mismatch") &&
     weakHeroAlignment &&
     metrics.messagingQuality.h2Count >= 4 &&
     metrics.messagingQuality.duplicateHeadingCount === 0

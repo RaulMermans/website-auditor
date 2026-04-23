@@ -8,6 +8,7 @@ import type {
   FindingCategory,
   FindingConfidence,
   FindingEvaluatorStatus,
+  FindingReviewStatus,
   FindingSeverity,
   FindingSupportType,
 } from "@/lib/types";
@@ -51,6 +52,8 @@ interface FindingRow {
   evaluator_status: FindingEvaluatorStatus;
   evaluator_notes: string | null;
   recommendation: string;
+  review_status: FindingReviewStatus;
+  review_reason: string | null;
   created_at: Date;
 }
 
@@ -126,6 +129,8 @@ function mapFinding(row: FindingRow): Finding {
     evaluatorStatus: row.evaluator_status,
     evaluatorNotes: row.evaluator_notes,
     recommendation: row.recommendation,
+    reviewStatus: row.review_status,
+    reviewReason: row.review_reason,
     createdAt: row.created_at,
   };
 }
@@ -299,10 +304,15 @@ export const reportRepository: ReportRepository = {
             evaluator_status,
             evaluator_notes,
             recommendation,
+            review_status,
+            review_reason,
             created_at
-          FROM findings
-          WHERE audit_run_id = $1
-            AND evaluator_status = 'accepted'
+          FROM findings f
+          JOIN page_snapshots ps ON ps.id = f.page_snapshot_id
+          WHERE f.audit_run_id = $1
+            AND f.evaluator_status = 'accepted'
+            AND f.review_status = 'accepted'
+            AND ps.page_state = 'accepted'
           ORDER BY category, severity, created_at
         `,
         [auditRunId]
@@ -311,7 +321,13 @@ export const reportRepository: ReportRepository = {
       const findings = findingsResult.rows.map(mapFinding);
 
       const evidenceResult = await client.query<{ category: FindingCategory; key: string }>(
-        `SELECT category, key FROM page_evidence WHERE audit_run_id = $1`,
+        `
+          SELECT pe.category, pe.key
+          FROM page_evidence pe
+          JOIN page_snapshots ps ON ps.id = pe.page_snapshot_id
+          WHERE pe.audit_run_id = $1
+            AND ps.page_state = 'accepted'
+        `,
         [auditRunId]
       );
       const inspectionKeysByCategory = evidenceResult.rows.reduce<

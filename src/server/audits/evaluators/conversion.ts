@@ -1,12 +1,9 @@
+import { pageHasCategoryEmphasis } from "@/server/audits/page-rubrics";
 import type { SpecialistEvaluator, SpecialistFindingDraft } from "./types";
 
-export const evaluateConversion: SpecialistEvaluator = ({ snapshot, metrics }) => {
+export const evaluateConversion: SpecialistEvaluator = ({ route, metrics }) => {
   const drafts: SpecialistFindingDraft[] = [];
-  const isKeyConversionPage =
-    snapshot.pageType === "homepage" ||
-    snapshot.pageType === "services" ||
-    snapshot.pageType === "contact" ||
-    snapshot.pageType === "content";
+  const isKeyConversionPage = pageHasCategoryEmphasis(route, "conversion");
   const hasMultipleDistinctCtas =
     metrics.ctaInventory.count >= 4 && metrics.ctaInventory.uniqueCount >= 3;
 
@@ -17,7 +14,7 @@ export const evaluateConversion: SpecialistEvaluator = ({ snapshot, metrics }) =
       title: "Primary next step is not yet clear on this page",
       description:
         "The captured DOM did not surface a standard CTA/button pattern or form. That suggests the page may not be giving visitors an obvious next step, although this remains a directional judgment rather than a measured conversion benchmark.",
-      severity: snapshot.pageType === "contact" ? "high" : "medium",
+      severity: route.pageType === "contact" || route.pageType === "form" ? "high" : "medium",
       confidence: "medium",
       evidenceLevel: "Inferred",
       evidenceKeys: ["cta_present", "form_present", "button_count"],
@@ -35,7 +32,7 @@ export const evaluateConversion: SpecialistEvaluator = ({ snapshot, metrics }) =
       description:
         `The captured page exposes ${metrics.ctaInventory.count} CTA-pattern elements across ${metrics.ctaInventory.uniqueCount} distinct labels. That spread makes it harder to tell which action should lead the page and which ones are supporting options.`,
       severity:
-        snapshot.pageType === "homepage" || snapshot.pageType === "contact"
+        route.pageType === "homepage" || route.pageType === "contact"
           ? "medium"
           : "low",
       confidence: "high",
@@ -112,7 +109,7 @@ export const evaluateConversion: SpecialistEvaluator = ({ snapshot, metrics }) =
         !metrics.formFriction.hasLabels
           ? "The captured form includes fields without matching label elements. On lead forms, unlabeled inputs make completion feel less certain and slower to process."
           : `The captured form marks ${metrics.formFriction.requiredCount} fields as required. That is a demanding first-step ask for visitors who have not committed yet.`,
-      severity: snapshot.pageType === "contact" ? "medium" : "low",
+      severity: route.pageType === "contact" || route.pageType === "form" ? "medium" : "low",
       confidence: "high",
       evidenceLevel: "Observed",
       evidenceKeys: ["form_friction", "conversion_path"],
@@ -134,7 +131,7 @@ export const evaluateConversion: SpecialistEvaluator = ({ snapshot, metrics }) =
       title: "The page appears to rely on a relatively high-friction next step",
       description:
         `The captured page appears to rely on a ${metrics.formFriction.fieldCount}-field form as the main next step, with little evidence of a lower-friction alternative such as a simple contact CTA or booking link. This is a directional risk call based on the captured structure.`,
-      severity: snapshot.pageType === "contact" ? "high" : "medium",
+      severity: route.pageType === "contact" || route.pageType === "form" ? "high" : "medium",
       confidence: "medium",
       evidenceLevel: "Inferred",
       evidenceKeys: ["form_friction", "cta_inventory", "conversion_path"],

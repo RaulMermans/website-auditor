@@ -6,6 +6,7 @@ const SNAPSHOT = {
   id: "snap-1",
   url: "https://example.com/",
   pageType: "homepage" as const,
+  pagePriority: 0,
 };
 
 function makeEvidence(overrides: Partial<CreatePageEvidenceInput> = {}): CreatePageEvidenceInput {
@@ -50,6 +51,7 @@ describe("reviewPageFindings", () => {
       findings: [makeFinding()],
     });
 
+    expect(result.pageState).toBe("accepted");
     expect(result.reviewStatus).toBe("accepted");
     expect(result.evaluatorStatus).toBe("accepted");
     expect(result.retryCount).toBe(0);
@@ -59,6 +61,7 @@ describe("reviewPageFindings", () => {
       claimPosture: "confirmed",
       supportType: "dom",
       evaluatorStatus: "accepted",
+      reviewStatus: "accepted",
     });
   });
 
@@ -112,7 +115,9 @@ describe("reviewPageFindings", () => {
       evaluatorStatus: "accepted",
     });
     expect(result.acceptedFindings[0]?.title.toLowerCase()).toContain("may not yet be");
-    expect(result.acceptedFindings[0]?.evaluatorNotes).toContain("Evaluator softened directional wording.");
+    expect(result.acceptedFindings[0]?.evaluatorNotes).toContain(
+      "Evaluator softened directional wording."
+    );
   });
 
   it("marks findings for review when evidence keys are missing", () => {
@@ -139,11 +144,13 @@ describe("reviewPageFindings", () => {
       ],
     });
 
+    expect(result.pageState).toBe("needs_review");
     expect(result.reviewStatus).toBe("needs_review");
     expect(result.retryCount).toBe(3);
     expect(result.acceptedFindings).toHaveLength(0);
     expect(result.findings[0]).toMatchObject({
       evaluatorStatus: "needs_review",
+      reviewStatus: "needs_review",
     });
     expect(result.findings[0]?.evaluatorNotes).toContain("evidence keys were missing");
   });
@@ -195,11 +202,113 @@ describe("reviewPageFindings", () => {
       ],
     });
 
+    expect(result.pageState).toBe("needs_review");
     expect(result.reviewStatus).toBe("needs_review");
     expect(result.retryCount).toBe(2);
     expect(result.acceptedFindings).toHaveLength(2);
-    expect(result.findings.filter((finding) => finding.evaluatorStatus === "needs_review")).toHaveLength(2);
+    expect(
+      result.findings.filter((finding) => finding.evaluatorStatus === "needs_review")
+    ).toHaveLength(2);
     expect(result.escalationReason).toContain("duplicate missing_title");
     expect(result.escalationReason).toContain("contradiction with multiple_h1");
+  });
+
+  it("routes out-of-archetype issue patterns to review", () => {
+    const result = reviewPageFindings({
+      snapshot: {
+        ...SNAPSHOT,
+        pageType: "about",
+        pagePriority: 40,
+      },
+      pageEvidence: [
+        makeEvidence({
+          category: "trust_signals",
+          key: "trust_signals",
+          value: { count: 1 },
+          evidenceLevel: "Observed",
+        }),
+        makeEvidence({
+          category: "trust_signals",
+          key: "contact_reassurance",
+          value: false,
+          evidenceLevel: "Observed",
+        }),
+      ],
+      findings: [
+        makeFinding({
+          category: "trust_signals",
+          title: "Trust layer is thin on a key decision page",
+          description: "The captured page shows at most one trust indicator.",
+          severity: "medium",
+          confidence: "medium",
+          evidenceLevel: "Observed",
+          evidenceRef: {
+            pageUrl: SNAPSHOT.url,
+            pageType: "about",
+            issueType: "low_trust_signal_density",
+            evidenceKeys: ["trust_signals", "contact_reassurance"],
+            businessImpact: "high",
+          },
+          recommendation: "Build a fuller trust layer.",
+        }),
+      ],
+    });
+
+    expect(result.pageState).toBe("needs_review");
+    expect(result.acceptedFindings).toHaveLength(0);
+    expect(result.escalationReason).toContain("routing does not accept");
+    expect(result.findings.every((finding) => finding.reviewStatus === "needs_review")).toBe(true);
+  });
+
+  it("flags a page for review when a high-severity inferred finding would otherwise become truth", () => {
+    const result = reviewPageFindings({
+      snapshot: {
+        ...SNAPSHOT,
+        pageType: "contact",
+        pagePriority: 50,
+      },
+      pageEvidence: [
+        makeEvidence({
+          category: "conversion",
+          key: "cta_present",
+          value: false,
+          evidenceLevel: "Observed",
+        }),
+        makeEvidence({
+          category: "conversion",
+          key: "form_present",
+          value: false,
+          evidenceLevel: "Observed",
+        }),
+        makeEvidence({
+          category: "conversion",
+          key: "button_count",
+          value: 0,
+          evidenceLevel: "Observed",
+        }),
+      ],
+      findings: [
+        makeFinding({
+          category: "conversion",
+          title: "Primary next step is not yet clear on this page",
+          description: "Directional conversion issue.",
+          severity: "high",
+          confidence: "medium",
+          evidenceLevel: "Inferred",
+          evidenceRef: {
+            pageUrl: SNAPSHOT.url,
+            pageType: "contact",
+            issueType: "weak_next_step_conversion_path",
+            evidenceKeys: ["cta_present", "form_present", "button_count"],
+            businessImpact: "high",
+          },
+          recommendation: "Add a clearer CTA.",
+        }),
+      ],
+    });
+
+    expect(result.pageState).toBe("needs_review");
+    expect(result.escalationReason).toContain("high-severity inferred finding");
+    expect(result.findings.every((finding) => finding.reviewStatus === "needs_review")).toBe(true);
   });
 });

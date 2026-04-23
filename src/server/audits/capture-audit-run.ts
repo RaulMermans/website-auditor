@@ -3,6 +3,7 @@ import { auditJobRepository } from "@/db/audits";
 import type { StorageClient } from "@/server/contracts/storage";
 import { storageClient } from "@/server/contracts/storage";
 import type { PageType } from "@/lib/types";
+import { buildCapturePlan, type RoutedPageTarget } from "@/server/audits/page-archetypes";
 import { browserDriver } from "@/server/browser/create-browser-driver";
 import type {
   BrowserDiscoveredLink,
@@ -43,13 +44,14 @@ export interface AuditCaptureResult {
   errorMessage?: string;
 }
 
-interface DiscoveredPage {
-  url: string;
-  type: PageType;
-}
-
 export interface CaptureAuditRunDeps {
-  auditJobs: Pick<AuditJobRepository, "updateAuditRunStatus" | "insertPageSnapshot">;
+  auditJobs: Pick<
+    AuditJobRepository,
+    | "updateAuditRunStatus"
+    | "insertPageSnapshot"
+    | "updatePageSnapshotState"
+    | "completePageSnapshotCapture"
+  >;
   storage: Pick<StorageClient, "put">;
   browser: BrowserDriver;
   waitAfterNavigation: (timeoutMs: number) => Promise<void>;
@@ -61,111 +63,6 @@ const defaultDeps: CaptureAuditRunDeps = {
   browser: browserDriver,
   waitAfterNavigation: waitForSettledDom,
 };
-
-function classifyPageTarget(url: string, linkText: string): PageType {
-  const normalizedText = linkText.toLowerCase().trim();
-  const normalizedPath = new URL(url).pathname.toLowerCase();
-
-  if (normalizedPath === "/" || normalizedPath === "/home") {
-    return "homepage";
-  }
-
-  if (
-    normalizedText.includes("about") ||
-    normalizedPath.includes("/about") ||
-    normalizedPath.includes("/company") ||
-    normalizedPath.includes("/our-story")
-  ) {
-    return "about";
-  }
-
-  if (
-    normalizedText.includes("service") ||
-    normalizedText.includes("product") ||
-    normalizedText.includes("solution") ||
-    normalizedPath.includes("/services") ||
-    normalizedPath.includes("/products") ||
-    normalizedPath.includes("/solutions")
-  ) {
-    return "services";
-  }
-
-  if (
-    normalizedText.includes("contact") ||
-    normalizedText.includes("book") ||
-    normalizedPath.includes("/contact") ||
-    normalizedPath.includes("/book")
-  ) {
-    return "contact";
-  }
-
-  if (
-    normalizedText.includes("blog") ||
-    normalizedPath.includes("/blog") ||
-    normalizedPath.includes("/article") ||
-    normalizedPath.includes("/resources")
-  ) {
-    return "content";
-  }
-
-  return "other";
-}
-
-async function discoverPriorityPages(session: BrowserSession, domain: string): Promise<DiscoveredPage[]> {
-  const baseUrl = domain.startsWith("http") ? domain : `https://${domain}`;
-  const { value: links } = await session.evaluate<BrowserDiscoveredLink[], { baseUrl: string }>({
-    expression: DISCOVER_LINKS_EXPRESSION,
-    arg: { baseUrl },
-  });
-
-  const baseOrigin = new URL(baseUrl).origin;
-  const discovered: DiscoveredPage[] = [];
-  const seenUrls = new Set<string>([baseUrl]);
-  const internalLinks = links.filter((link) => {
-    if (link.origin !== baseOrigin) {
-      return false;
-    }
-
-    if (link.href.includes("#") || seenUrls.has(link.href)) {
-      return false;
-    }
-
-    if (link.pathname.match(/\.(png|jpg|jpeg|gif|pdf|doc|css|js|mp4)$/i)) {
-      return false;
-    }
-
-    seenUrls.add(link.href);
-    return true;
-  });
-
-  const categoriesSelected = new Set<PageType>();
-  for (const link of internalLinks) {
-    if (discovered.length >= DEFAULT_MAX_PAGES - 1) {
-      break;
-    }
-
-    const type = classifyPageTarget(link.href, link.text);
-    if (type !== "other" && type !== "homepage" && !categoriesSelected.has(type)) {
-      discovered.push({ url: link.href, type });
-      categoriesSelected.add(type);
-    }
-  }
-
-  if (discovered.length < DEFAULT_MAX_PAGES - 1) {
-    for (const link of internalLinks) {
-      if (discovered.length >= DEFAULT_MAX_PAGES - 1) {
-        break;
-      }
-
-      const type = classifyPageTarget(link.href, link.text);
-      if (type === "other" && !discovered.find((entry) => entry.url === link.href)) {
-        discovered.push({ url: link.href, type });
-      }
-    }
-  }
-
-  return discovered;
-}
 
 function buildArtifactKey(
   auditRunId: string,
@@ -182,6 +79,97 @@ function buildArtifactKey(
 
 async function waitForSettledDom(timeoutMs: number) {
   await new Promise((resolve) => setTimeout(resolve, timeoutMs));
+}
+
+async function captureQueuedPage(
+  session: BrowserSession,
+  auditRunId: string,
+  target: RoutedPageTarget & { snapshotId: string },
+  deps: CaptureAuditRunDeps
+) {
+  for (let attempt = 0; attempt <= 1; attempt += 1) {
+    await deps.auditJobs.updatePageSnapshotState({
+      pageSnapshotId: target.snapshotId,
+      pageState: "capturing",
+      retryCount: attempt,
+      lastError: null,
+    });
+
+    try {
+      if (!(target.pageType === "homepage" && attempt === 0)) {
+        const response = await session.navigate({
+          url: target.url,
+          waitUntil: "load",
+          timeoutMs: target.pageType === "homepage" ? 30000 : 20000,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to load ${target.url}. Status: ${response.status}`);
+        }
+      }
+
+      await deps.waitAfterNavigation(2000);
+
+      const currentUrl = await session.getUrl();
+      const { value: html } = await session.extractHtml();
+
+      const screenshot = await session.screenshot({
+        fullPage: true,
+        format: "jpeg",
+        quality: 80,
+        timeoutMs: 90000,
+      });
+
+      const htmlStorageKey = await deps.storage.put(
+        buildArtifactKey(auditRunId, target.pageType, currentUrl, "html"),
+        html,
+        "text/html"
+      );
+      const screenshotStorageKey = await deps.storage.put(
+        buildArtifactKey(auditRunId, target.pageType, currentUrl, "jpg"),
+        screenshot.data,
+        screenshot.contentType
+      );
+
+      await deps.auditJobs.completePageSnapshotCapture({
+        pageSnapshotId: target.snapshotId,
+        url: currentUrl,
+        htmlStorageKey,
+        screenshotStorageKey,
+        retryCount: attempt,
+      });
+
+      return true;
+    } catch (error) {
+      const failureReason = error instanceof Error ? error.message : String(error);
+
+      if (attempt === 0) {
+        await deps.auditJobs.updatePageSnapshotState({
+          pageSnapshotId: target.snapshotId,
+          pageState: "queued",
+          retryCount: 1,
+          lastError: failureReason,
+        });
+        continue;
+      }
+
+      await deps.auditJobs.updatePageSnapshotState({
+        pageSnapshotId: target.snapshotId,
+        pageState: target.pageType === "homepage" ? "failed" : "needs_review",
+        retryCount: 1,
+        lastError: failureReason,
+      });
+
+      if (target.pageType === "homepage") {
+        throw error;
+      }
+
+      console.error(`[audit-capture] Failed to capture ${target.url}`, error);
+      return false;
+    }
+  }
+
+  return false;
 }
 
 export async function captureAuditRun(
@@ -213,65 +201,45 @@ export async function captureAuditRun(
       throw new Error(`Failed to load homepage. Status: ${response.status}`);
     }
 
-    const discovered = await discoverPriorityPages(session, baseUrl);
-    const captureQueue = [{ url: response.url, type: "homepage" as const }, ...discovered].slice(0, maxPages);
+    const { value: discoveredLinks } = await session.evaluate<
+      BrowserDiscoveredLink[],
+      { baseUrl: string }
+    >({
+      expression: DISCOVER_LINKS_EXPRESSION,
+      arg: { baseUrl },
+    });
+    const captureQueue = buildCapturePlan(response.url, discoveredLinks, maxPages);
+    const queuedPages = await Promise.all(
+      captureQueue.map(async (target) => {
+        const snapshot = await deps.auditJobs.insertPageSnapshot({
+          auditRunId,
+          url: target.url,
+          pageType: target.pageType,
+          pagePriority: target.pagePriority,
+          pageState: "queued",
+          retryCount: 0,
+          lastError: null,
+        });
+
+        return {
+          ...target,
+          snapshotId: snapshot.id,
+        };
+      })
+    );
 
     await deps.auditJobs.updateAuditRunStatus({
       auditRunId,
       status: "capturing",
     });
 
-    for (const target of captureQueue) {
-      try {
-        if (target.type !== "homepage") {
-          await session.navigate({
-            url: target.url,
-            waitUntil: "load",
-            timeoutMs: 20000,
-          });
-        }
+    for (const target of queuedPages) {
+      const captured = await captureQueuedPage(session, auditRunId, target, deps);
 
-        await deps.waitAfterNavigation(2000);
-
-        const currentUrl = await session.getUrl();
-        const { value: html } = await session.extractHtml();
-
-        console.log(`[audit-capture] taking screenshot: ${target.url}`);
-        const screenshot = await session.screenshot({
-          fullPage: true,
-          format: "jpeg",
-          quality: 80,
-          timeoutMs: 90000,
-        });
-        console.log("[audit-capture] screenshot captured");
-
-        const htmlStorageKey = await deps.storage.put(
-          buildArtifactKey(auditRunId, target.type, currentUrl, "html"),
-          html,
-          "text/html"
-        );
-        const screenshotStorageKey = await deps.storage.put(
-          buildArtifactKey(auditRunId, target.type, currentUrl, "jpg"),
-          screenshot.data,
-          screenshot.contentType
-        );
-
-        await deps.auditJobs.insertPageSnapshot({
-          auditRunId,
-          url: currentUrl,
-          pageType: target.type,
-          htmlStorageKey,
-          screenshotStorageKey,
-        });
-
+      if (captured) {
         pagesProcessed += 1;
-        if (target.type !== "homepage") {
+        if (target.pageType !== "homepage") {
           homepageOnly = false;
-        }
-      } catch (error) {
-        console.error(`[audit-capture] Failed to capture ${target.url}`, error);
-        if (target.type === "homepage") {
-          throw error;
         }
       }
     }

@@ -31,6 +31,8 @@ function createDeps() {
     markAuditRunFailed: vi.fn().mockResolvedValue(undefined),
     updateAuditRunStatus: vi.fn().mockResolvedValue(undefined),
     insertPageSnapshot: vi.fn().mockResolvedValue(undefined),
+    updatePageSnapshotState: vi.fn().mockResolvedValue(undefined),
+    completePageSnapshotCapture: vi.fn().mockResolvedValue(undefined),
   };
   const queue: QueueClient = {
     enqueue: vi.fn().mockResolvedValue({
