@@ -13,6 +13,7 @@
     "migrate:down": "node scripts/migrate.mjs down",
     "migrate:up:local": "node --env-file=.env.local scripts/migrate.mjs up",
     "migrate:down:local": "node --env-file=.env.local scripts/migrate.mjs down",
+    "migrate:up:vercel:prod": "vercel env pull .env.vercel.production.local --environment=production && node --env-file=.env.vercel.production.local scripts/migrate.mjs up",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:integration": "node scripts/run-integration-tests.mjs",

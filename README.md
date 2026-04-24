@@ -31,6 +31,7 @@ npm run dev                  # http://localhost:3000
 | `npm run migrate:down` | Roll back the Postgres migrations using ambient env vars |
 | `npm run migrate:up:local` | Apply the Postgres migrations from `.env.local` |
 | `npm run migrate:down:local` | Roll back the Postgres migrations from `.env.local` |
+| `npm run migrate:up:vercel:prod` | Pull Vercel production env into an ignored local file, then apply migrations to that `DATABASE_URL` |
 | `npm run typecheck` | TypeScript check (no emit) |
 | `npm test` | Run Vitest tests |
 | `npm run test:integration` | Run the real Shot 2 Postgres + `pg-boss` proof |
@@ -93,10 +94,16 @@ Vercel defaults are sufficient for the app deploy. No custom build override or `
 Browser capture defaults to `@sparticuz/chromium` (Lambda-compatible binary) + `playwright-core`. No `postinstall` step or browser download is required; `npm install` is sufficient for both local dev and Vercel. The optional `browser_use` path is not in-process product logic; it expects a separately run sidecar/service that exposes the repo-owned browser session contract over HTTP. The `worker/` directory is legacy and is **not** a workspace — it is excluded from the root install to prevent the full `playwright` package from being installed and polluting `playwright-core/.local-browsers/`.
 
 1. Ensure the Next.js app deployment has `DATABASE_URL` set.
-2. Ensure DB migrations are applied against the production database:
+2. Ensure DB migrations are applied against the production database. Vercel deploys run `npm run build` / `next build`; they do not run production migrations automatically.
 
    ```sh
    DATABASE_URL=postgres://... npm run migrate:up
+   ```
+
+   To use the same `DATABASE_URL` configured on the Vercel project:
+
+   ```sh
+   npm run migrate:up:vercel:prod
    ```
 
    This applies every numbered SQL migration in `migrations/` in order (currently `0001` through `0008`). `POSTGRES_URL`, `DATABASE_URL_UNPOOLED`, and other provider helper variables are ignored unless their value is copied into `DATABASE_URL`.

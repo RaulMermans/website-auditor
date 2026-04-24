@@ -9,6 +9,15 @@ import {
 } from "@/server/audits/create-audit-job";
 import { dispatchAuditRun } from "@/server/audits/dispatch-audit-run";
 
+function getPostgresErrorCode(error: unknown) {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code?: unknown }).code;
+    return typeof code === "string" ? code : null;
+  }
+
+  return null;
+}
+
 function buildIntakeUrl(params: Record<string, string | undefined>) {
   const searchParams = new URLSearchParams();
 
@@ -40,6 +49,11 @@ export async function submitDomainAction(formData: FormData) {
     }
 
     if (error instanceof AuditJobEnqueueError) {
+      console.error("[intake] audit job enqueue failed", {
+        auditRunId: error.auditRunId,
+        error,
+      });
+
       redirect(
         buildIntakeUrl({
           error: error.message,
@@ -49,6 +63,13 @@ export async function submitDomainAction(formData: FormData) {
         })
       );
     }
+
+    console.error("[intake] failed to save audit request", {
+      code: getPostgresErrorCode(error),
+      hint:
+        "Verify Vercel DATABASE_URL points at the production Postgres database, then run DATABASE_URL=... npm run migrate:up.",
+      error,
+    });
 
     redirect(
       buildIntakeUrl({
