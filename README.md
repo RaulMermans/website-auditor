@@ -86,7 +86,7 @@ from the same request lifecycle with `after(...)`. There is no external worker U
 This checklist is still pending, not a report of current success. The deployed intake flow is currently failing at runtime, so the end-to-end Vercel smoke pass remains unresolved.
 
 App runtime envs:
-- Required: `DATABASE_URL`
+- Required: `DATABASE_URL` (canonical DB connection string used by both app runtime and migrations)
 - Optional: `PG_BOSS_SCHEMA` (defaults to `pgboss`), `BROWSER_DRIVER` (defaults to `playwright`), `BROWSER_USE_BASE_URL`, `BROWSER_USE_API_TOKEN`, `GEMINI_API_KEY`, `GEMINI_MODEL` (defaults to `gemini-2.5-flash`), `NEXT_PUBLIC_APP_URL`
 
 Vercel defaults are sufficient for the app deploy. No custom build override or `vercel.json` is required by the current repo.
@@ -99,7 +99,7 @@ Browser capture defaults to `@sparticuz/chromium` (Lambda-compatible binary) + `
    DATABASE_URL=postgres://... npm run migrate:up
    ```
 
-   This applies `0001` through `0004`, including the `page_snapshots`, `page_evidence`, `findings`, and `outreach_assets` tables expected by the current app code.
+   This applies every numbered SQL migration in `migrations/` in order (currently `0001` through `0008`). `POSTGRES_URL`, `DATABASE_URL_UNPOOLED`, and other provider helper variables are ignored unless their value is copied into `DATABASE_URL`.
 
 3. Once the runtime issue is resolved, submit a real domain on `/intake` in the Vercel app and capture the returned `auditRunId`.
 4. Expected success signals after the runtime issue is fixed:

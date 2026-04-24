@@ -1,10 +1,6 @@
 import process from "node:process";
-import {
-  runShot2Migration,
-  runShot3Migration,
-  runShot4Migration,
-  runShot6Migration,
-} from "./migration-helpers.mjs";
+import path from "node:path";
+import { runAllMigrations } from "./migration-helpers.mjs";
 
 const direction = process.argv[2];
 
@@ -13,29 +9,16 @@ if (direction !== "up" && direction !== "down") {
 }
 
 if (!process.env.DATABASE_URL) {
-  throw new Error("Missing DATABASE_URL");
+  throw new Error(
+    "Missing DATABASE_URL. Set DATABASE_URL to the target Postgres connection string; POSTGRES_URL and DATABASE_URL_UNPOOLED are not read by this app."
+  );
 }
 
 const url = process.env.DATABASE_URL;
 const cwd = process.cwd();
 
-if (direction === "up") {
-  await runShot2Migration({ direction, databaseUrl: url, cwd });
-  console.log(`Applied 0001_shot_2_domain_intake.up.sql`);
-  await runShot3Migration({ direction, databaseUrl: url, cwd });
-  console.log(`Applied 0002_shot_3_page_snapshots.up.sql`);
-  await runShot4Migration({ direction, databaseUrl: url, cwd });
-  console.log(`Applied 0003_shot_4_evidence_findings.up.sql`);
-  await runShot6Migration({ direction, databaseUrl: url, cwd });
-  console.log(`Applied 0004_shot_6_outreach_assets.up.sql`);
-} else {
-  // Roll back in reverse order
-  await runShot6Migration({ direction, databaseUrl: url, cwd });
-  console.log(`Applied 0004_shot_6_outreach_assets.down.sql`);
-  await runShot4Migration({ direction, databaseUrl: url, cwd });
-  console.log(`Applied 0003_shot_4_evidence_findings.down.sql`);
-  await runShot3Migration({ direction, databaseUrl: url, cwd });
-  console.log(`Applied 0002_shot_3_page_snapshots.down.sql`);
-  await runShot2Migration({ direction, databaseUrl: url, cwd });
-  console.log(`Applied 0001_shot_2_domain_intake.down.sql`);
+const applied = await runAllMigrations({ direction, databaseUrl: url, cwd });
+
+for (const filePath of applied) {
+  console.log(`Applied ${path.basename(filePath)}`);
 }

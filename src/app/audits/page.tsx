@@ -7,6 +7,46 @@ import type { AuditStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
+interface AuditRunsLoadResult {
+  runs: AuditRunListItem[];
+  errorMessage: string | null;
+}
+
+function getPostgresErrorCode(error: unknown) {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code?: unknown }).code;
+    return typeof code === "string" ? code : null;
+  }
+
+  return null;
+}
+
+async function loadRecentAuditRuns(): Promise<AuditRunsLoadResult> {
+  try {
+    return {
+      runs: await listRecentAuditRuns(50),
+      errorMessage: null,
+    };
+  } catch (error) {
+    const code = getPostgresErrorCode(error);
+    const schemaError = code === "42703" || code === "42P01";
+
+    console.error("[audits] failed to list audit runs", {
+      code,
+      hint:
+        "Verify Vercel DATABASE_URL points at the production Postgres database, then run DATABASE_URL=... npm run migrate:up.",
+      error,
+    });
+
+    return {
+      runs: [],
+      errorMessage: schemaError
+        ? "Audit runs could not load because the configured database schema is missing expected tables or columns. Verify DATABASE_URL points at the intended production database, then run the production migrations."
+        : "Audit runs could not load. Check Vercel function logs for [audits] failed to list audit runs.",
+    };
+  }
+}
+
 function formatDate(date: Date | null) {
   if (!date) return "—";
 
@@ -273,7 +313,7 @@ const secondaryLinkStyle: React.CSSProperties = {
 };
 
 export default async function AuditsPage() {
-  const runs = await listRecentAuditRuns(50);
+  const { runs, errorMessage } = await loadRecentAuditRuns();
   const readyCount = runs.filter((run) => run.status === "complete").length;
   const inProgressCount = runs.filter((run) =>
     ["pending", "discovering", "capturing", "analyzing"].includes(run.status)
@@ -368,7 +408,22 @@ export default async function AuditsPage() {
           </div>
         </section>
 
-        {runs.length === 0 ? (
+        {errorMessage ? (
+          <section
+            style={{
+              padding: 32,
+              background: "#fff",
+              border: "1px solid #fecaca",
+              borderRadius: 18,
+              color: "#991b1b",
+            }}
+          >
+            <h2 style={{ margin: "0 0 8px", color: "#7f1d1d", fontSize: "1.1rem" }}>
+              Audit runs unavailable
+            </h2>
+            <p style={{ margin: 0 }}>{errorMessage}</p>
+          </section>
+        ) : runs.length === 0 ? (
           <section
             style={{
               padding: 32,

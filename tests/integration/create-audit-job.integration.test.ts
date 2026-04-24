@@ -3,11 +3,7 @@ import { Client } from "pg";
 import { createAuditJob } from "@/server/audits/create-audit-job";
 import { resetDbPool } from "@/db/client";
 import { stopQueueClient } from "@/server/contracts/queue";
-import {
-  runShot2Migration,
-  runShot3Migration,
-  runShot4Migration,
-} from "../../scripts/migration-helpers.mjs";
+import { runAllMigrations } from "../../scripts/migration-helpers.mjs";
 
 const databaseUrl = process.env.DATABASE_URL;
 const pgBossSchema = process.env.PG_BOSS_SCHEMA;
@@ -35,13 +31,8 @@ describe("Shot 2 integration: createAuditJob", () => {
   beforeAll(async () => {
     await stopQueueClient();
     await resetDbPool();
-    await runShot4Migration({ direction: "down", databaseUrl }).catch(() => {});
-    // Tear down fully before applying fresh
-    await runShot3Migration({ direction: "down", databaseUrl }).catch(() => {});
-    await runShot2Migration({ direction: "down", databaseUrl }).catch(() => {});
-    await runShot2Migration({ direction: "up", databaseUrl });
-    await runShot3Migration({ direction: "up", databaseUrl });
-    await runShot4Migration({ direction: "up", databaseUrl });
+    await runAllMigrations({ direction: "down", databaseUrl }).catch(() => {});
+    await runAllMigrations({ direction: "up", databaseUrl });
   });
 
   afterAll(async () => {
@@ -52,9 +43,7 @@ describe("Shot 2 integration: createAuditJob", () => {
       await client.query(`DROP SCHEMA IF EXISTS "${pgBossSchema}" CASCADE`);
     });
 
-    await runShot4Migration({ direction: "down", databaseUrl }).catch(() => {});
-    await runShot3Migration({ direction: "down", databaseUrl }).catch(() => {});
-    await runShot2Migration({ direction: "down", databaseUrl });
+    await runAllMigrations({ direction: "down", databaseUrl });
   });
 
   it("applies the real migration, persists rows, and enqueues a real pg-boss job", async () => {
