@@ -314,31 +314,31 @@ export const reportRepository: ReportRepository = {
       const findingsResult = await client.query<FindingRow>(
         `
           SELECT
-            id,
-            audit_run_id,
-            page_snapshot_id,
-            category,
-            title,
-            description,
-            severity,
-            confidence,
-            evidence_level,
-            evidence_ref,
-            claim_posture,
-            support_type,
-            evaluator_status,
-            evaluator_notes,
-            recommendation,
-            review_status,
-            review_reason,
-            created_at
+            f.id,
+            f.audit_run_id,
+            f.page_snapshot_id,
+            f.category,
+            f.title,
+            f.description,
+            f.severity,
+            f.confidence,
+            f.evidence_level,
+            f.evidence_ref,
+            f.claim_posture,
+            f.support_type,
+            f.evaluator_status,
+            f.evaluator_notes,
+            f.recommendation,
+            f.review_status,
+            f.review_reason,
+            f.created_at
           FROM findings f
           JOIN page_snapshots ps ON ps.id = f.page_snapshot_id
           WHERE f.audit_run_id = $1
             AND f.evaluator_status = 'accepted'
             AND f.review_status = 'accepted'
             AND ps.page_state = 'accepted'
-          ORDER BY category, severity, created_at
+          ORDER BY f.category, f.severity, f.created_at
         `,
         [auditRunId]
       );
