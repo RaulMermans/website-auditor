@@ -27,9 +27,9 @@ export const EVIDENCE_COLORS: Record<Finding["evidenceLevel"], string> = {
 
 export const REVIEW_STATE_META = {
   inspected_clean: {
-    label: "Inspected and clean",
+    label: "Inspected — no material issue surfaced",
     description:
-      "Meaningful deterministic checks ran here and no prioritized issues surfaced in this pass.",
+      "No material issue surfaced in the inspected signals for this pass. This reflects inspection scope, not a definitive clean result.",
     background: "#f0fdf4",
     border: "#86efac",
     text: "#166534",

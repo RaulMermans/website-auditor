@@ -202,9 +202,9 @@ function buildCategoryReview(
       observedChecks,
       expectedChecks,
       reviewState: "inspected_clean",
-      headline: "Inspected and clean",
+      headline: "No material issue surfaced",
       summary:
-        `No prioritized issues surfaced across ${observedChecks}/${expectedChecks} deterministic checks in this pass. That is a clean inspected result within the covered signals, not a blanket guarantee beyond them.`,
+        `No material issue surfaced across ${observedChecks}/${expectedChecks} deterministic checks in this pass. This reflects what was checked, not a definitive clean result beyond those signals.`,
     };
   }
 

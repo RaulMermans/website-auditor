@@ -17,6 +17,7 @@ import {
   type FullReportFinding,
   type FullReportFindingGroup,
 } from "@/server/audits/build-full-report";
+import { PrintButton } from "@/app/report/print-button";
 
 interface BadgePresentation {
   label: string;
@@ -442,6 +443,13 @@ export default async function ReportPage({
         padding: "40px 24px 72px",
       }}
     >
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          @page { margin: 2cm 1.5cm; size: A4; }
+          body { font-size: 10.5pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+      `}</style>
       <div style={{ maxWidth: 1120, margin: "0 auto", display: "grid", gap: 24 }}>
         <section
           id="overview"
@@ -484,13 +492,28 @@ export default async function ReportPage({
               </p>
             </div>
 
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div className="no-print" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <Link href="/audits" style={secondaryLinkStyle}>
                 Back to audits
               </Link>
-              <Link href={`/report/${auditRunId}/full`} style={primaryLinkStyle}>
-                Open full report
+              <Link href={`/report/${auditRunId}/full`} style={secondaryLinkStyle}>
+                Full report
               </Link>
+              <PrintButton
+                style={{
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "10px 14px",
+                  borderRadius: 999,
+                  background: "#0f172a",
+                  color: "#fff",
+                  border: "1px solid #0f172a",
+                  fontSize: "0.84rem",
+                  fontWeight: 800,
+                }}
+              />
             </div>
           </div>
 
@@ -521,6 +544,32 @@ export default async function ReportPage({
                 Homepage-only scope
               </span>
             )}
+          </div>
+
+          {/* Coverage & Limitations callout */}
+          <div
+            style={{
+              marginBottom: 18,
+              padding: "14px 16px",
+              borderRadius: 14,
+              background: "#fef9c3",
+              border: "1px solid #fde047",
+              color: "#713f12",
+              fontSize: "0.88rem",
+              lineHeight: 1.6,
+            }}
+          >
+            <strong>Coverage note:</strong>{" "}
+            This report reflects deterministic signals from the captured page set only.
+            Categories with insufficient evidence are treated as unknown, not clean.
+            Scores apply only to inspected categories.{" "}
+            <Link
+              href={`/report/${auditRunId}/full#appendix`}
+              className="no-print"
+              style={{ color: "#92400e", fontWeight: 700 }}
+            >
+              See full evidence notes →
+            </Link>
           </div>
 
           <div
@@ -581,6 +630,7 @@ export default async function ReportPage({
           </div>
 
           <nav
+            className="no-print"
             style={{
               display: "flex",
               gap: 10,

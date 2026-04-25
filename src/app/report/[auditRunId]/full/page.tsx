@@ -12,8 +12,120 @@ import {
 } from "@/lib/report-presentation";
 import {
   buildFullReportData,
+  type FullReportData,
   type FullReportFindingGroup,
 } from "@/server/audits/build-full-report";
+import { PrintButton } from "@/app/report/print-button";
+
+const printCss = `
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  @page { margin: 2cm 1.5cm; size: A4; }
+  body { font-size: 10.5pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  article { max-width: 100% !important; }
+`;
+
+const screenCss = `
+  .print-only { display: none; }
+`;
+
+function buildAiContextPack(
+  auditRunId: string,
+  fullReport: FullReportData,
+  completedAt: Date | null
+): string {
+  const lines: string[] = [];
+  const ruler = "=".repeat(50);
+  const dash = "-".repeat(40);
+
+  lines.push("WEBSITE AUDIT — AI CONTEXT PACK");
+  lines.push(ruler);
+  lines.push(`Run ID   : ${auditRunId}`);
+  lines.push(`Target   : ${fullReport.domain}`);
+  lines.push(`Completed: ${completedAt ? new Date(completedAt).toUTCString() : "unknown"}`);
+  lines.push(`Scope    : ${fullReport.appendix.scopeNote}`);
+  lines.push("");
+
+  lines.push("COVERAGE SUMMARY");
+  lines.push(dash);
+  lines.push(fullReport.executiveSummary.inspectionFrame);
+  lines.push("");
+  for (const note of fullReport.appendix.inspectionNotes) {
+    lines.push(`  • ${note}`);
+  }
+  lines.push("");
+
+  lines.push("OVERALL SCORE");
+  lines.push(dash);
+  lines.push(`Score: ${fullReport.scoreSummary.overall}/100`);
+  lines.push(
+    "Note: score reflects only inspected categories. Max attainable is 92 (not 100). " +
+    "Uninspected areas contribute 0 and do not raise the score."
+  );
+  lines.push("");
+
+  const topN = fullReport.topPriorities.slice(0, 6);
+  lines.push(`TOP FINDINGS (${topN.length} of ${fullReport.topPriorities.length} shown)`);
+  lines.push(dash);
+  if (topN.length === 0) {
+    lines.push("No prioritized findings were generated in this pass.");
+  } else {
+    topN.forEach((f, i) => {
+      lines.push(
+        `${i + 1}. [${f.severity.toUpperCase()} | ${f.evidenceLevel} | ${f.claimLabel}] ${f.categoryLabel}: ${f.title}`
+      );
+      lines.push(`   What: ${f.summary}`);
+      lines.push(`   Risk: ${f.risk}`);
+      lines.push(`   Next: ${f.nextStep}`);
+      lines.push("");
+    });
+  }
+
+  lines.push("KEY RECOMMENDATIONS");
+  lines.push(dash);
+  lines.push("Quick wins:");
+  for (const item of fullReport.nextActions.quickWins) lines.push(`  • ${item}`);
+  lines.push("Medium priority:");
+  for (const item of fullReport.nextActions.mediumPriority) lines.push(`  • ${item}`);
+  lines.push("Strategic:");
+  for (const item of fullReport.nextActions.strategic) lines.push(`  • ${item}`);
+  lines.push("");
+
+  lines.push("EVIDENCE SUMMARY");
+  lines.push(dash);
+  const ev = fullReport.appendix.evidenceCounts;
+  lines.push(
+    `Measured: ${ev.Measured} | Observed: ${ev.Observed} | Inferred: ${ev.Inferred}`
+  );
+  lines.push(
+    "Measured = direct DOM/metric capture. Observed = visible pattern. Inferred = directional inference."
+  );
+  lines.push("");
+
+  lines.push("CONFIDENCE & LIMITATIONS");
+  lines.push(dash);
+  lines.push(
+    "• 'No issue surfaced' means no issue was found in the signals checked — not that the area is definitively clean."
+  );
+  lines.push(
+    "• Inferred findings are inference-backed directional risks, not confirmed defects."
+  );
+  lines.push(
+    "• This audit covers specific deterministic signals; dynamic behavior, auth-gated pages, and full content were not assessed."
+  );
+  lines.push("");
+
+  lines.push("HOW TO USE THIS PACK");
+  lines.push(dash);
+  lines.push(
+    "Upload this PDF into a new ChatGPT (or similar) conversation to provide full audit context. " +
+    "You can then ask follow-up questions about specific findings, prioritize fixes, or draft " +
+    "implementation plans. Do not treat scores as absolute benchmarks — use them as relative " +
+    "signals within this inspection scope."
+  );
+
+  return lines.join("\n");
+}
 
 function renderStatList(items: string[], emptyLabel: string) {
   if (items.length === 0) {
@@ -371,6 +483,7 @@ export default async function FullReportPage({
   }
 
   const fullReport = buildFullReportData(data);
+  const aiContextPack = buildAiContextPack(auditRunId, fullReport, data.auditRun.completedAt);
 
   return (
     <main
@@ -381,6 +494,8 @@ export default async function FullReportPage({
         padding: "48px 24px 80px",
       }}
     >
+      <style>{printCss}</style>
+      <style media="screen">{screenCss}</style>
       <article
         style={{
           maxWidth: 980,
@@ -390,6 +505,44 @@ export default async function FullReportPage({
           lineHeight: 1.65,
         }}
       >
+        {/* AI Context Pack — hidden on screen, visible when printing */}
+        <div
+          className="print-only"
+          style={{
+            marginBottom: 32,
+            padding: "18px 22px",
+            borderRadius: 12,
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <p
+            style={{
+              margin: "0 0 8px",
+              fontSize: "0.7rem",
+              fontWeight: 700,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "#475569",
+              fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+            }}
+          >
+            AI Context Pack — portable audit context for ChatGPT / LLM upload
+          </p>
+          <pre
+            style={{
+              margin: 0,
+              fontSize: "0.72rem",
+              lineHeight: 1.6,
+              color: "#1f2937",
+              whiteSpace: "pre-wrap",
+              fontFamily: 'ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace',
+            }}
+          >
+            {aiContextPack}
+          </pre>
+        </div>
+
         <header
           style={{
             marginBottom: 32,
@@ -445,6 +598,7 @@ export default async function FullReportPage({
             </div>
 
             <div
+              className="no-print"
               style={{
                 display: "flex",
                 gap: 12,
@@ -481,6 +635,19 @@ export default async function FullReportPage({
               >
                 Start reading
               </a>
+              <PrintButton
+                style={{
+                  cursor: "pointer",
+                  padding: "10px 14px",
+                  borderRadius: 999,
+                  border: "1px solid #0f172a",
+                  color: "#fff",
+                  fontWeight: 700,
+                  background: "#0f172a",
+                  fontSize: "0.84rem",
+                  fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+                }}
+              />
             </div>
           </div>
 
@@ -550,6 +717,7 @@ export default async function FullReportPage({
           </div>
 
           <nav
+            className="no-print"
             style={{
               marginTop: 22,
               display: "flex",
@@ -590,6 +758,7 @@ export default async function FullReportPage({
 
         <section
           id="reader-guide"
+          className="no-print"
           style={{
             marginBottom: 34,
             display: "grid",
@@ -907,7 +1076,7 @@ export default async function FullReportPage({
                       'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                   }}
                 >
-                  Inspected and clean
+                  No material issue surfaced
                 </p>
                 <p style={{ margin: 0, color: "#166534" }}>
                   {fullReport.scoreSummary.inspectedCleanCategories.length > 0

@@ -33,21 +33,21 @@ const CATEGORY_IMPACT_NOTES: Record<FindingCategory, string> = {
 
 const CLEAN_CATEGORY_NOTES: Record<FindingCategory, string> = {
   performance:
-    "The deterministic pass did not surface material performance warnings in the inspected signals.",
+    "No material performance issue surfaced in the inspected signals for this pass. Signals outside the captured scope were not assessed.",
   technical_seo:
-    "Core search-facing hygiene looked stable in the inspected HTML and structural signals.",
+    "No material search-facing issue surfaced in the inspected HTML and structural signals for this pass.",
   accessibility:
-    "The captured accessibility checks did not surface material issues in the current pass.",
+    "No material accessibility issue surfaced in the captured checks for this pass. Full WCAG coverage was not assessed.",
   ux_ui:
-    "The inspected structural signals did not indicate clear scan-flow or layout hierarchy problems.",
+    "No clear scan-flow or layout hierarchy issue surfaced in the inspected structural signals for this pass.",
   messaging_content:
-    "The inspected messaging signals did not surface a clear clarity or positioning problem in the current pass.",
+    "No clear clarity or positioning issue surfaced in the inspected messaging signals for this pass.",
   conversion:
-    "The inspected conversion signals did not reveal a strong next-step or form-friction issue.",
+    "No strong next-step or form-friction issue surfaced in the inspected conversion signals for this pass.",
   trust_signals:
-    "The inspected trust layer did not surface a material reassurance gap in the current pass.",
+    "No material reassurance gap surfaced in the inspected trust signals for this pass.",
   mobile_experience:
-    "The inspected mobile-oriented signals did not reveal an obvious small-screen problem in the current pass.",
+    "No obvious small-screen issue surfaced in the inspected mobile-oriented signals for this pass.",
 };
 
 const STRATEGIC_LENSES: Array<{
@@ -233,7 +233,7 @@ function groupFindingsByClaimPosture(findings: FullReportFinding[]) {
 
 function describeOverallCondition(score: number) {
   if (score >= 85) {
-    return "shows a comparatively disciplined foundation in the inspected areas, with targeted weaknesses rather than broad structural friction";
+    return "shows a comparatively disciplined foundation within the inspected signals for this pass, with targeted weaknesses rather than broad structural friction — uninspected areas are not reflected in this score";
   }
 
   if (score >= 70) {
@@ -261,7 +261,7 @@ function getInspectionLabel(review: ReportCategoryReview) {
   }
 
   if (review.reviewState === "inspected_clean") {
-    return "Inspected and clean";
+    return "No material issue surfaced";
   }
 
   return "Inspected with prioritized findings";
@@ -404,7 +404,7 @@ function buildExecutiveSummary(
   categorySections: FullReportCategorySection[]
 ) {
   const inspectedCleanCategories = categorySections
-    .filter((section) => section.inspectionLabel === "Inspected and clean")
+    .filter((section) => section.inspectionLabel === "No material issue surfaced")
     .map((section) => section.label);
   const whatIsWorking =
     inspectedCleanCategories.length > 0
@@ -549,7 +549,7 @@ export function buildFullReportData(data: ReportData): FullReportData {
     };
   });
   const inspectedCleanCategories = categorySections
-    .filter((section) => section.inspectionLabel === "Inspected and clean")
+    .filter((section) => section.inspectionLabel === "No material issue surfaced")
     .map((section) => section.label);
   const lightlyInspectedCategories = categorySections
     .filter((section) => section.inspectionStatus === "lightly_inspected")
@@ -637,7 +637,7 @@ export function buildFullReportData(data: ReportData): FullReportData {
       evidenceCounts,
       severityCounts,
       inspectionNotes: [
-        `Inspected and clean: ${inspectedCleanCategories.length > 0 ? joinLabels(inspectedCleanCategories) : "none"}.`,
+        `No material issue surfaced: ${inspectedCleanCategories.length > 0 ? joinLabels(inspectedCleanCategories) : "none"}.`,
         `Lightly inspected: ${lightlyInspectedCategories.length > 0 ? joinLabels(lightlyInspectedCategories) : "none"}.`,
         `Not fully assessed / insufficient evidence: ${insufficientEvidenceCategories.length > 0 ? joinLabels(insufficientEvidenceCategories) : "none"}.`,
       ],
