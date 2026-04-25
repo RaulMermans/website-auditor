@@ -32,7 +32,7 @@ const screenCss = `
 function buildAiContextPack(
   auditRunId: string,
   fullReport: FullReportData,
-  completedAt: Date | null
+  completedAt: Date | null | undefined
 ): string {
   const lines: string[] = [];
   const ruler = "=".repeat(50);
