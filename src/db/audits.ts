@@ -34,6 +34,7 @@ interface AuditRunRow {
   failure_kind: AuditFailureKind | null;
   failure_stage: AuditFailureStage | null;
   failure_details: AuditFailureDetails | null;
+  limitation_note: string | null;
   created_at: Date;
 }
 
@@ -87,6 +88,7 @@ export interface UpdateAuditRunStatusInput {
   failureKind?: AuditFailureKind | null;
   failureStage?: AuditFailureStage | null;
   failureDetails?: AuditFailureDetails | null;
+  limitationNote?: string | null;
 }
 
 export interface InsertPageSnapshotInput {
@@ -113,7 +115,7 @@ export interface CompletePageSnapshotCaptureInput {
   pageSnapshotId: string;
   url: string;
   htmlStorageKey: string;
-  screenshotStorageKey: string;
+  screenshotStorageKey?: string | null;
   retryCount?: number;
   capturedAt?: Date;
 }
@@ -151,6 +153,7 @@ function mapAuditRun(row: AuditRunRow): AuditRun {
     failureKind: row.failure_kind,
     failureStage: row.failure_stage,
     failureDetails: row.failure_details,
+    limitationNote: row.limitation_note,
     createdAt: row.created_at,
   };
 }
@@ -239,6 +242,7 @@ export const auditJobRepository: AuditJobRepository = {
             failure_kind,
             failure_stage,
             failure_details,
+            limitation_note,
             created_at
         `,
         [auditRunId, projectId ?? null, targetDomainRow.id, now]
@@ -267,6 +271,7 @@ export const auditJobRepository: AuditJobRepository = {
             failure_kind,
             failure_stage,
             failure_details,
+            limitation_note,
             created_at
           FROM audit_runs
           WHERE id = $1
@@ -349,6 +354,7 @@ export const auditJobRepository: AuditJobRepository = {
     failureKind,
     failureStage,
     failureDetails,
+    limitationNote,
   }) {
     await withDbClient(async (client) => {
       const completed = status === "complete" || status === "failed" ? new Date() : null;
@@ -381,7 +387,8 @@ export const auditJobRepository: AuditJobRepository = {
                 WHEN $8::timestamptz IS NOT NULL THEN $8::timestamptz
                 WHEN $2 IN ('complete', 'failed') THEN completed_at
                 ELSE NULL
-              END
+              END,
+              limitation_note = COALESCE($9::text, limitation_note)
           WHERE id = $1
         `,
         [
@@ -393,6 +400,7 @@ export const auditJobRepository: AuditJobRepository = {
           failureStage ?? null,
           failureDetails ? JSON.stringify(failureDetails) : null,
           completed,
+          limitationNote ?? null,
         ]
       );
     });

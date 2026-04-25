@@ -29,6 +29,7 @@ export interface AuditFailureDetails {
     | "dns_error"
     | "navigation_timeout"
     | "browser_launch"
+    | "rendering_failed"
     | "analysis_exception"
     | "unknown";
   retryable?: boolean;
@@ -118,6 +119,7 @@ export interface AuditRun {
   failureKind?: AuditFailureKind | null;
   failureStage?: AuditFailureStage | null;
   failureDetails?: AuditFailureDetails | null;
+  limitationNote?: string | null;
   createdAt: Date;
 }
 

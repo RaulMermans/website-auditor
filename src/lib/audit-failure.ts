@@ -59,6 +59,14 @@ const BROWSER_LAUNCH_PATTERNS = [
   /\bexecutable doesn't exist\b/i,
 ];
 
+const RENDER_FAILURE_PATTERNS = [
+  /\bscreenshot.*timed? ?out\b/i,
+  /\bpage.*crash(?:ed)?\b/i,
+  /\btarget closed\b/i,
+  /\bcontext.*destroy\b/i,
+  /\brender.*fail\b/i,
+];
+
 const MAX_FAILURE_MESSAGE_LENGTH = 280;
 
 export interface ClassifiedAuditFailure {
@@ -272,6 +280,20 @@ export function classifyAuditFailure(
         source: "network",
         marker: "navigation_timeout",
         retryable: true,
+      }
+    );
+  }
+
+  if (hasPattern(message, RENDER_FAILURE_PATTERNS)) {
+    return buildFailure(
+      "runtime_error",
+      input.stage,
+      "Page rendering or screenshot capture failed. HTML evidence may still be available from a static fetch.",
+      {
+        ...toFailureDetails(input),
+        source: "runtime",
+        marker: "rendering_failed",
+        retryable: false,
       }
     );
   }

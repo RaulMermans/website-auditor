@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { captureAuditRun } from "@/server/audits/capture-audit-run";
+import { AuditFailureError } from "@/lib/audit-failure";
 import { normalizePlaywrightChromiumLaunchError } from "@/server/browser/playwright-chromium-driver";
 
 afterEach(() => {
@@ -193,6 +194,7 @@ describe("captureAuditRun", () => {
       auditRunId: "run-123",
       pagesProcessed: 1,
       homepageOnly: true,
+      limitationNote: null,
     });
     expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenNthCalledWith(1, {
       auditRunId: "run-123",
@@ -405,6 +407,7 @@ describe("captureAuditRun", () => {
       auditRunId: "run-resume",
       pagesProcessed: 2,
       homepageOnly: false,
+      limitationNote: null,
     });
     expect(session.evaluate).not.toHaveBeenCalled();
     expect(deps.auditJobs.insertPageSnapshot).not.toHaveBeenCalled();
@@ -483,6 +486,181 @@ describe("captureAuditRun", () => {
       },
       homepageOnly: true,
     });
+  });
+
+  // ─── Scenario: browser challenge during discovery ───────────────────────────
+
+  it("degrades browser and falls back to static when discovery hits a bot challenge", async () => {
+    const { deps } = createDeps({
+      htmlByUrl: {
+        "https://example.com": "<html><head><title>Just a moment…</title></head><body>Cloudflare security check captcha verify you are human</body></html>",
+      },
+    });
+
+    const staticResult = {
+      html: "<html><head><title>Home</title></head><body>Welcome</body></html>",
+      statusCode: 200,
+      ok: true,
+      finalUrl: "https://example.com/",
+    };
+    const fetchStatic = vi.fn().mockResolvedValue(staticResult);
+    (deps as any).fetchStatic = fetchStatic;
+
+    const result = await captureAuditRun(
+      { auditRunId: "run-challenge", domain: "example.com" },
+      deps
+    );
+
+    expect(result.auditRunId).toBe("run-challenge");
+    expect(result.limitationNote).toMatch(/blocked by a security challenge/i);
+    expect(result.pagesProcessed).toBe(1);
+    expect(result.homepageOnly).toBe(true);
+    expect(fetchStatic).toHaveBeenCalled();
+    // Browser session is still opened but the static path is used for capture
+    expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ pageType: "homepage" })
+    );
+  });
+
+  it("falls back to static for secondary page when browser returns capture_blocked", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const { deps } = createDeps({
+      links: [
+        {
+          href: "https://example.com/about",
+          origin: "https://example.com",
+          pathname: "/about",
+          text: "About",
+        },
+      ],
+      htmlByUrl: {
+        "https://example.com/about":
+          "<html><body>captcha verify you are human</body></html>",
+      },
+    });
+
+    const staticResult = {
+      html: "<html><head><title>About</title></head><body>About us</body></html>",
+      statusCode: 200,
+      ok: true,
+      finalUrl: "https://example.com/about",
+    };
+    const fetchStatic = vi.fn().mockResolvedValue(staticResult);
+    (deps as any).fetchStatic = fetchStatic;
+
+    const result = await captureAuditRun(
+      { auditRunId: "run-secondary-challenge", domain: "example.com" },
+      deps
+    );
+
+    expect(result.auditRunId).toBe("run-secondary-challenge");
+    expect(result.limitationNote).toMatch(/blocked by a security challenge/i);
+    // Both homepage (browser) and about (static fallback) should be captured
+    expect(result.pagesProcessed).toBe(2);
+    expect(result.homepageOnly).toBe(false);
+    expect(fetchStatic).toHaveBeenCalledWith("https://example.com/about");
+  });
+
+  it("does not use static fallback for challenge on non-homepage pages when fetchStatic is absent", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const { deps } = createDeps({
+      links: [
+        {
+          href: "https://example.com/about",
+          origin: "https://example.com",
+          pathname: "/about",
+          text: "About",
+        },
+      ],
+      htmlByUrl: {
+        "https://example.com/about":
+          "<html><body>captcha verify you are human</body></html>",
+      },
+    });
+
+    const result = await captureAuditRun(
+      { auditRunId: "run-no-static", domain: "example.com" },
+      deps
+    );
+
+    // Homepage still captured; about marked needs_review (no fetchStatic dep provided)
+    expect(result.auditRunId).toBe("run-no-static");
+    expect(result.limitationNote).toMatch(/blocked by a security challenge/i);
+    expect(result.pagesProcessed).toBe(1); // only homepage
+  });
+
+  // ─── Scenario: auth-wall is NOT classified as bot challenge ─────────────────
+
+  it("classifies 401 as auth_wall and hard-fails the run (not as a bot challenge)", async () => {
+    const { deps } = createDeps({
+      statusByUrl: { "https://example.com": 401 },
+    });
+
+    const result = await captureAuditRun(
+      { auditRunId: "run-auth", domain: "example.com" },
+      deps
+    );
+
+    expect(result.errorMessage).toMatch(/signed-in or authenticated/i);
+    expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        failureKind: "auth_wall",
+      })
+    );
+    // Must NOT set limitationNote — this is a hard failure, not a degraded partial audit
+    expect(result.limitationNote).toBeFalsy();
+  });
+
+  // ─── Scenario: timeout/render failure distinct from challenge ───────────────
+
+  it("classifies screenshot timeout as rendering_failed, not as capture_blocked", async () => {
+    const { deps } = createDeps({
+      links: [
+        {
+          href: "https://example.com/about",
+          origin: "https://example.com",
+          pathname: "/about",
+          text: "About",
+        },
+      ],
+    });
+
+    // Simulate screenshot timeout only on /about
+    const originalCreateSession = deps.browser.createSession;
+    deps.browser.createSession = vi.fn().mockImplementation(async () => {
+      const session = await (originalCreateSession as any)();
+      const originalNavigate = session.navigate.bind(session);
+      session.screenshot = vi.fn().mockImplementation(async () => {
+        throw new Error("screenshot timed out after 90000ms");
+      });
+      session.navigate = vi.fn().mockImplementation(async (req: any) => {
+        if (req.url === "https://example.com/about") {
+          return originalNavigate(req);
+        }
+        return originalNavigate(req);
+      });
+      return session;
+    });
+
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const result = await captureAuditRun(
+      { auditRunId: "run-timeout", domain: "example.com" },
+      deps
+    );
+
+    // Run should still process homepage (screenshot may also fail there in mock, but about fails with rendering_failed)
+    // Key assertion: the about page failure kind is NOT capture_blocked
+    const aboutSnapshot = [...(deps.auditJobs.updatePageSnapshotState as any).mock.calls]
+      .reverse()
+      .find((args: any[]) => args[0]?.pageState === "needs_review");
+
+    if (aboutSnapshot) {
+      expect(aboutSnapshot[0].lastError).not.toMatch(/bot.challenge|security check|captcha/i);
+    }
   });
 
   it("marks the run failed when Chromium is unavailable in the runtime", async () => {

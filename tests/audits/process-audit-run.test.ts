@@ -89,11 +89,13 @@ describe("processAuditRun", () => {
       status: "complete",
       homepageOnly: true,
       failureReason: null,
+      limitationNote: null,
     });
     expect(result).toEqual({
       auditRunId: "run-123",
       pagesProcessed: 1,
       homepageOnly: true,
+      limitationNote: null,
     });
   });
 
@@ -163,6 +165,7 @@ describe("processAuditRun", () => {
       auditRunId: "run-123",
       pagesProcessed: 2,
       homepageOnly: false,
+      limitationNote: null,
     });
   });
 
@@ -285,6 +288,7 @@ describe("processAuditRun", () => {
       status: "complete",
       homepageOnly: true,
       failureReason: null,
+      limitationNote: null,
     });
   });
 

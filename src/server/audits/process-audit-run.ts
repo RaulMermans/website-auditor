@@ -72,6 +72,7 @@ export async function processAuditRun(
   deps: ProcessAuditRunDeps = defaultDeps
 ): Promise<AuditCaptureResult> {
   let progress: AuditRunProgress | null = null;
+  let limitationNote: string | null = null;
 
   try {
     progress = await deps.auditJobs.getAuditRunProgress(request.auditRunId);
@@ -83,6 +84,7 @@ export async function processAuditRun(
         return captureResult;
       }
 
+      limitationNote = captureResult.limitationNote ?? null;
       progress = await deps.auditJobs.getAuditRunProgress(request.auditRunId);
     }
 
@@ -104,9 +106,10 @@ export async function processAuditRun(
       status: "complete",
       homepageOnly: result.homepageOnly,
       failureReason: null,
+      limitationNote,
     });
 
-    return result;
+    return { ...result, limitationNote };
   } catch (error) {
     progress = await deps.auditJobs.getAuditRunProgress(request.auditRunId).catch(() => progress);
     const failure = toAuditFailure(error, {

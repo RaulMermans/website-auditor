@@ -39,6 +39,7 @@ interface AuditRunWithDomainRow {
   failure_kind: AuditFailureKind | null;
   failure_stage: AuditFailureStage | null;
   failure_details: AuditFailureDetails | null;
+  limitation_note: string | null;
   created_at: Date;
   domain: string;
 }
@@ -121,6 +122,7 @@ function mapAuditRun(row: AuditRunWithDomainRow): AuditRun {
     failureKind: row.failure_kind,
     failureStage: row.failure_stage,
     failureDetails: row.failure_details,
+    limitationNote: row.limitation_note,
     createdAt: row.created_at,
   };
 }
@@ -299,6 +301,7 @@ export const reportRepository: ReportRepository = {
             ar.failure_kind,
             ar.failure_stage,
             ar.failure_details,
+            ar.limitation_note,
             ar.created_at,
             td.domain
           FROM audit_runs ar
