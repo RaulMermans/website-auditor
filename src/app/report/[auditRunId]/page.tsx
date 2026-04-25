@@ -500,6 +500,7 @@ export default async function ReportPage({
                 Full report
               </Link>
               <PrintButton
+                auditRunId={auditRunId}
                 style={{
                   cursor: "pointer",
                   display: "inline-flex",

@@ -1,9 +1,17 @@
-"use client";
-
-export function PrintButton({ style }: { style?: React.CSSProperties }) {
+export function PrintButton({
+  auditRunId,
+  style,
+}: {
+  auditRunId: string;
+  style?: React.CSSProperties;
+}) {
   return (
-    <button type="button" onClick={() => window.print()} style={style}>
+    <a
+      href={`/api/reports/${auditRunId}/pdf`}
+      download
+      style={{ textDecoration: "none", ...style }}
+    >
       Download PDF
-    </button>
+    </a>
   );
 }
