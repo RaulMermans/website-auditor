@@ -356,19 +356,19 @@ export const auditJobRepository: AuditJobRepository = {
         `
           UPDATE audit_runs
           SET status = $2,
-              homepage_only = COALESCE($3, homepage_only),
+              homepage_only = COALESCE($3::boolean, homepage_only),
               failure_reason = CASE
-                WHEN $4 IS NOT NULL THEN $4
+                WHEN $4::text IS NOT NULL THEN $4::text
                 WHEN $2 = 'failed' THEN failure_reason
                 ELSE NULL
               END,
               failure_kind = CASE
-                WHEN $5 IS NOT NULL THEN $5
+                WHEN $5::text IS NOT NULL THEN $5::text
                 WHEN $2 = 'failed' THEN failure_kind
                 ELSE NULL
               END,
               failure_stage = CASE
-                WHEN $6 IS NOT NULL THEN $6
+                WHEN $6::text IS NOT NULL THEN $6::text
                 WHEN $2 = 'failed' THEN failure_stage
                 ELSE NULL
               END,
@@ -378,7 +378,7 @@ export const auditJobRepository: AuditJobRepository = {
                 ELSE NULL
               END,
               completed_at = CASE
-                WHEN $8 IS NOT NULL THEN $8
+                WHEN $8::timestamptz IS NOT NULL THEN $8::timestamptz
                 WHEN $2 IN ('complete', 'failed') THEN completed_at
                 ELSE NULL
               END

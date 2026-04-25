@@ -253,6 +253,41 @@ describe("processAuditRun", () => {
     expect(result.errorMessage).toBe("The analysis step failed: analysis failed");
   });
 
+  it("calls updateAuditRunStatus with no failure fields when completing cleanly", async () => {
+    // Regression guard: all nullable params ($3–$8) must be acceptable as undefined/null.
+    // Before explicit type casts were added to the SQL, passing null here caused
+    // `could not determine data type of parameter $4` in Postgres.
+    const progress = makeProgress({
+      status: "analyzing",
+      pageSnapshots: [
+        {
+          id: "snapshot-1",
+          pageType: "homepage",
+          pageState: "accepted",
+          htmlStorageKey: "homepage.html",
+        },
+      ],
+    });
+    const auditJobs = {
+      getAuditRunProgress: vi.fn().mockResolvedValue(progress),
+      updateAuditRunStatus: vi.fn().mockResolvedValue(undefined),
+    };
+    const capture = vi.fn();
+    const analyze = vi.fn().mockResolvedValue({});
+
+    await processAuditRun(
+      { auditRunId: "run-abc", domain: "example.com" },
+      { auditJobs, capture, analyze }
+    );
+
+    expect(auditJobs.updateAuditRunStatus).toHaveBeenCalledWith({
+      auditRunId: "run-abc",
+      status: "complete",
+      homepageOnly: true,
+      failureReason: null,
+    });
+  });
+
   it("marks the run failed if capture throws before returning a result", async () => {
     const initialProgress = makeProgress({ auditRunId: "run-789" });
     const auditJobs = {
