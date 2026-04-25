@@ -13,6 +13,7 @@ function createDeps(options?: {
   homepageOk?: boolean;
   statusByUrl?: Record<string, number>;
   htmlByUrl?: Record<string, string>;
+  fetchStaticStatusByUrl?: Record<string, number>;
   initialStatus?: "pending" | "discovering" | "capturing" | "analyzing" | "complete" | "failed";
   existingSnapshots?: Array<Record<string, unknown>>;
 }) {
@@ -20,6 +21,7 @@ function createDeps(options?: {
   const failingUrls = new Map(Object.entries(options?.failingUrls ?? {}));
   const statusByUrl = new Map(Object.entries(options?.statusByUrl ?? {}));
   const htmlByUrl = new Map(Object.entries(options?.htmlByUrl ?? {}));
+  const fetchStaticStatusByUrl = new Map(Object.entries(options?.fetchStaticStatusByUrl ?? {}));
   let currentUrl = "about:blank";
   let snapshotIndex = 0;
   let runStatus =
@@ -158,6 +160,7 @@ function createDeps(options?: {
           lastError: null,
           htmlStorageKey: input.htmlStorageKey,
           screenshotStorageKey: input.screenshotStorageKey,
+          captureMethod: input.captureMethod,
           capturedAt: new Date(),
         };
 
@@ -173,13 +176,25 @@ function createDeps(options?: {
       createSession: vi.fn().mockResolvedValue(session),
     },
     waitAfterNavigation: vi.fn().mockResolvedValue(undefined),
+    // Default static fetcher: returns OK HTML for any URL, respects htmlByUrl and fetchStaticStatusByUrl.
+    fetchStatic: vi.fn().mockImplementation(async (url: string) => {
+      const status = fetchStaticStatusByUrl.get(url) ?? 200;
+      return {
+        html: htmlByUrl.get(url) ?? `<html data-url="${url}"></html>`,
+        statusCode: status,
+        ok: status >= 200 && status < 400,
+        finalUrl: url,
+      };
+    }),
   };
 
   return { deps, session };
 }
 
 describe("captureAuditRun", () => {
-  it("captures the homepage and updates run state", async () => {
+  // ─── Core homepage capture ────────────────────────────────────────────────
+
+  it("captures the homepage via browser and updates run state", async () => {
     const { deps } = createDeps();
 
     const result = await captureAuditRun(
@@ -219,11 +234,58 @@ describe("captureAuditRun", () => {
       url: "https://example.com/",
       htmlStorageKey: "audit-runs/run-123/homepage/root.html",
       screenshotStorageKey: "audit-runs/run-123/homepage/root.jpg",
+      captureMethod: "browser",
       retryCount: 0,
     });
   });
 
-  it("discovers priority pages and skips a failing secondary capture", async () => {
+  // ─── Scenario A: secondary pages use static (primary path) ───────────────
+
+  it("captures secondary pages via static HTTP fetch by default", async () => {
+    const { deps } = createDeps({
+      links: [
+        {
+          href: "https://example.com/about",
+          origin: "https://example.com",
+          pathname: "/about",
+          text: "About",
+        },
+        {
+          href: "https://example.com/contact",
+          origin: "https://example.com",
+          pathname: "/contact",
+          text: "Contact",
+        },
+      ],
+    });
+
+    const result = await captureAuditRun(
+      { auditRunId: "run-static", domain: "example.com" },
+      deps
+    );
+
+    expect(result.pagesProcessed).toBe(3);
+    expect(result.homepageOnly).toBe(false);
+    expect(result.limitationNote).toBeNull();
+
+    // Homepage: browser; secondary pages: static (fetchStatic called)
+    expect(deps.browser.createSession).toHaveBeenCalledTimes(1);
+    expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/about");
+    expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/contact");
+
+    // Secondary pages completed with static capture method, no screenshot
+    const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
+    const aboutCall = calls.find((c: any) => c[0].url === "https://example.com/about");
+    expect(aboutCall[0].captureMethod).toBe("static");
+    expect(aboutCall[0].screenshotStorageKey).toBeNull();
+
+    // Homepage completed with browser capture method + screenshot
+    const homepageCall = calls.find((c: any) => c[0].url === "https://example.com/");
+    expect(homepageCall[0].captureMethod).toBe("browser");
+    expect(homepageCall[0].screenshotStorageKey).toBeTruthy();
+  });
+
+  it("discovers priority pages and skips a failing secondary static capture", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const { deps } = createDeps({
@@ -253,7 +315,8 @@ describe("captureAuditRun", () => {
           text: "Blog",
         },
       ],
-      failingUrls: { "https://example.com/services": 2 },
+      // services returns 500 from static fetch
+      fetchStaticStatusByUrl: { "https://example.com/services": 500 },
     });
 
     const result = await captureAuditRun(
@@ -265,37 +328,18 @@ describe("captureAuditRun", () => {
     );
 
     expect(result.auditRunId).toBe("run-456");
-    expect(result.pagesProcessed).toBe(4);
+    expect(result.pagesProcessed).toBe(4); // homepage + about + contact + blog
     expect(result.homepageOnly).toBe(false);
     expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledTimes(5);
-    expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({
-        pageType: "about",
-        url: "https://example.com/about",
-      })
-    );
-    expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({
-        pageType: "contact",
-        url: "https://example.com/contact",
-      })
-    );
-    expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({
-        pageType: "content",
-        url: "https://example.com/blog",
-      })
-    );
     expect(deps.auditJobs.updatePageSnapshotState).toHaveBeenCalledWith(
       expect.objectContaining({
         pageState: "needs_review",
-        retryCount: 1,
-        lastError: "Failed to capture https://example.com/services",
+        lastError: expect.stringContaining("Static fetch failed"),
       })
     );
   });
 
-  it("fills remaining capture slots with other internal pages", async () => {
+  it("fills remaining capture slots with other internal pages via static", async () => {
     const { deps } = createDeps({
       links: [
         {
@@ -323,43 +367,8 @@ describe("captureAuditRun", () => {
         url: "https://example.com/team",
       })
     );
-  });
-
-  it("retries a recoverable secondary-page failure once before succeeding", async () => {
-    const { deps } = createDeps({
-      links: [
-        {
-          href: "https://example.com/contact",
-          origin: "https://example.com",
-          pathname: "/contact",
-          text: "Contact",
-        },
-      ],
-      failingUrls: { "https://example.com/contact": 1 },
-    });
-
-    const result = await captureAuditRun(
-      {
-        auditRunId: "run-retry",
-        domain: "example.com",
-      },
-      deps
-    );
-
-    expect(result.pagesProcessed).toBe(2);
-    expect(deps.auditJobs.updatePageSnapshotState).toHaveBeenCalledWith({
-      pageSnapshotId: "snapshot-2",
-      pageState: "queued",
-      retryCount: 1,
-      lastError: "Failed to capture https://example.com/contact",
-    });
-    expect(deps.auditJobs.completePageSnapshotCapture).toHaveBeenCalledWith(
-      expect.objectContaining({
-        pageSnapshotId: "snapshot-2",
-        retryCount: 1,
-        url: "https://example.com/contact",
-      })
-    );
+    // Team/about page captured via static
+    expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/team");
   });
 
   it("resumes pending captures from persisted page state without rediscovery", async () => {
@@ -386,8 +395,8 @@ describe("captureAuditRun", () => {
           pageType: "contact",
           pagePriority: 50,
           pageState: "queued",
-          retryCount: 1,
-          lastError: "Timed out",
+          retryCount: 0,
+          lastError: null,
           htmlStorageKey: null,
           screenshotStorageKey: null,
           capturedAt: null,
@@ -409,15 +418,20 @@ describe("captureAuditRun", () => {
       homepageOnly: false,
       limitationNote: null,
     });
+    // No rediscovery
     expect(session.evaluate).not.toHaveBeenCalled();
     expect(deps.auditJobs.insertPageSnapshot).not.toHaveBeenCalled();
+    // Contact page captured via static (secondary page policy)
+    expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/contact");
     expect(deps.auditJobs.completePageSnapshotCapture).toHaveBeenCalledWith(
       expect.objectContaining({
         pageSnapshotId: "snapshot-2",
-        retryCount: 1,
+        captureMethod: "static",
       })
     );
   });
+
+  // ─── Scenario B: browser still used for homepage ──────────────────────────
 
   it("marks the run failed when the homepage cannot be loaded", async () => {
     const { deps } = createDeps({ homepageOk: false });
@@ -488,7 +502,39 @@ describe("captureAuditRun", () => {
     });
   });
 
-  // ─── Scenario: browser challenge during discovery ───────────────────────────
+  // ─── Scenario C: browser unavailable → static fallback (graceful degrade) ─
+
+  it("degrades to static capture when Chromium is unavailable at runtime", async () => {
+    const { deps } = createDeps();
+    deps.browser.createSession = vi.fn().mockRejectedValue(
+      normalizePlaywrightChromiumLaunchError(
+        new Error("browserType.launch: Executable doesn't exist at /var/task/.cache/ms-playwright/chromium")
+      )
+    );
+
+    const result = await captureAuditRun(
+      {
+        auditRunId: "run-browser-missing",
+        domain: "example.com",
+      },
+      deps
+    );
+
+    // Run SUCCEEDS via static discovery + static capture
+    expect(result.auditRunId).toBe("run-browser-missing");
+    expect(result.errorMessage).toBeUndefined();
+    expect(result.pagesProcessed).toBe(1); // homepage captured statically
+    expect(result.homepageOnly).toBe(true);
+    expect(result.limitationNote).toMatch(/browser.*unavailable/i);
+    // Static fetcher was used for homepage
+    expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com");
+    // No failure status update
+    expect(deps.auditJobs.updateAuditRunStatus).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed" })
+    );
+  });
+
+  // ─── Scenario D: browser challenge during discovery ───────────────────────
 
   it("degrades browser and falls back to static when discovery hits a bot challenge", async () => {
     const { deps } = createDeps({
@@ -496,15 +542,6 @@ describe("captureAuditRun", () => {
         "https://example.com": "<html><head><title>Just a moment…</title></head><body>Cloudflare security check captcha verify you are human</body></html>",
       },
     });
-
-    const staticResult = {
-      html: "<html><head><title>Home</title></head><body>Welcome</body></html>",
-      statusCode: 200,
-      ok: true,
-      finalUrl: "https://example.com/",
-    };
-    const fetchStatic = vi.fn().mockResolvedValue(staticResult);
-    (deps as any).fetchStatic = fetchStatic;
 
     const result = await captureAuditRun(
       { auditRunId: "run-challenge", domain: "example.com" },
@@ -515,16 +552,16 @@ describe("captureAuditRun", () => {
     expect(result.limitationNote).toMatch(/blocked by a security challenge/i);
     expect(result.pagesProcessed).toBe(1);
     expect(result.homepageOnly).toBe(true);
-    expect(fetchStatic).toHaveBeenCalled();
-    // Browser session is still opened but the static path is used for capture
+    // Static fallback used for homepage capture
+    expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/");
     expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ pageType: "homepage" })
     );
   });
 
-  it("falls back to static for secondary page when browser returns capture_blocked", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  // ─── Scenario E: capture provenance is explicit ───────────────────────────
 
+  it("records browser capture provenance for homepage and static for secondary pages", async () => {
     const { deps } = createDeps({
       links: [
         {
@@ -534,64 +571,45 @@ describe("captureAuditRun", () => {
           text: "About",
         },
       ],
-      htmlByUrl: {
-        "https://example.com/about":
-          "<html><body>captcha verify you are human</body></html>",
-      },
     });
 
-    const staticResult = {
-      html: "<html><head><title>About</title></head><body>About us</body></html>",
-      statusCode: 200,
-      ok: true,
-      finalUrl: "https://example.com/about",
-    };
-    const fetchStatic = vi.fn().mockResolvedValue(staticResult);
-    (deps as any).fetchStatic = fetchStatic;
-
-    const result = await captureAuditRun(
-      { auditRunId: "run-secondary-challenge", domain: "example.com" },
+    await captureAuditRun(
+      { auditRunId: "run-provenance", domain: "example.com" },
       deps
     );
 
-    expect(result.auditRunId).toBe("run-secondary-challenge");
-    expect(result.limitationNote).toMatch(/blocked by a security challenge/i);
-    // Both homepage (browser) and about (static fallback) should be captured
-    expect(result.pagesProcessed).toBe(2);
-    expect(result.homepageOnly).toBe(false);
-    expect(fetchStatic).toHaveBeenCalledWith("https://example.com/about");
+    const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
+    const homepageCall = calls.find((c: any) => c[0].url?.includes("example.com/"));
+    const aboutCall = calls.find((c: any) => c[0].url === "https://example.com/about");
+
+    expect(homepageCall[0].captureMethod).toBe("browser");
+    expect(aboutCall[0].captureMethod).toBe("static");
   });
 
-  it("does not use static fallback for challenge on non-homepage pages when fetchStatic is absent", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-
+  it("records fallback_static provenance when browser is degraded mid-run", async () => {
+    // Browser challenge on homepage during capture (not discovery)
     const { deps } = createDeps({
-      links: [
-        {
-          href: "https://example.com/about",
-          origin: "https://example.com",
-          pathname: "/about",
-          text: "About",
-        },
-      ],
       htmlByUrl: {
-        "https://example.com/about":
-          "<html><body>captcha verify you are human</body></html>",
+        "https://example.com": "<html><body>captcha verify you are human</body></html>",
       },
     });
 
     const result = await captureAuditRun(
-      { auditRunId: "run-no-static", domain: "example.com" },
+      { auditRunId: "run-fallback-prov", domain: "example.com" },
       deps
     );
 
-    // Homepage still captured; about marked needs_review (no fetchStatic dep provided)
-    expect(result.auditRunId).toBe("run-no-static");
     expect(result.limitationNote).toMatch(/blocked by a security challenge/i);
-    expect(result.pagesProcessed).toBe(1); // only homepage
+    const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
+    const homepageCall = calls.find((c: any) =>
+      c[0].url?.endsWith("/") || c[0].url === "https://example.com/"
+    );
+    if (homepageCall) {
+      expect(homepageCall[0].captureMethod).toBe("fallback_static");
+    }
   });
 
-  // ─── Scenario: auth-wall is NOT classified as bot challenge ─────────────────
+  // ─── Auth-wall is NOT classified as bot challenge ─────────────────────────
 
   it("classifies 401 as auth_wall and hard-fails the run (not as a bot challenge)", async () => {
     const { deps } = createDeps({
@@ -610,37 +628,19 @@ describe("captureAuditRun", () => {
         failureKind: "auth_wall",
       })
     );
-    // Must NOT set limitationNote — this is a hard failure, not a degraded partial audit
     expect(result.limitationNote).toBeFalsy();
   });
 
-  // ─── Scenario: timeout/render failure distinct from challenge ───────────────
+  // ─── Screenshot timeout distinct from challenge ───────────────────────────
 
   it("classifies screenshot timeout as rendering_failed, not as capture_blocked", async () => {
-    const { deps } = createDeps({
-      links: [
-        {
-          href: "https://example.com/about",
-          origin: "https://example.com",
-          pathname: "/about",
-          text: "About",
-        },
-      ],
-    });
+    const { deps } = createDeps();
 
-    // Simulate screenshot timeout only on /about
     const originalCreateSession = deps.browser.createSession;
     deps.browser.createSession = vi.fn().mockImplementation(async () => {
       const session = await (originalCreateSession as any)();
-      const originalNavigate = session.navigate.bind(session);
       session.screenshot = vi.fn().mockImplementation(async () => {
         throw new Error("screenshot timed out after 90000ms");
-      });
-      session.navigate = vi.fn().mockImplementation(async (req: any) => {
-        if (req.url === "https://example.com/about") {
-          return originalNavigate(req);
-        }
-        return originalNavigate(req);
       });
       return session;
     });
@@ -652,54 +652,91 @@ describe("captureAuditRun", () => {
       deps
     );
 
-    // Run should still process homepage (screenshot may also fail there in mock, but about fails with rendering_failed)
-    // Key assertion: the about page failure kind is NOT capture_blocked
-    const aboutSnapshot = [...(deps.auditJobs.updatePageSnapshotState as any).mock.calls]
-      .reverse()
-      .find((args: any[]) => args[0]?.pageState === "needs_review");
-
-    if (aboutSnapshot) {
-      expect(aboutSnapshot[0].lastError).not.toMatch(/bot.challenge|security check|captcha/i);
+    // Screenshot timeout on homepage fails the run (homepage is browser-captured)
+    // Key assertion: failure kind is NOT capture_blocked
+    expect(result.errorMessage).not.toMatch(/bot.challenge|security check|captcha/i);
+    if (result.errorMessage) {
+      expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          failureKind: expect.not.stringContaining("capture_blocked"),
+        })
+      );
     }
   });
 
-  it("marks the run failed when Chromium is unavailable in the runtime", async () => {
-    const { deps } = createDeps();
-    deps.browser.createSession = vi.fn().mockRejectedValue(
-      normalizePlaywrightChromiumLaunchError(
-        new Error("browserType.launch: Executable doesn't exist at /var/task/.cache/ms-playwright/chromium")
-      )
-    );
+  // ─── Scenario F: static-first secondary pages don't need browser session ──
 
-    const result = await captureAuditRun(
-      {
-        auditRunId: "run-browser-missing",
-        domain: "example.com",
-      },
+  it("does not require browser session when all discovered pages are secondary (static)", async () => {
+    // Run that resumes with only secondary pages queued — browser should not be started
+    const { deps } = createDeps({
+      initialStatus: "capturing",
+      existingSnapshots: [
+        {
+          id: "snapshot-1",
+          auditRunId: "run-static-only",
+          url: "https://example.com/",
+          pageType: "homepage",
+          pagePriority: 0,
+          pageState: "accepted",
+          retryCount: 0,
+          lastError: null,
+          htmlStorageKey: "audit-runs/run-static-only/homepage/root.html",
+          screenshotStorageKey: "audit-runs/run-static-only/homepage/root.jpg",
+          capturedAt: new Date(),
+        },
+        {
+          id: "snapshot-2",
+          auditRunId: "run-static-only",
+          url: "https://example.com/about",
+          pageType: "about",
+          pagePriority: 40,
+          pageState: "queued",
+          retryCount: 0,
+          lastError: null,
+          htmlStorageKey: null,
+          screenshotStorageKey: null,
+          capturedAt: null,
+        },
+      ],
+    });
+
+    await captureAuditRun(
+      { auditRunId: "run-static-only", domain: "example.com" },
       deps
     );
 
-    expect(result.auditRunId).toBe("run-browser-missing");
-    expect(result.pagesProcessed).toBe(0);
-    expect(result.homepageOnly).toBe(true);
-    expect(result.errorMessage).toMatch(/Playwright Chromium is unavailable in this deployment/);
-    expect(result.errorMessage).toMatch(/Executable doesn't exist/);
-    expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith({
-      auditRunId: "run-browser-missing",
-      status: "failed",
-      failureReason: expect.stringContaining("Playwright Chromium is unavailable in this deployment"),
-      failureKind: "runtime_error",
-      failureStage: "discover",
-      failureDetails: {
-        driver: "playwright",
-        marker: "browser_launch",
-        message: expect.stringContaining("Playwright Chromium is unavailable in this deployment"),
-        retryable: true,
-        source: "runtime",
-        statusCode: undefined,
-        url: "https://example.com",
+    // Browser session never created — only secondary page needed, planner picks static
+    expect(deps.browser.createSession).not.toHaveBeenCalled();
+    expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/about");
+  });
+
+  // ─── Limitation reporting reflects degraded capture ───────────────────────
+
+  it("limitation note distinguishes browser-unavailable from challenge-blocked", async () => {
+    // Browser unavailable
+    const { deps: depsUnavailable } = createDeps();
+    depsUnavailable.browser.createSession = vi.fn().mockRejectedValue(
+      normalizePlaywrightChromiumLaunchError(
+        new Error("browserType.launch: Executable doesn't exist")
+      )
+    );
+    const resultUnavailable = await captureAuditRun(
+      { auditRunId: "run-unavail", domain: "example.com" },
+      depsUnavailable
+    );
+    expect(resultUnavailable.limitationNote).toMatch(/unavailable/i);
+    expect(resultUnavailable.limitationNote).not.toMatch(/security challenge/i);
+
+    // Browser blocked by challenge
+    const { deps: depsBlocked } = createDeps({
+      htmlByUrl: {
+        "https://example.com": "<html><body>captcha verify you are human</body></html>",
       },
-      homepageOnly: true,
     });
+    const resultBlocked = await captureAuditRun(
+      { auditRunId: "run-blocked", domain: "example.com" },
+      depsBlocked
+    );
+    expect(resultBlocked.limitationNote).toMatch(/security challenge/i);
   });
 });

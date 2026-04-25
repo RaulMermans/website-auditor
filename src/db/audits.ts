@@ -6,6 +6,7 @@ import type {
   AuditFailureKind,
   AuditFailureStage,
   AuditStatus,
+  CaptureMethodProvenance,
   PageEvaluatorStatus,
   PageReviewStatus,
   PageSnapshot,
@@ -50,6 +51,7 @@ interface PageSnapshotRow {
   html_storage_key: string | null;
   screenshot_storage_key: string | null;
   captured_at: Date | null;
+  capture_method: CaptureMethodProvenance | null;
   review_status: PageReviewStatus;
   escalation_reason: string | null;
   evaluator_status: PageEvaluatorStatus;
@@ -116,6 +118,7 @@ export interface CompletePageSnapshotCaptureInput {
   url: string;
   htmlStorageKey: string;
   screenshotStorageKey?: string | null;
+  captureMethod?: CaptureMethodProvenance | null;
   retryCount?: number;
   capturedAt?: Date;
 }
@@ -171,6 +174,7 @@ function mapPageSnapshot(row: PageSnapshotRow): PageSnapshot {
     htmlStorageKey: row.html_storage_key ?? undefined,
     screenshotStorageKey: row.screenshot_storage_key ?? undefined,
     capturedAt: row.captured_at,
+    captureMethod: row.capture_method ?? undefined,
     reviewStatus: row.review_status,
     escalationReason: row.escalation_reason,
     evaluatorStatus: row.evaluator_status,
@@ -298,6 +302,7 @@ export const auditJobRepository: AuditJobRepository = {
             html_storage_key,
             screenshot_storage_key,
             captured_at,
+            capture_method,
             review_status,
             escalation_reason,
             evaluator_status
@@ -463,6 +468,7 @@ export const auditJobRepository: AuditJobRepository = {
               html_storage_key,
               screenshot_storage_key,
               captured_at,
+              capture_method,
               review_status,
               escalation_reason,
               evaluator_status
@@ -504,6 +510,7 @@ export const auditJobRepository: AuditJobRepository = {
             html_storage_key,
             screenshot_storage_key,
             captured_at,
+            capture_method,
             review_status,
             escalation_reason,
             evaluator_status
@@ -547,6 +554,7 @@ export const auditJobRepository: AuditJobRepository = {
             html_storage_key,
             screenshot_storage_key,
             captured_at,
+            capture_method,
             review_status,
             escalation_reason,
             evaluator_status
@@ -563,6 +571,7 @@ export const auditJobRepository: AuditJobRepository = {
     url,
     htmlStorageKey,
     screenshotStorageKey,
+    captureMethod,
     retryCount,
     capturedAt,
   }) {
@@ -576,7 +585,8 @@ export const auditJobRepository: AuditJobRepository = {
               page_state = 'captured',
               retry_count = COALESCE($5, retry_count),
               last_error = NULL,
-              captured_at = $6
+              captured_at = $6,
+              capture_method = COALESCE($7::text, capture_method)
           WHERE id = $1
           RETURNING
             id,
@@ -590,6 +600,7 @@ export const auditJobRepository: AuditJobRepository = {
             html_storage_key,
             screenshot_storage_key,
             captured_at,
+            capture_method,
             review_status,
             escalation_reason,
             evaluator_status
@@ -601,6 +612,7 @@ export const auditJobRepository: AuditJobRepository = {
           screenshotStorageKey,
           retryCount ?? null,
           capturedAt ?? new Date(),
+          captureMethod ?? null,
         ]
       );
 

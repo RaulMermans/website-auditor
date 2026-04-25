@@ -123,6 +123,8 @@ export interface AuditRun {
   createdAt: Date;
 }
 
+export type CaptureMethodProvenance = "browser" | "static" | "fallback_static" | "skipped";
+
 export interface PageSnapshot {
   id: string;
   auditRunId: string;
@@ -135,6 +137,7 @@ export interface PageSnapshot {
   htmlStorageKey?: string;
   screenshotStorageKey?: string;
   capturedAt?: Date | null;
+  captureMethod?: CaptureMethodProvenance | null;
   reviewStatus?: PageReviewStatus;
   escalationReason?: string | null;
   evaluatorStatus?: PageEvaluatorStatus;

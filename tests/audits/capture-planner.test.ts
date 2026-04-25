@@ -13,10 +13,21 @@ describe("planCaptureMethod", () => {
     expect(plan.reason).toBe("homepage_discovery_and_screenshot");
   });
 
-  it("returns browser for secondary page when not degraded", () => {
+  it("returns static for secondary page when not degraded", () => {
     const plan = planCaptureMethod({ pageType: "about", browserDegraded: false });
-    expect(plan.captureMethod).toBe("browser");
-    expect(plan.browserAllowed).toBe(true);
+    expect(plan.captureMethod).toBe("static");
+    expect(plan.requiresScreenshot).toBe(false);
+    expect(plan.browserAllowed).toBe(false);
+    expect(plan.reason).toBe("secondary_page_static_sufficient");
+  });
+
+  it("returns static for all non-homepage page types when not degraded", () => {
+    const pageTypes = ["about", "contact", "services", "pricing", "content", "legal", "form", "product", "other"] as const;
+    for (const pageType of pageTypes) {
+      const plan = planCaptureMethod({ pageType, browserDegraded: false });
+      expect(plan.captureMethod).toBe("static");
+      expect(plan.browserAllowed).toBe(false);
+    }
   });
 
   it("returns fallback_static for homepage when browser is degraded", () => {
