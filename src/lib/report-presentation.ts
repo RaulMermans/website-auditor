@@ -92,6 +92,20 @@ export const AUDIT_STATUS_META: Record<
     border: "#c7d2fe",
     text: "#4338ca",
   },
+  partial_complete: {
+    label: "Partial report",
+    description: "Homepage captured and scored, but some pages were skipped or failed. Findings may be incomplete.",
+    background: "#fffbeb",
+    border: "#fcd34d",
+    text: "#92400e",
+  },
+  needs_human_review: {
+    label: "Needs review",
+    description: "Multiple pages could not be verified automatically. Human review is required before trusting findings.",
+    background: "#fff7ed",
+    border: "#fdba74",
+    text: "#9a3412",
+  },
   complete: {
     label: "Report ready",
     description: "Both the concise and full report views are available.",

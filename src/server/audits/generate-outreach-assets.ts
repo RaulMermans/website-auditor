@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { getEnv } from "@/lib/env";
 import type { EnrichmentPromptInput } from "./generate-report-enrichment";
 
@@ -11,6 +12,13 @@ export type OutreachAssetsGenerationResult =
   | { status: "disabled" }
   | { status: "success"; data: OutreachAssetSet }
   | { status: "error"; message: string };
+
+// Runtime Zod schema — validates and constrains the LLM JSON response.
+const OutreachAssetSetSchema = z.object({
+  email: z.string().min(1).max(2000).trim(),
+  collaboration: z.string().min(1).max(1000).trim(),
+  loomScript: z.string().min(1).max(1000).trim(),
+}).strict();
 
 const OUTREACH_SCHEMA = {
   type: "object",
@@ -87,10 +95,14 @@ Respond in this exact JSON format with no extra text:
     });
 
     const raw = typeof response.text === "string" ? response.text : "";
-    return {
-      status: "success",
-      data: JSON.parse(stripJsonFence(raw)) as OutreachAssetSet,
-    };
+    const parsed = OutreachAssetSetSchema.safeParse(JSON.parse(stripJsonFence(raw)));
+
+    if (!parsed.success) {
+      const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+      return { status: "error", message: `LLM response failed schema validation: ${issues}` };
+    }
+
+    return { status: "success", data: parsed.data };
   } catch (error) {
     return { status: "error", message: getProviderErrorMessage(error) };
   }

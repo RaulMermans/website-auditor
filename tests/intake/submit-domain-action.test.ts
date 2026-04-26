@@ -1,18 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest"; // beforeEach used for clearAllMocks
 
 const {
   redirectMock,
-  afterMock,
   createAuditJobMock,
-  dispatchAuditRunMock,
   AuditJobEnqueueErrorMock,
 } = vi.hoisted(() => ({
   redirectMock: vi.fn((url: string) => {
     throw new Error(`REDIRECT:${url}`);
   }),
-  afterMock: vi.fn(),
   createAuditJobMock: vi.fn(),
-  dispatchAuditRunMock: vi.fn(),
   AuditJobEnqueueErrorMock: class AuditJobEnqueueErrorMock extends Error {
     constructor(
       readonly auditRunId: string,
@@ -28,17 +24,9 @@ vi.mock("next/navigation", () => ({
   redirect: redirectMock,
 }));
 
-vi.mock("next/server", () => ({
-  after: afterMock,
-}));
-
 vi.mock("@/server/audits/create-audit-job", () => ({
   AuditJobEnqueueError: AuditJobEnqueueErrorMock,
   createAuditJob: createAuditJobMock,
-}));
-
-vi.mock("@/server/audits/dispatch-audit-run", () => ({
-  dispatchAuditRun: dispatchAuditRunMock,
 }));
 
 import { submitDomainAction } from "@/app/intake/actions";
@@ -58,7 +46,6 @@ function buildIntakeUrl(params: Record<string, string | undefined>) {
 describe("submitDomainAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    afterMock.mockImplementation(() => undefined);
   });
 
   it("redirects to the success state when audit job creation succeeds", async () => {
@@ -86,7 +73,7 @@ describe("submitDomainAction", () => {
       })}`
     );
 
-    expect(afterMock).toHaveBeenCalledTimes(1);
+    // Job is now processed by the durable worker endpoint — no after() call expected.
     expect(redirectMock).toHaveBeenCalledTimes(1);
   });
 
@@ -103,7 +90,6 @@ describe("submitDomainAction", () => {
       })}`
     );
 
-    expect(afterMock).not.toHaveBeenCalled();
     expect(redirectMock).toHaveBeenCalledTimes(1);
   });
 
@@ -127,7 +113,6 @@ describe("submitDomainAction", () => {
       })}`
     );
 
-    expect(afterMock).not.toHaveBeenCalled();
     expect(redirectMock).toHaveBeenCalledTimes(1);
   });
 });

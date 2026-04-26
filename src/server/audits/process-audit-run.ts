@@ -23,6 +23,10 @@ const defaultDeps: ProcessAuditRunDeps = {
 const CAPTURE_PENDING_STATES = new Set(["queued", "capturing"]);
 const ANALYSIS_PENDING_STATES = new Set(["captured", "auditing", "evaluating"]);
 
+// Pages stuck in needs_review after analysis constitute a partial or human-review result.
+const NEEDS_REVIEW_STATES = new Set(["needs_review"]);
+const FAILED_PAGE_STATES = new Set(["failed"]);
+
 function hasPendingCapture(progress: AuditRunProgress) {
   return (
     progress.pageSnapshots.length === 0 ||
@@ -49,6 +53,34 @@ function summarizeProgress(progress: AuditRunProgress): AuditCaptureResult {
     pagesProcessed,
     homepageOnly,
   };
+}
+
+function resolveCompletionStatus(
+  progress: AuditRunProgress
+): import("@/lib/types").AuditStatus {
+  const snapshots = progress.pageSnapshots;
+  const captured = snapshots.filter((s) => s.htmlStorageKey);
+  const needsReview = snapshots.filter((s) => s.pageState && NEEDS_REVIEW_STATES.has(s.pageState));
+  const failed = snapshots.filter((s) => s.pageState && FAILED_PAGE_STATES.has(s.pageState));
+
+  // Homepage must always be captured for a complete audit.
+  const homepageCaptured = captured.some((s) => s.pageType === "homepage");
+
+  if (!homepageCaptured) {
+    return "failed";
+  }
+
+  // Multiple pages need human review → escalate.
+  if (needsReview.length >= 2) {
+    return "needs_human_review";
+  }
+
+  // Some pages failed or are needs_review but homepage was captured → partial.
+  if (failed.length > 0 || needsReview.length > 0) {
+    return "partial_complete";
+  }
+
+  return "complete";
 }
 
 function getProcessFailureStage(progress: AuditRunProgress | null) {
@@ -100,10 +132,11 @@ export async function processAuditRun(
     }
 
     const result = summarizeProgress(progress);
+    const completionStatus = resolveCompletionStatus(progress);
 
     await deps.auditJobs.updateAuditRunStatus({
       auditRunId: request.auditRunId,
-      status: "complete",
+      status: completionStatus,
       homepageOnly: result.homepageOnly,
       failureReason: null,
       limitationNote,

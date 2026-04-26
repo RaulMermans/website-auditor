@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAuditApiKey } from "@/lib/api-auth";
 import { reportRepository } from "@/db/report";
 import { buildFullReportData } from "@/server/audits/build-full-report";
 import { buildAiContextPack } from "@/server/audits/build-ai-context-pack";
@@ -52,9 +53,12 @@ async function renderPdf(html: string): Promise<Buffer> {
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ auditRunId: string }> }
 ) {
+  const authError = requireAuditApiKey(req);
+  if (authError) return authError;
+
   const { auditRunId } = await params;
 
   const reportData = await reportRepository.getReportData(auditRunId);

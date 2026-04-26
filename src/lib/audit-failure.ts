@@ -18,15 +18,18 @@ const BOT_CHALLENGE_PATTERNS = [
   /bot challenge/i,
 ];
 
+// High-threshold: only phrases that cannot plausibly appear on a public marketing page.
+// "sign in", "log in", "login" appear in nav links on every public site — excluded.
+// 401 HTTP status is the reliable programmatic signal; text patterns supplement edge cases.
 const AUTH_WALL_PATTERNS = [
-  /\bsign in\b/i,
-  /\blog in\b/i,
-  /\blogin\b/i,
   /\bauth(?:entication)? required\b/i,
   /\brequires authentication\b/i,
-  /\bmember access\b/i,
   /\baccount required\b/i,
   /\bplease sign in\b/i,
+  /\bsign in to (?:continue|access|view|read)\b/i,
+  /\blog in to (?:continue|access|view|read)\b/i,
+  /\byou (?:must|need to) (?:be )?(?:log(?:ged)? in|sign(?:ed)? in)\b/i,
+  /\bmembers?[ -]only\b/i,
 ];
 
 const ACCESS_DENIED_PATTERNS = [

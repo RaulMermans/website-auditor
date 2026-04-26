@@ -9,6 +9,7 @@ export interface QueueJob<TPayload extends object = Record<string, unknown>> {
 
 export interface QueueClient {
   enqueue<TPayload extends object>(name: string, payload: TPayload): Promise<QueueJob<TPayload>>;
+  fetch<TPayload extends object>(name: string): Promise<QueueJob<TPayload> | null>;
   complete(name: string, id: string, data?: object): Promise<void>;
   fail(name: string, id: string, data?: object): Promise<void>;
 }
@@ -45,6 +46,15 @@ export const queueClient: QueueClient = {
     }
 
     return { id: jobId, name, payload };
+  },
+  async fetch(name) {
+    const boss = await getPgBoss();
+    const jobs = await boss.fetch<Record<string, unknown>>(name, { batchSize: 1 });
+
+    if (!jobs || jobs.length === 0) return null;
+
+    const job = jobs[0];
+    return { id: job.id, name: job.name, payload: job.data as never };
   },
   async complete(name, id, data) {
     const boss = await getPgBoss();

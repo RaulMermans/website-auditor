@@ -57,6 +57,66 @@ describe("audit failure classification", () => {
     });
   });
 
+  // ─── Auth-wall high-threshold: public pages must not be mislabeled ────────
+
+  it("does NOT classify a public marketing page with nav sign-in link as auth_wall", () => {
+    // A typical nav with "Sign in" / "Log in" text on a public site.
+    const result = detectAuditCaptureBarrier({
+      stage: "discover",
+      html: [
+        "<html><body>",
+        "<nav><a href='/signin'>Sign in</a> <a href='/login'>Log in</a></nav>",
+        "<h1>Welcome to our service</h1>",
+        "<p>Explore our features and pricing below.</p>",
+        "</body></html>",
+      ].join(""),
+      url: "https://dontecho.com",
+    });
+    expect(result).toBeNull();
+  });
+
+  it("does NOT classify a bot-challenge page as auth_wall", () => {
+    // A Cloudflare security challenge should be capture_blocked, not auth_wall.
+    const result = detectAuditCaptureBarrier({
+      stage: "discover",
+      html: "<html><title>Just a moment…</title><body>Cloudflare security check captcha</body></html>",
+      url: "https://example.com",
+    });
+    expect(result?.failureKind).toBe("capture_blocked");
+    expect(result?.failureKind).not.toBe("auth_wall");
+  });
+
+  it("does NOT classify a consent/cookie wall page as auth_wall", () => {
+    const result = detectAuditCaptureBarrier({
+      stage: "discover",
+      html: "<html><body><p>We use cookies.</p><button>Accept all</button><button>Manage cookies</button></body></html>",
+      url: "https://example.com",
+    });
+    expect(result).toBeNull();
+  });
+
+  it("classifies HTTP 401 as auth_wall regardless of HTML content", () => {
+    const result = detectAuditCaptureBarrier({
+      stage: "discover",
+      statusCode: 401,
+      html: "<html><body>Welcome to our site</body></html>",
+      url: "https://example.com/api",
+    });
+    expect(result?.failureKind).toBe("auth_wall");
+    expect(result?.failureDetails?.marker).toBe("http_401");
+  });
+
+  it("classifies explicit gating language as auth_wall", () => {
+    // "sign in to continue" is specific enough to be an auth gate.
+    expect(
+      detectAuditCaptureBarrier({
+        stage: "capture",
+        html: "<html><body><p>Sign in to continue and view your account.</p></body></html>",
+        url: "https://example.com/dashboard",
+      })
+    ).toMatchObject({ failureKind: "auth_wall" });
+  });
+
   it("classifies browser launch errors as runtime failures", () => {
     expect(
       classifyAuditFailure({

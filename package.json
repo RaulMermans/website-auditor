@@ -23,6 +23,7 @@
   "dependencies": {
     "@google/genai": "^1.50.1",
     "@sparticuz/chromium": "^147.0.0",
+    "@vercel/blob": "^2.3.3",
     "next": "^15.0.0",
     "pg": "^8.13.1",
     "pg-boss": "^10.1.6",

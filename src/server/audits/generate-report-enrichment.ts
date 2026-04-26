@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ReportData } from "@/db/report";
 import { getEnv } from "@/lib/env";
 import type { FindingCategory } from "@/lib/types";
@@ -111,6 +112,12 @@ export type ReportEnrichmentGenerationResult =
   | { status: "success"; data: EnrichmentResult }
   | { status: "error"; message: string };
 
+// Runtime Zod schema — validates and constrains the LLM JSON response.
+const EnrichmentResultSchema = z.object({
+  executiveSummary: z.string().min(1).max(2000).trim(),
+  quickWins: z.string().min(1).max(2000).trim(),
+}).strict();
+
 const REPORT_ENRICHMENT_SCHEMA = {
   type: "object",
   properties: {
@@ -216,10 +223,14 @@ Respond in this exact JSON format with no extra text:
     });
 
     const raw = typeof response.text === "string" ? response.text : "";
-    return {
-      status: "success",
-      data: JSON.parse(stripJsonFence(raw)) as EnrichmentResult,
-    };
+    const parsed = EnrichmentResultSchema.safeParse(JSON.parse(stripJsonFence(raw)));
+
+    if (!parsed.success) {
+      const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+      return { status: "error", message: `LLM response failed schema validation: ${issues}` };
+    }
+
+    return { status: "success", data: parsed.data };
   } catch (error) {
     return { status: "error", message: getProviderErrorMessage(error) };
   }

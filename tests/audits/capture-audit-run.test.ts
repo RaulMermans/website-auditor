@@ -14,7 +14,7 @@ function createDeps(options?: {
   statusByUrl?: Record<string, number>;
   htmlByUrl?: Record<string, string>;
   fetchStaticStatusByUrl?: Record<string, number>;
-  initialStatus?: "pending" | "discovering" | "capturing" | "analyzing" | "complete" | "failed";
+  initialStatus?: import("@/lib/types").AuditStatus;
   existingSnapshots?: Array<Record<string, unknown>>;
 }) {
   const links = options?.links ?? [];
@@ -167,6 +167,7 @@ function createDeps(options?: {
         snapshots.set(input.pageSnapshotId, updated);
         return { ...updated };
       }),
+      insertAuditRunAttempt: vi.fn().mockResolvedValue(undefined),
     },
     storage: {
       put: vi.fn().mockImplementation(async (key: string) => key),
@@ -242,21 +243,16 @@ describe("captureAuditRun", () => {
   // ─── Scenario A: secondary pages use static (primary path) ───────────────
 
   it("captures secondary pages via static HTTP fetch by default", async () => {
+    // Static-first discovery: links come from HTML, not session.evaluate.
     const { deps } = createDeps({
-      links: [
-        {
-          href: "https://example.com/about",
-          origin: "https://example.com",
-          pathname: "/about",
-          text: "About",
-        },
-        {
-          href: "https://example.com/contact",
-          origin: "https://example.com",
-          pathname: "/contact",
-          text: "Contact",
-        },
-      ],
+      htmlByUrl: {
+        "https://example.com": [
+          '<html><body>',
+          '<a href="https://example.com/about">About</a>',
+          '<a href="https://example.com/contact">Contact</a>',
+          '</body></html>',
+        ].join(""),
+      },
     });
 
     const result = await captureAuditRun(
@@ -268,10 +264,12 @@ describe("captureAuditRun", () => {
     expect(result.homepageOnly).toBe(false);
     expect(result.limitationNote).toBeNull();
 
-    // Homepage: browser; secondary pages: static (fetchStatic called)
-    expect(deps.browser.createSession).toHaveBeenCalledTimes(1);
+    // Static discovery fetches homepage; secondary pages are also fetched statically.
+    expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com");
     expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/about");
     expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/contact");
+    // Browser session created only for homepage screenshot (capture phase)
+    expect(deps.browser.createSession).toHaveBeenCalledTimes(1);
 
     // Secondary pages completed with static capture method, no screenshot
     const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
@@ -289,32 +287,16 @@ describe("captureAuditRun", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const { deps } = createDeps({
-      links: [
-        {
-          href: "https://example.com/about",
-          origin: "https://example.com",
-          pathname: "/about",
-          text: "About",
-        },
-        {
-          href: "https://example.com/services",
-          origin: "https://example.com",
-          pathname: "/services",
-          text: "Services",
-        },
-        {
-          href: "https://example.com/contact",
-          origin: "https://example.com",
-          pathname: "/contact",
-          text: "Contact",
-        },
-        {
-          href: "https://example.com/blog",
-          origin: "https://example.com",
-          pathname: "/blog",
-          text: "Blog",
-        },
-      ],
+      htmlByUrl: {
+        "https://example.com": [
+          '<html><body>',
+          '<a href="https://example.com/about">About</a>',
+          '<a href="https://example.com/services">Services</a>',
+          '<a href="https://example.com/contact">Contact</a>',
+          '<a href="https://example.com/blog">Blog</a>',
+          '</body></html>',
+        ].join(""),
+      },
       // services returns 500 from static fetch
       fetchStaticStatusByUrl: { "https://example.com/services": 500 },
     });
@@ -341,14 +323,9 @@ describe("captureAuditRun", () => {
 
   it("fills remaining capture slots with other internal pages via static", async () => {
     const { deps } = createDeps({
-      links: [
-        {
-          href: "https://example.com/team",
-          origin: "https://example.com",
-          pathname: "/team",
-          text: "Team",
-        },
-      ],
+      htmlByUrl: {
+        "https://example.com": '<html><body><a href="https://example.com/team">Team</a></body></html>',
+      },
     });
 
     const result = await captureAuditRun(
@@ -433,7 +410,9 @@ describe("captureAuditRun", () => {
 
   // ─── Scenario B: browser still used for homepage ──────────────────────────
 
-  it("marks the run failed when the homepage cannot be loaded", async () => {
+  it("marks the run failed when the homepage browser capture cannot be loaded", async () => {
+    // Static discovery succeeds (default fetchStatic returns 200).
+    // Browser capture of homepage then fails with a 5xx response.
     const { deps } = createDeps({ homepageOk: false });
 
     const result = await captureAuditRun(
@@ -447,31 +426,32 @@ describe("captureAuditRun", () => {
     expect(result.auditRunId).toBe("run-999");
     expect(result.pagesProcessed).toBe(0);
     expect(result.homepageOnly).toBe(true);
-    expect(result.errorMessage).toMatch(/Failed to load homepage/);
+    // With static-first discovery, the error now reflects the browser capture failure URL.
+    expect(result.errorMessage).toMatch(/Failed to load https:\/\/example\.com\//i);
     expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith({
       auditRunId: "run-999",
       status: "failed",
-      failureReason: "Failed to load homepage. Status: 500",
+      failureReason: "Failed to load https://example.com/. Status: 500",
       failureKind: "unknown",
-      failureStage: "discover",
+      failureStage: "capture",
       failureDetails: {
         driver: "playwright",
         marker: "unknown",
-        message: "Failed to load homepage. Status: 500",
+        message: "Failed to load https://example.com/. Status: 500",
         retryable: true,
         source: "unknown",
         statusCode: undefined,
-        url: "https://example.com",
+        url: "https://example.com/",
       },
       homepageOnly: true,
+      limitationNote: undefined,
     });
   });
 
-  it("classifies 403 homepage responses as target access denial during discovery", async () => {
+  it("classifies 403 from static discovery as target access denial at discover stage", async () => {
+    // With static-first discovery, the 403 is detected from the static fetch, not the browser.
     const { deps } = createDeps({
-      statusByUrl: {
-        "https://example.com": 403,
-      },
+      fetchStaticStatusByUrl: { "https://example.com": 403 },
     });
 
     const result = await captureAuditRun(
@@ -490,7 +470,7 @@ describe("captureAuditRun", () => {
       failureKind: "access_denied",
       failureStage: "discover",
       failureDetails: {
-        driver: "playwright",
+        driver: "static",
         marker: "http_403",
         message: undefined,
         retryable: false,
@@ -534,9 +514,11 @@ describe("captureAuditRun", () => {
     );
   });
 
-  // ─── Scenario D: browser challenge during discovery ───────────────────────
+  // ─── Scenario D: bot challenge during static discovery ───────────────────
 
-  it("degrades browser and falls back to static when discovery hits a bot challenge", async () => {
+  it("queues homepage-only and proceeds when static discovery hits a bot challenge", async () => {
+    // Static discovery fetches "https://example.com" and gets a challenge page.
+    // Capture phase then tries browser for the homepage (browser may bypass challenge).
     const { deps } = createDeps({
       htmlByUrl: {
         "https://example.com": "<html><head><title>Just a moment…</title></head><body>Cloudflare security check captcha verify you are human</body></html>",
@@ -550,27 +532,57 @@ describe("captureAuditRun", () => {
 
     expect(result.auditRunId).toBe("run-challenge");
     expect(result.limitationNote).toMatch(/blocked by a security challenge/i);
+    // Homepage-only snapshot was queued; browser captured it (browser uses "https://example.com/" — clean HTML)
     expect(result.pagesProcessed).toBe(1);
     expect(result.homepageOnly).toBe(true);
-    // Static fallback used for homepage capture
-    expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/");
     expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ pageType: "homepage" })
     );
+  });
+
+  it("degrades browser and falls back to static when browser capture hits a bot challenge", async () => {
+    // Static discovery succeeds. Browser capture of homepage gets a JS-rendered challenge
+    // (common with Cloudflare IUAM). Static fetch of the same URL returns real HTML.
+    const { deps } = createDeps({
+      htmlByUrl: {
+        // Browser navigates to "https://example.com/" and sees the challenge via extractHtml.
+        "https://example.com/": "<html><body>captcha verify you are human</body></html>",
+      },
+    });
+    // Override static fetcher to always return clean HTML — simulates JS-only challenge.
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
+      html: `<html data-url="${url}"></html>`,
+      statusCode: 200,
+      ok: true,
+      finalUrl: url,
+    }));
+
+    const result = await captureAuditRun(
+      { auditRunId: "run-browser-challenge", domain: "example.com" },
+      deps
+    );
+
+    expect(result.auditRunId).toBe("run-browser-challenge");
+    expect(result.limitationNote).toMatch(/blocked by a security challenge/i);
+    expect(result.pagesProcessed).toBe(1);
+    expect(result.homepageOnly).toBe(true);
+    // Static fallback used for the homepage after browser was degraded
+    expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/");
+    const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
+    const homepageCall = calls.find((c: any) =>
+      c[0].url?.endsWith("/") || c[0].url === "https://example.com/"
+    );
+    expect(homepageCall).toBeDefined();
+    expect(homepageCall[0].captureMethod).toBe("fallback_static");
   });
 
   // ─── Scenario E: capture provenance is explicit ───────────────────────────
 
   it("records browser capture provenance for homepage and static for secondary pages", async () => {
     const { deps } = createDeps({
-      links: [
-        {
-          href: "https://example.com/about",
-          origin: "https://example.com",
-          pathname: "/about",
-          text: "About",
-        },
-      ],
+      htmlByUrl: {
+        "https://example.com": '<html><body><a href="https://example.com/about">About</a></body></html>',
+      },
     });
 
     await captureAuditRun(
@@ -586,13 +598,20 @@ describe("captureAuditRun", () => {
     expect(aboutCall[0].captureMethod).toBe("static");
   });
 
-  it("records fallback_static provenance when browser is degraded mid-run", async () => {
-    // Browser challenge on homepage during capture (not discovery)
+  it("records fallback_static provenance when browser challenge hits during homepage capture", async () => {
+    // Static discovery succeeds. Browser challenge during capture → degrade → static fallback.
     const { deps } = createDeps({
       htmlByUrl: {
-        "https://example.com": "<html><body>captcha verify you are human</body></html>",
+        "https://example.com/": "<html><body>captcha verify you are human</body></html>",
       },
     });
+    // Static fetch returns clean HTML (JS-only challenge).
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
+      html: `<html data-url="${url}"></html>`,
+      statusCode: 200,
+      ok: true,
+      finalUrl: url,
+    }));
 
     const result = await captureAuditRun(
       { auditRunId: "run-fallback-prov", domain: "example.com" },
@@ -600,20 +619,21 @@ describe("captureAuditRun", () => {
     );
 
     expect(result.limitationNote).toMatch(/blocked by a security challenge/i);
+    expect(result.pagesProcessed).toBe(1);
     const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
     const homepageCall = calls.find((c: any) =>
       c[0].url?.endsWith("/") || c[0].url === "https://example.com/"
     );
-    if (homepageCall) {
-      expect(homepageCall[0].captureMethod).toBe("fallback_static");
-    }
+    expect(homepageCall).toBeDefined();
+    expect(homepageCall[0].captureMethod).toBe("fallback_static");
   });
 
   // ─── Auth-wall is NOT classified as bot challenge ─────────────────────────
 
   it("classifies 401 as auth_wall and hard-fails the run (not as a bot challenge)", async () => {
+    // With static-first discovery, the 401 is detected from the static fetch.
     const { deps } = createDeps({
-      statusByUrl: { "https://example.com": 401 },
+      fetchStaticStatusByUrl: { "https://example.com": 401 },
     });
 
     const result = await captureAuditRun(
@@ -727,9 +747,10 @@ describe("captureAuditRun", () => {
     expect(resultUnavailable.limitationNote).toMatch(/unavailable/i);
     expect(resultUnavailable.limitationNote).not.toMatch(/security challenge/i);
 
-    // Browser blocked by challenge
+    // Static discovery gets a bot-challenge page → limitation note set to "security challenge"
     const { deps: depsBlocked } = createDeps({
       htmlByUrl: {
+        // Static fetcher is called with the bare baseUrl (no trailing slash).
         "https://example.com": "<html><body>captcha verify you are human</body></html>",
       },
     });

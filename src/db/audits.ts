@@ -123,6 +123,16 @@ export interface CompletePageSnapshotCaptureInput {
   capturedAt?: Date;
 }
 
+export interface InsertAuditRunAttemptInput {
+  auditRunId: string;
+  pageSnapshotId?: string | null;
+  stage: "discover" | "capture" | "analyze" | "enrich";
+  attempt: number;
+  failureKind?: string | null;
+  evaluatorFeedback?: string | null;
+  nextRetryStrategy?: string | null;
+}
+
 export interface AuditJobRepository {
   createPendingAuditRun(input: CreatePendingAuditRunInput): Promise<PendingAuditRunRecord>;
   getAuditRunProgress(auditRunId: string): Promise<AuditRunProgress>;
@@ -131,6 +141,7 @@ export interface AuditJobRepository {
   insertPageSnapshot(input: InsertPageSnapshotInput): Promise<PageSnapshot>;
   updatePageSnapshotState(input: UpdatePageSnapshotStateInput): Promise<PageSnapshot>;
   completePageSnapshotCapture(input: CompletePageSnapshotCaptureInput): Promise<PageSnapshot>;
+  insertAuditRunAttempt(input: InsertAuditRunAttemptInput): Promise<void>;
 }
 
 // ─── Mappers ─────────────────────────────────────────────────────────────────
@@ -617,6 +628,45 @@ export const auditJobRepository: AuditJobRepository = {
       );
 
       return mapPageSnapshot(result.rows[0]);
+    });
+  },
+
+  async insertAuditRunAttempt({
+    auditRunId,
+    pageSnapshotId,
+    stage,
+    attempt,
+    failureKind,
+    evaluatorFeedback,
+    nextRetryStrategy,
+  }) {
+    await withDbClient(async (client) => {
+      await client.query(
+        `
+          INSERT INTO audit_run_attempts (
+            id,
+            audit_run_id,
+            page_snapshot_id,
+            stage,
+            attempt,
+            failure_kind,
+            evaluator_feedback,
+            next_retry_strategy,
+            created_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        `,
+        [
+          crypto.randomUUID(),
+          auditRunId,
+          pageSnapshotId ?? null,
+          stage,
+          attempt,
+          failureKind ?? null,
+          evaluatorFeedback ?? null,
+          nextRetryStrategy ?? null,
+        ]
+      );
     });
   },
 };

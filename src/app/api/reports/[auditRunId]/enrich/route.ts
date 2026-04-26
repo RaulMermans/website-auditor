@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
+import { requireAuditApiKey } from "@/lib/api-auth";
+import { auditJobRepository } from "@/db/audits";
 import { reportRepository } from "@/db/report";
 import { enrichmentRepository } from "@/db/enrichment";
 import { buildEnrichmentInput, generateReportEnrichment } from "@/server/audits/generate-report-enrichment";
 import { generateOutreachAssets } from "@/server/audits/generate-outreach-assets";
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ auditRunId: string }> }
 ) {
+  const authError = requireAuditApiKey(req);
+  if (authError) return authError;
+
   const { auditRunId } = await params;
 
   const reportData = await reportRepository.getReportData(auditRunId);
@@ -30,6 +35,16 @@ export async function POST(
   }
 
   if (enrichment.status === "error" || outreach.status === "error") {
+    const errorMsg =
+      enrichment.status === "error" ? enrichment.message : (outreach as { status: "error"; message: string }).message;
+    await auditJobRepository.insertAuditRunAttempt({
+      auditRunId,
+      stage: "enrich",
+      attempt: 1,
+      failureKind: "analysis_error",
+      evaluatorFeedback: errorMsg,
+      nextRetryStrategy: "retry_enrichment",
+    }).catch(() => undefined);
     return NextResponse.json(
       { error: "LLM enrichment failed — Gemini provider/runtime error" },
       { status: 502 }

@@ -52,6 +52,8 @@ export type AuditStatus =
   | "discovering"
   | "capturing"
   | "analyzing"
+  | "partial_complete"
+  | "needs_human_review"
   | "complete"
   | "failed";
 

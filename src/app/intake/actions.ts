@@ -1,13 +1,11 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { after } from "next/server";
 import { ZodError } from "zod";
 import {
   AuditJobEnqueueError,
   createAuditJob,
 } from "@/server/audits/create-audit-job";
-import { dispatchAuditRun } from "@/server/audits/dispatch-audit-run";
 
 function getPostgresErrorCode(error: unknown) {
   if (typeof error === "object" && error !== null && "code" in error) {
@@ -79,19 +77,8 @@ export async function submitDomainAction(formData: FormData) {
     );
   }
 
-  after(async () => {
-    await dispatchAuditRun({
-      jobId: result.jobId,
-      auditRunId: result.auditRun.id,
-      domain: result.targetDomain.domain,
-    }).catch((error) => {
-      console.error("[intake] audit processing failed", {
-        auditRunId: result.auditRun.id,
-        error,
-      });
-    });
-  });
-
+  // Job is now consumed by the durable worker at POST /api/worker/process,
+  // which is triggered by the Vercel Cron defined in vercel.json.
   redirect(
     buildIntakeUrl({
       success: "1",

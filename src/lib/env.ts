@@ -12,10 +12,18 @@ const envSchema = z.object({
   BROWSER_USE_BASE_URL: z.string().url().optional(),
   BROWSER_USE_API_TOKEN: z.string().min(1).optional(),
 
-  // Storage (provider TBD)
+  // Worker — secret for POST /api/worker/process (optional in dev, required in production)
+  WORKER_SECRET: z.string().min(16).optional(),
+
+  // Storage
+  STORAGE_PROVIDER: z.enum(["local", "vercel_blob"]).default("local"),
+  BLOB_READ_WRITE_TOKEN: z.string().optional(),
   STORAGE_BUCKET: z.string().optional(),
   STORAGE_ACCESS_KEY: z.string().optional(),
   STORAGE_SECRET_KEY: z.string().optional(),
+
+  // Auth — shared API key for enrichment and PDF export (optional in dev)
+  AUDIT_API_KEY: z.string().min(16).optional(),
 
   // LLM
   GEMINI_API_KEY: z.string().optional(),

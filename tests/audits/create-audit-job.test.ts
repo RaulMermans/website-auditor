@@ -37,6 +37,7 @@ function createDeps() {
     insertPageSnapshot: vi.fn().mockResolvedValue(undefined),
     updatePageSnapshotState: vi.fn().mockResolvedValue(undefined),
     completePageSnapshotCapture: vi.fn().mockResolvedValue(undefined),
+    insertAuditRunAttempt: vi.fn().mockResolvedValue(undefined),
   };
   const queue: QueueClient = {
     enqueue: vi.fn().mockResolvedValue({
@@ -44,6 +45,7 @@ function createDeps() {
       name: "audit.run",
       payload: { auditRunId: "audit-run-1", domain: "example.com" },
     }),
+    fetch: vi.fn().mockResolvedValue(null),
     complete: vi.fn().mockResolvedValue(undefined),
     fail: vi.fn().mockResolvedValue(undefined),
   };
