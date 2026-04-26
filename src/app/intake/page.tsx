@@ -1,6 +1,7 @@
 import { submitDomainAction } from "@/app/intake/actions";
+import { IntakeSuccessTrigger } from "@/components/intake-success-trigger";
 
-// Allow up to 5 minutes for the after() Playwright capture callback to complete on Vercel
+// Allow up to 5 minutes for client-triggered /api/worker/trigger Playwright audit
 export const maxDuration = 300;
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -84,26 +85,8 @@ export default async function IntakePage({
         </button>
       </form>
 
-      {success ? (
-        <div
-          style={{
-            marginTop: 24,
-            background: "#ecfdf5",
-            border: "1px solid #a7f3d0",
-            borderRadius: 8,
-            padding: 20,
-            color: "#065f46",
-          }}
-        >
-          <p style={{ fontWeight: 700, marginBottom: 8 }}>Audit job created and queued.</p>
-          <p>Canonical domain: {domain}</p>
-          <p>Audit run id: {auditRunId}</p>
-          <p>Initial status: {status}</p>
-          <p style={{ marginTop: 8 }}>
-            Processing starts asynchronously after submission, so this status may stay pending
-            briefly before moving to discovering.
-          </p>
-        </div>
+      {success && auditRunId ? (
+        <IntakeSuccessTrigger auditRunId={auditRunId} domain={domain} initialStatus={status} />
       ) : null}
 
       {showError ? (

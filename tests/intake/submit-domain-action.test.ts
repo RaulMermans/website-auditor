@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"; // beforeEach used for clearAllMocks
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   redirectMock,
@@ -30,6 +30,8 @@ vi.mock("@/server/audits/create-audit-job", () => ({
 }));
 
 import { submitDomainAction } from "@/app/intake/actions";
+
+const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(new Response());
 
 function buildIntakeUrl(params: Record<string, string | undefined>) {
   const searchParams = new URLSearchParams();
@@ -73,8 +75,9 @@ describe("submitDomainAction", () => {
       })}`
     );
 
-    // Job is now processed by the durable worker endpoint — no after() call expected.
     expect(redirectMock).toHaveBeenCalledTimes(1);
+    // The server action must NOT make any HTTP calls — worker is triggered client-side.
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("redirects to the generic error state when persistence fails", async () => {

@@ -77,15 +77,8 @@ export async function submitDomainAction(formData: FormData) {
     );
   }
 
-  // Kick the worker immediately after enqueuing — fire-and-forget, no await.
-  // On Hobby the function may hit the 10s timeout for long audits, but jobs
-  // won't sit unprocessed if no cron is available.
-  const workerUrl = `${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000"}/api/worker/process`;
-  fetch(workerUrl, {
-    method: "POST",
-    headers: process.env.WORKER_SECRET ? { "x-worker-secret": process.env.WORKER_SECRET } : {},
-  }).catch(() => {});
-
+  // Worker processing is triggered client-side via /api/worker/trigger after redirect.
+  // Fire-and-forget fetch from the server action was abandoned on redirect() throw.
   redirect(
     buildIntakeUrl({
       success: "1",
