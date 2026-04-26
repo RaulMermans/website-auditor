@@ -117,4 +117,13 @@ function buildStorageClient(): StorageClient {
   return buildLocalProvider(root);
 }
 
-export const storageClient: StorageClient = buildStorageClient();
+// Deferred singleton — evaluation is delayed until first use so the build-time
+// module scan doesn't trigger the production safety guard prematurely.
+let _storageClient: StorageClient | null = null;
+
+export const storageClient: StorageClient = new Proxy({} as StorageClient, {
+  get(_, prop: string) {
+    if (!_storageClient) _storageClient = buildStorageClient();
+    return _storageClient[prop as keyof StorageClient];
+  },
+});
