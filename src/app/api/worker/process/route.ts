@@ -23,16 +23,7 @@ function requireWorkerSecret(req: Request): Response | null {
   return null;
 }
 
-/**
- * POST /api/worker/process
- *
- * Leases one audit.run job from the queue and processes it to completion.
- * Designed to be called by a Vercel Cron or external scheduler on a short
- * interval so jobs are drained without being tied to request lifecycle.
- *
- * Idempotent: pg-boss job locking ensures at-most-once delivery per poll.
- */
-export async function POST(req: Request) {
+async function handleWorkerRequest(req: Request) {
   const authError = requireWorkerSecret(req);
   if (authError) return authError;
 
@@ -71,3 +62,5 @@ export async function POST(req: Request) {
     errorMessage: result.errorMessage ?? null,
   });
 }
+
+export const POST = handleWorkerRequest;
