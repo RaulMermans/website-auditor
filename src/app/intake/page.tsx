@@ -1,7 +1,7 @@
 import { submitDomainAction } from "@/app/intake/actions";
 import { IntakeSuccessTrigger } from "@/components/intake-success-trigger";
 
-// Allow up to 5 minutes for client-triggered /api/worker/trigger Playwright audit
+// Allow up to 5 minutes for the server-side after() worker trigger to run.
 export const maxDuration = 300;
 
 type SearchParams = Record<string, string | string[] | undefined>;

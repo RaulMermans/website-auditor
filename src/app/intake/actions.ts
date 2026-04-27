@@ -1,11 +1,13 @@
 "use server";
 
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { ZodError } from "zod";
 import {
   AuditJobEnqueueError,
   createAuditJob,
 } from "@/server/audits/create-audit-job";
+import { env } from "@/lib/env";
 
 function getPostgresErrorCode(error: unknown) {
   if (typeof error === "object" && error !== null && "code" in error) {
@@ -28,6 +30,12 @@ function buildIntakeUrl(params: Record<string, string | undefined>) {
   const query = searchParams.toString();
 
   return query ? `/intake?${query}` : "/intake";
+}
+
+function buildWorkerProcessUrl(): string {
+  if (env.NEXT_PUBLIC_APP_URL) return `${env.NEXT_PUBLIC_APP_URL}/api/worker/process`;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}/api/worker/process`;
+  return "http://localhost:3000/api/worker/process";
 }
 
 export async function submitDomainAction(formData: FormData) {
@@ -77,13 +85,29 @@ export async function submitDomainAction(formData: FormData) {
     );
   }
 
-  // Worker processing is triggered client-side via /api/worker/trigger after redirect.
-  // Fire-and-forget fetch from the server action was abandoned on redirect() throw.
+  const auditRunId = result.auditRun.id;
+
+  // Register server-side worker trigger BEFORE redirect() throws.
+  // after() runs on the server after the redirect response is sent.
+  // This does NOT depend on client JS, browser rendering, or page hydration.
+  after(async () => {
+    const url = buildWorkerProcessUrl();
+    const headers: Record<string, string> = {};
+    if (env.WORKER_SECRET) headers["x-worker-secret"] = env.WORKER_SECRET;
+
+    try {
+      const res = await fetch(url, { method: "POST", headers });
+      console.log("[intake] server-side worker trigger sent", { auditRunId, url, status: res.status });
+    } catch (err) {
+      console.error("[intake] server-side worker trigger failed", { auditRunId, url, err });
+    }
+  });
+
   redirect(
     buildIntakeUrl({
       success: "1",
       domain: result.targetDomain.domain,
-      auditRunId: result.auditRun.id,
+      auditRunId,
       status: result.auditRun.status,
     })
   );
