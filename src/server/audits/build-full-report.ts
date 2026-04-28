@@ -22,7 +22,7 @@ const CATEGORY_IMPACT_NOTES: Record<FindingCategory, string> = {
   ux_ui:
     "Scanning becomes harder when the layout gives too many elements similar visual weight or asks visitors to process too much at once.",
   messaging_content:
-    "Visitors have to work harder to understand the offer, audience, or likely outcome before deciding whether to continue.",
+    "Visitors cannot quickly confirm who this is for, what they gain, or why this is the right choice — which increases exit rates before they ever reach a conversion action.",
   conversion:
     "The path from interest to action becomes less obvious or asks for more commitment than a first step usually should.",
   trust_signals:
@@ -59,16 +59,16 @@ const STRATEGIC_LENSES: Array<{
   impactNote: string;
 }> = [
   {
-    title: "Messaging Clarity",
+    title: "Brand Clarity",
     categories: ["messaging_content", "technical_seo"],
     stableNote:
-      "The inspected messaging signals read comparatively stable, with no prioritized clarity issues surfaced in the current deterministic pass.",
+      "The inspected brand clarity and messaging signals read comparatively stable, with no prioritized audience, positioning, or outcome issues surfaced in the current deterministic pass.",
     limitedNote:
-      "Only partial messaging evidence was available here, so narrative judgments should be treated as directional rather than complete.",
+      "Only partial brand clarity evidence was available here, so narrative judgments should be treated as directional rather than complete.",
     insufficientNote:
-      "The current deterministic pass did not inspect messaging deeply enough to make a confident narrative call.",
+      "The current deterministic pass did not inspect brand clarity deeply enough to make a confident narrative call.",
     impactNote:
-      "That weakens how quickly the page explains what it offers and why a visitor should keep going.",
+      "That weakens how quickly the page explains what it offers, who it is for, and why a visitor should keep going.",
   },
   {
     title: "Conversion Path",

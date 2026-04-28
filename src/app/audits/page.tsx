@@ -361,17 +361,16 @@ export default async function AuditsPage() {
                   color: "#6366f1",
                 }}
               >
-                Audit Dashboard
+                SiteSignal Internal
               </p>
               <h1 style={{ margin: "0 0 8px", fontSize: "2rem", fontWeight: 800 }}>Audit Runs</h1>
               <p style={{ margin: 0, color: "#475569", maxWidth: 720, fontSize: "0.96rem" }}>
-                Review recent runs, see whether each audit is ready, in progress, or blocked, and
-                jump directly to the concise or full report when a run is complete.
+                Each row is an evidence-backed brand and conversion diagnostic. Open the concise report for a prioritized finding set or the full report for the complete strategic readout.
               </p>
             </div>
 
             <Link href="/intake" style={primaryLinkStyle}>
-              New audit
+              Run audit
             </Link>
           </div>
 

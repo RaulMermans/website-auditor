@@ -31,12 +31,23 @@ export default async function IntakePage({
 
   return (
     <main style={{ maxWidth: 640, margin: "80px auto", padding: "0 24px" }}>
+      <p
+        style={{
+          margin: "0 0 6px",
+          fontSize: "0.72rem",
+          fontWeight: 700,
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          color: "#6366f1",
+        }}
+      >
+        SiteSignal Internal
+      </p>
       <h1 style={{ fontSize: "2rem", fontWeight: 700, marginBottom: 8 }}>
-        Domain intake
+        Run a brand audit
       </h1>
       <p style={{ color: "#6b7280", marginBottom: 24 }}>
-        Submit a single domain. This shot persists the canonical domain, creates an audit
-        run, and schedules audit processing inside the Vercel app project.
+        Submit a public domain to start an evidence-backed audit of brand clarity, trust signals, conversion path, and experience flow. The pipeline captures up to five priority pages and produces deterministic findings before optional LLM enrichment.
       </p>
 
       <form
@@ -81,7 +92,7 @@ export default async function IntakePage({
             cursor: "pointer",
           }}
         >
-          Create audit job
+          Start audit
         </button>
       </form>
 

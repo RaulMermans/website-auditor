@@ -1,13 +1,15 @@
 import type { AuditStatus, Finding, FindingCategory } from "@/lib/types";
 
+export const OVERALL_SCORE_LABEL = "Brand Conversion Readiness Score";
+
 export const CATEGORY_LABELS: Record<FindingCategory, string> = {
   performance: "Performance",
   technical_seo: "Technical SEO",
   accessibility: "Accessibility",
-  ux_ui: "UX / UI",
-  messaging_content: "Messaging & Content",
-  conversion: "Conversion",
-  trust_signals: "Trust Signals",
+  ux_ui: "Experience Flow",
+  messaging_content: "Brand Clarity & Messaging",
+  conversion: "Conversion Path",
+  trust_signals: "Trust & Proof",
   mobile_experience: "Mobile Experience",
 };
 

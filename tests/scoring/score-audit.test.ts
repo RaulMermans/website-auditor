@@ -229,4 +229,18 @@ describe("scoreAuditByCategory", () => {
     expect(ALL_FINDING_CATEGORIES).toContain("performance");
     expect(ALL_FINDING_CATEGORIES).toContain("mobile_experience");
   });
+
+  it("brand_clarity is in messaging_content expected keys", () => {
+    expect(CATEGORY_EXPECTED_KEYS.messaging_content).toContain("brand_clarity");
+  });
+
+  it("scoring treats brand_clarity as part of messaging inspection", () => {
+    const result = scoreAuditByCategory([], {
+      inspectionKeysByCategory: {
+        messaging_content: CATEGORY_EXPECTED_KEYS.messaging_content,
+      },
+    });
+    expect(result.inspectionSummaryByCategory.messaging_content.status).toBe("inspected");
+    expect(result.inspectionSummaryByCategory.messaging_content.observedKeys).toContain("brand_clarity");
+  });
 });

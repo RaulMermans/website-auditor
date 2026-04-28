@@ -61,4 +61,49 @@ describe("extractPageArtifacts", () => {
       "Observed"
     );
   });
+
+  it("emits brand_clarity evidence with Observed label", () => {
+    const result = extractPageArtifacts(
+      { id: "run-2", homepageOnly: false },
+      { id: "snapshot-2", url: "https://example.com/", pageType: "homepage" },
+      `
+        <html>
+          <head><title>World-class solutions for every business</title></head>
+          <body>
+            <h1>We are a leading provider of comprehensive solutions</h1>
+            <p>Our cutting-edge approach exceeds expectations every time.</p>
+          </body>
+        </html>
+      `
+    );
+    const brandClarityEvidence = result.pageEvidence.find((item) => item.key === "brand_clarity");
+    expect(brandClarityEvidence).toBeDefined();
+    expect(brandClarityEvidence?.evidenceLevel).toBe("Observed");
+    expect(brandClarityEvidence?.category).toBe("messaging_content");
+    const value = brandClarityEvidence?.value as Record<string, unknown>;
+    expect(typeof value.audienceCueCount).toBe("number");
+    expect(typeof value.genericClaimCount).toBe("number");
+    expect(value.genericClaimCount).toBeGreaterThan(0);
+  });
+
+  it("emits unclear_audience finding when hero has no audience cues on homepage", () => {
+    const result = extractPageArtifacts(
+      { id: "run-3", homepageOnly: false },
+      { id: "snapshot-3", url: "https://example.com/", pageType: "homepage" },
+      `
+        <html>
+          <head><title>We deliver results</title></head>
+          <body>
+            <h1>We deliver results that matter</h1>
+            <p>Our comprehensive platform helps you succeed.</p>
+          </body>
+        </html>
+      `
+    );
+    const unclearAudience = result.findings.find((f) =>
+      f.evidenceRef.issueType === "unclear_audience"
+    );
+    expect(unclearAudience).toBeDefined();
+    expect(unclearAudience?.category).toBe("messaging_content");
+  });
 });

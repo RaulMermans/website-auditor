@@ -180,15 +180,15 @@ export async function generateReportEnrichment(
       ? input.topRecommendations.map((r) => `- ${r}`).join("\n")
       : "None";
 
-  const prompt = `You are a senior website auditor writing a concise, operator-facing report. Your job is to synthesize ONLY the facts supplied below — never invent metrics, scores, page counts, or claims beyond what is listed.
+  const prompt = `You are a senior brand and conversion strategist writing an internal diagnostic memo. Your job is to synthesize ONLY the facts supplied below — never invent metrics, scores, page counts, or claims beyond what is listed.
 
 RULES:
 1. Each finding listed is already deduplicated — do not repeat the same issue in different words.
 2. Evidence labels matter: Measured = directly observed data; Observed = pattern detected in DOM; Inferred = logical conclusion. Do not present Inferred findings as Measured facts.
 3. Claim posture matters: confirmed > observed_pattern > directional. Preserve that certainty boundary in both sections.
-4. Do not add generic filler ("this is important for SEO", "users expect...") unless it ties directly to a listed finding.
-5. Do not speculate about categories not in the findings list.
-6. Keep the executive summary to 2-3 sentences maximum.
+4. Do not add generic filler or uninspected commentary — every statement must tie directly to a listed finding or evidence category.
+5. Do not speculate about categories not in the findings list. Do not comment on uninspected categories.
+6. Keep the executive summary to 2-3 sentences maximum. Write as a strategist, not a checklist tool.
 7. Quick wins must reference specific issues from the findings, not generic advice.
 8. If evidence is light or insufficient for a category, be explicit about that limitation instead of implying a clean bill of health.
 

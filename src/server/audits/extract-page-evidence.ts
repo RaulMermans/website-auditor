@@ -8,6 +8,7 @@ import { getPagePriority } from "@/server/audits/page-archetypes";
 import { getRoutedPageContext } from "@/server/audits/page-rubrics";
 import type {
   AssetWeightMetrics,
+  BrandClarityMetrics,
   CTAInventoryMetrics,
   FormFrictionMetrics,
   MessagingQualityMetrics,
@@ -61,6 +62,58 @@ const OFFER_CUE_PATTERNS = [
   /\b(services?|solutions?|capabilities|expertise|offerings)\b/gi,
   /\bfor\b/gi,
   /[,&/]/g,
+];
+
+const AUDIENCE_CUE_PATTERNS: RegExp[] = [
+  /\b(built for|designed for|made for|tailored for|perfect for|ideal for|specifically for)\b/gi,
+  /\bhelping\s+\w+(s|ers|ors|ists|eurs|ians|ants)?\b/gi,
+  /\b(agencies?|studios?|startups?|restaurants?|clinics?|contractors?|consultants?|retailers?|coaches?|freelancers?|founders?)\b/gi,
+  /\b(small business(es)?|local business(es)?|growing (team|company|business|brand))\b/gi,
+];
+
+const OUTCOME_CUE_PATTERNS_BRAND: RegExp[] = [
+  /\bmore\s+(leads?|sales?|revenue|bookings?|clients?|conversions?|customers?)\b/gi,
+  /\b(increase|grow|double|triple|scale|boost)\s+(your\s+)?(leads?|sales?|revenue|bookings?|conversions?|traffic|pipeline)\b/gi,
+  /\b(reduce|cut|eliminate|save)\s+(your\s+)?(time|costs?|overhead|churn)\b/gi,
+  /\bget\s+(more\s+)?(qualified\s+)?(leads?|demos?|calls?|appointments?)\b/gi,
+];
+
+const SPECIFICITY_CUE_PATTERNS: RegExp[] = [
+  /\b\d+\s*(%|percent)\b/gi,
+  /\bin\s+\d+\s*(days?|weeks?|hours?)\b/gi,
+  /\b\d{2,}\+?\s*(customers?|clients?|companies|users?|brands?|projects?)\b/gi,
+];
+
+const DIFFERENTIATION_CUE_PATTERNS: RegExp[] = [
+  /\b(unlike|instead of)\b/gi,
+  /\bthe (only|first)\s+\w/gi,
+  /\bno (contract|setup fee|long.?term commitment|hidden\s+fee)\b/gi,
+  /\bwithout\s+(the\s+)?(need|hassle|overhead|commitment)\b/gi,
+];
+
+const GENERIC_CLAIM_PATTERNS: RegExp[] = [
+  /\bworld.?class\b/gi,
+  /\bbest.?in.?class\b/gi,
+  /\bleading provider\b/gi,
+  /\btrusted partner\b/gi,
+  /\bcomprehensive (solution|service|approach)\b/gi,
+  /\binnovative (approach|solution|platform)\b/gi,
+  /\bstate.?of.?the.?art\b/gi,
+  /\bcutting.?edge\b/gi,
+  /\bfull.?service\b/gi,
+  /\bone.?stop.?shop\b/gi,
+  /\bpassionate about\b/gi,
+  /\bexceed expectations\b/gi,
+  /\byour (success|satisfaction) is our\b/gi,
+  /\bdedicated to (excellence|quality|your success)\b/gi,
+];
+
+const PROOF_CUE_PATTERNS_BRAND: RegExp[] = [
+  /\b\d{2,}\+?\s*(customers?|clients?|companies|users?|brands?|projects?|reviews?)\b/gi,
+  /\b(case stud(y|ies)|success stor(y|ies)|customer stor(y|ies))\b/gi,
+  /\b(as seen in|featured in|trusted by)\b/gi,
+  /\b\d+\.?\d*\s*(stars?|out of 5|\/5)\b/gi,
+  /[★⭐]{3,}/gu,
 ];
 
 const ALIGNMENT_STOPWORDS = new Set([
@@ -418,6 +471,34 @@ function detectMessagingQuality(
   };
 }
 
+function detectBrandClarity(html: string, messagingQuality: MessagingQualityMetrics): BrandClarityMetrics {
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const bodyHtml = bodyMatch?.[1] ?? html;
+  const bodyText = stripTags(bodyHtml).replace(/\s+/g, " ").trim();
+  const heroZone = [messagingQuality.heroHeading ?? "", bodyText.slice(0, 500)].filter(Boolean).join(" ");
+  const audienceCueCount = countCueMatches(heroZone, AUDIENCE_CUE_PATTERNS);
+  const outcomeCueCount = countCueMatches(heroZone, OUTCOME_CUE_PATTERNS_BRAND);
+  const specificityCueCount = countCueMatches(heroZone, SPECIFICITY_CUE_PATTERNS);
+  const differentiationCueCount = countCueMatches(heroZone, DIFFERENTIATION_CUE_PATTERNS);
+  const genericClaimCount = countCueMatches(bodyText.slice(0, 800), GENERIC_CLAIM_PATTERNS);
+  const proofCueCount = countCueMatches(bodyText.slice(0, 1200), PROOF_CUE_PATTERNS_BRAND);
+
+  return {
+    heroHeading: messagingQuality.heroHeading,
+    heroExcerpt: heroZone.slice(0, 300),
+    audienceCueCount,
+    outcomeCueCount,
+    specificityCueCount,
+    differentiationCueCount,
+    genericClaimCount,
+    proofCueCount,
+    hasNamedAudience: audienceCueCount > 0,
+    hasSpecificOutcome: outcomeCueCount > 0,
+    hasDifferentiator: differentiationCueCount > 0,
+    hasConcreteProofCue: proofCueCount > 0,
+  };
+}
+
 function detectPageStructure(html: string): PageStructureMetrics {
   const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   const bodyHtml = bodyMatch?.[1] ?? html;
@@ -571,6 +652,7 @@ function parseMetrics(snapshot: Pick<PageSnapshot, "url">, html: string): Parsed
   const ctaInventory = buildCtaInventory(buttons, anchors, inputButtons);
   const formFriction = detectFormFriction(html);
   const messagingQuality = detectMessagingQuality(html, titleText, metaDescription);
+  const brandClarity = detectBrandClarity(html, messagingQuality);
   const pageStructure = detectPageStructure(html);
   const assetWeight = detectAssetWeight(snapshot.url, html, images);
   const scriptCount = (html.match(/<script\b/gi) ?? []).length;
@@ -606,6 +688,7 @@ function parseMetrics(snapshot: Pick<PageSnapshot, "url">, html: string): Parsed
     ctaInventory,
     formFriction,
     messagingQuality,
+    brandClarity,
     pageStructure,
     assetWeight,
     scriptCount,
@@ -842,6 +925,14 @@ function buildPageEvidence(
       category: "messaging_content",
       key: "messaging_alignment",
       value: messagingAlignment,
+      evidenceLevel: "Observed",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "messaging_content",
+      key: "brand_clarity",
+      value: metrics.brandClarity,
       evidenceLevel: "Observed",
     },
     {

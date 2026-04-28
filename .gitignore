@@ -12,6 +12,7 @@ out/
 
 # build output
 dist/
+tsconfig.tsbuildinfo
 
 # OS
 .DS_Store

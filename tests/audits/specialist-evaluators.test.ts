@@ -86,6 +86,20 @@ const BASE_METRICS: ParsedPageMetrics = {
     imageCount: 1,
   },
   scriptCount: 4,
+  brandClarity: {
+    heroHeading: "Double qualified leads for local services teams",
+    heroExcerpt: "Double qualified leads for local services teams",
+    audienceCueCount: 1,
+    outcomeCueCount: 1,
+    specificityCueCount: 0,
+    differentiationCueCount: 0,
+    genericClaimCount: 0,
+    proofCueCount: 0,
+    hasNamedAudience: true,
+    hasSpecificOutcome: true,
+    hasDifferentiator: false,
+    hasConcreteProofCue: false,
+  },
 };
 
 function makeContext(
@@ -262,5 +276,131 @@ describe("specialist evaluators", () => {
 
   it("clean structural metrics do not force ux/ui findings", () => {
     expect(evaluateUxUi(makeContext())).toEqual([]);
+  });
+
+  it("unclear_audience fires on homepage when audienceCueCount is 0", () => {
+    const findings = evaluateMessagingContent(
+      makeContext({
+        brandClarity: {
+          ...BASE_METRICS.brandClarity,
+          audienceCueCount: 0,
+          hasNamedAudience: false,
+        },
+      }, "homepage")
+    );
+    expect(findings.some((f) => f.issueType === "unclear_audience")).toBe(true);
+  });
+
+  it("unclear_audience does not fire on about pages", () => {
+    const findings = evaluateMessagingContent(
+      makeContext({
+        brandClarity: {
+          ...BASE_METRICS.brandClarity,
+          audienceCueCount: 0,
+          hasNamedAudience: false,
+        },
+      }, "about")
+    );
+    expect(findings.some((f) => f.issueType === "unclear_audience")).toBe(false);
+  });
+
+  it("generic_positioning fires when generic claims exist and no differentiator", () => {
+    const findings = evaluateMessagingContent(
+      makeContext({
+        brandClarity: {
+          ...BASE_METRICS.brandClarity,
+          genericClaimCount: 3,
+          differentiationCueCount: 0,
+          hasDifferentiator: false,
+        },
+      }, "homepage")
+    );
+    expect(findings.some((f) => f.issueType === "generic_positioning")).toBe(true);
+  });
+
+  it("generic_positioning fires on about page when threshold met", () => {
+    const findings = evaluateMessagingContent(
+      makeContext({
+        brandClarity: {
+          ...BASE_METRICS.brandClarity,
+          genericClaimCount: 2,
+          differentiationCueCount: 0,
+          hasDifferentiator: false,
+        },
+      }, "about")
+    );
+    expect(findings.some((f) => f.issueType === "generic_positioning")).toBe(true);
+  });
+
+  it("proof_promise_gap fires when outcome promised but no proof signals", () => {
+    const findings = evaluateMessagingContent(
+      makeContext({
+        brandClarity: {
+          ...BASE_METRICS.brandClarity,
+          outcomeCueCount: 2,
+          proofCueCount: 0,
+          hasConcreteProofCue: false,
+        },
+        trustSignals: {
+          ...BASE_METRICS.trustSignals,
+          testimonials: false,
+          socialProof: false,
+          logoBlock: false,
+          certifications: false,
+          caseStudies: false,
+          proofPoints: 0,
+        },
+      }, "homepage")
+    );
+    expect(findings.some((f) => f.issueType === "proof_promise_gap")).toBe(true);
+  });
+
+  it("vague_outcome_language fires when both outcomeCueCount and valueCueCount are 0", () => {
+    const findings = evaluateMessagingContent(
+      makeContext({
+        brandClarity: {
+          ...BASE_METRICS.brandClarity,
+          outcomeCueCount: 0,
+          hasSpecificOutcome: false,
+        },
+        messagingQuality: {
+          ...BASE_METRICS.messagingQuality,
+          valueCueCount: 0,
+        },
+      }, "homepage")
+    );
+    expect(findings.some((f) => f.issueType === "vague_outcome_language")).toBe(true);
+  });
+
+  it("new brand clarity findings carry messaging_content category", () => {
+    const findings = evaluateMessagingContent(
+      makeContext({
+        brandClarity: {
+          ...BASE_METRICS.brandClarity,
+          audienceCueCount: 0,
+          genericClaimCount: 3,
+          differentiationCueCount: 0,
+          outcomeCueCount: 0,
+          hasNamedAudience: false,
+          hasDifferentiator: false,
+          hasSpecificOutcome: false,
+        },
+        messagingQuality: {
+          ...BASE_METRICS.messagingQuality,
+          valueCueCount: 0,
+          offerCueCount: 0,
+        },
+        trustSignals: {
+          ...BASE_METRICS.trustSignals,
+          proofPoints: 0,
+        },
+      }, "homepage")
+    );
+    const brandClarityIssues = findings.filter((f) =>
+      ["unclear_audience", "generic_positioning", "vague_outcome_language"].includes(f.issueType)
+    );
+    expect(brandClarityIssues.length).toBeGreaterThan(0);
+    expect(brandClarityIssues.every((f) => f.category === "messaging_content")).toBe(true);
+    expect(brandClarityIssues.every((f) => f.evidenceLevel === "Observed")).toBe(true);
   });
 });

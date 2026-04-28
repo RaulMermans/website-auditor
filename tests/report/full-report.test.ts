@@ -111,17 +111,17 @@ describe("buildFullReportData", () => {
     const fullReport = buildFullReportData(makeReportData());
 
     expect(fullReport.executiveSummary.overview).toContain("captured page set");
-    expect(fullReport.executiveSummary.whatIsLimiting[0]).toContain("Messaging & Content:");
+    expect(fullReport.executiveSummary.whatIsLimiting[0]).toContain("Brand Clarity & Messaging:");
     expect(fullReport.topPriorities).toHaveLength(3);
     expect(fullReport.topPriorityGroups.map((group) => group.label)).toEqual([
       "Confirmed",
       "Observed Pattern",
       "Directional",
     ]);
-    expect(fullReport.scoreSummary.lightlyInspectedCategories).toContain("Conversion");
-    expect(fullReport.scoreSummary.insufficientEvidenceCategories).toContain("UX / UI");
+    expect(fullReport.scoreSummary.lightlyInspectedCategories).toContain("Conversion Path");
+    expect(fullReport.scoreSummary.insufficientEvidenceCategories).toContain("Experience Flow");
     expect(fullReport.strategicReadout.map((item) => item.title)).toEqual([
-      "Messaging Clarity",
+      "Brand Clarity",
       "Conversion Path",
       "Trust & Proof",
       "Experience Flow",
@@ -147,6 +147,20 @@ describe("buildFullReportData", () => {
     expect(fullReport.topPriorities.map((finding) => finding.title)).toEqual(
       data.topPriorities.map((finding) => finding.title)
     );
+  });
+
+  it("uses new display labels: Brand Clarity & Messaging and Trust & Proof", () => {
+    const fullReport = buildFullReportData(makeReportData());
+    const categoryLabels = fullReport.categorySections.map((section) => section.label);
+
+    expect(categoryLabels).toContain("Brand Clarity & Messaging");
+    expect(categoryLabels).toContain("Trust & Proof");
+    expect(categoryLabels).toContain("Conversion Path");
+    expect(categoryLabels).toContain("Experience Flow");
+    expect(categoryLabels).not.toContain("Messaging & Content");
+    expect(categoryLabels).not.toContain("UX / UI");
+    expect(categoryLabels).not.toContain("Trust Signals");
+    expect(categoryLabels).not.toContain("Conversion");
   });
 
   it("preserves homepage-only framing while stripping repetitive homepage prefixes", () => {

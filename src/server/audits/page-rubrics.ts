@@ -62,6 +62,11 @@ const RUBRIC_BY_PAGE_TYPE: Record<PageType, PageRubricDefinition> = {
       "weak_value_proposition",
       "offer_sprawl",
       "headline_section_mismatch",
+      "unclear_audience",
+      "generic_positioning",
+      "weak_differentiation",
+      "vague_outcome_language",
+      "proof_promise_gap",
       "weak_next_step_conversion_path",
       "competing_cta_hierarchy",
       "repeated_cta_labels",
@@ -92,6 +97,11 @@ const RUBRIC_BY_PAGE_TYPE: Record<PageType, PageRubricDefinition> = {
     emphasisCategories: ["messaging_content", "conversion", "trust_signals", "mobile_experience"],
     allowedIssuePatterns: [
       "offer_sprawl",
+      "unclear_audience",
+      "generic_positioning",
+      "weak_differentiation",
+      "vague_outcome_language",
+      "proof_promise_gap",
       "weak_next_step_conversion_path",
       "competing_cta_hierarchy",
       "repeated_cta_labels",
@@ -119,6 +129,11 @@ const RUBRIC_BY_PAGE_TYPE: Record<PageType, PageRubricDefinition> = {
     ],
     allowedIssuePatterns: [
       "offer_sprawl",
+      "unclear_audience",
+      "generic_positioning",
+      "weak_differentiation",
+      "vague_outcome_language",
+      "proof_promise_gap",
       "weak_next_step_conversion_path",
       "competing_cta_hierarchy",
       "repeated_cta_labels",
@@ -148,6 +163,11 @@ const RUBRIC_BY_PAGE_TYPE: Record<PageType, PageRubricDefinition> = {
     ],
     allowedIssuePatterns: [
       "offer_sprawl",
+      "unclear_audience",
+      "generic_positioning",
+      "weak_differentiation",
+      "vague_outcome_language",
+      "proof_promise_gap",
       "weak_next_step_conversion_path",
       "competing_cta_hierarchy",
       "repeated_cta_labels",
@@ -169,7 +189,7 @@ const RUBRIC_BY_PAGE_TYPE: Record<PageType, PageRubricDefinition> = {
   },
   about: {
     emphasisCategories: ["messaging_content"],
-    allowedIssuePatterns: ["offer_sprawl"],
+    allowedIssuePatterns: ["offer_sprawl", "generic_positioning", "weak_differentiation"],
     expectedIssuePatterns: [],
   },
   contact: {
@@ -216,7 +236,7 @@ const RUBRIC_BY_PAGE_TYPE: Record<PageType, PageRubricDefinition> = {
   },
   content: {
     emphasisCategories: ["messaging_content"],
-    allowedIssuePatterns: ["offer_sprawl"],
+    allowedIssuePatterns: ["offer_sprawl", "generic_positioning", "weak_differentiation"],
     expectedIssuePatterns: [],
   },
   legal: {

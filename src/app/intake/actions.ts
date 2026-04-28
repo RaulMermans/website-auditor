@@ -1,13 +1,12 @@
 "use server";
 
-import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { ZodError } from "zod";
 import {
   AuditJobEnqueueError,
   createAuditJob,
 } from "@/server/audits/create-audit-job";
-import { env } from "@/lib/env";
+import { dispatchAuditRun } from "@/server/audits/dispatch-audit-run";
 
 function getPostgresErrorCode(error: unknown) {
   if (typeof error === "object" && error !== null && "code" in error) {
@@ -32,12 +31,6 @@ function buildIntakeUrl(params: Record<string, string | undefined>) {
   return query ? `/intake?${query}` : "/intake";
 }
 
-function buildWorkerProcessUrl(): string {
-  if (env.NEXT_PUBLIC_APP_URL) return `${env.NEXT_PUBLIC_APP_URL}/api/worker/process`;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}/api/worker/process`;
-  return "http://localhost:3000/api/worker/process";
-}
-
 export async function submitDomainAction(formData: FormData) {
   const rawDomain = String(formData.get("domain") ?? "");
   let result: Awaited<ReturnType<typeof createAuditJob>>;
@@ -48,7 +41,8 @@ export async function submitDomainAction(formData: FormData) {
     if (error instanceof ZodError) {
       redirect(
         buildIntakeUrl({
-          error: error.issues[0]?.message ?? "Enter a valid domain like example.com.",
+          error:
+            error.issues[0]?.message ?? "Enter a valid domain like example.com.",
           domain: rawDomain,
         })
       );
@@ -85,30 +79,34 @@ export async function submitDomainAction(formData: FormData) {
     );
   }
 
-  const auditRunId = result.auditRun.id;
-
-  // Register server-side worker trigger BEFORE redirect() throws.
-  // after() runs on the server after the redirect response is sent.
-  // This does NOT depend on client JS, browser rendering, or page hydration.
-  after(async () => {
-    const url = buildWorkerProcessUrl();
-    const headers: Record<string, string> = {};
-    if (env.WORKER_SECRET) headers["x-worker-secret"] = env.WORKER_SECRET;
-
-    try {
-      const res = await fetch(url, { method: "POST", headers });
-      console.log("[intake] server-side worker trigger sent", { auditRunId, url, status: res.status });
-    } catch (err) {
-      console.error("[intake] server-side worker trigger failed", { auditRunId, url, err });
-    }
+  const dispatchResult = await dispatchAuditRun({
+    jobId: result.jobId,
+    auditRunId: result.auditRun.id,
+    domain: result.targetDomain.domain,
   });
+
+  if (dispatchResult.errorMessage) {
+    console.error("[intake] audit processing failed", {
+      auditRunId: result.auditRun.id,
+      errorMessage: dispatchResult.errorMessage,
+    });
+
+    redirect(
+      buildIntakeUrl({
+        error: dispatchResult.errorMessage,
+        domain: result.targetDomain.domain,
+        auditRunId: result.auditRun.id,
+        status: "failed",
+      })
+    );
+  }
 
   redirect(
     buildIntakeUrl({
       success: "1",
       domain: result.targetDomain.domain,
-      auditRunId,
-      status: result.auditRun.status,
+      auditRunId: result.auditRun.id,
+      status: "complete",
     })
   );
 }

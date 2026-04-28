@@ -58,7 +58,7 @@ export const CATEGORY_EXPECTED_KEYS: Record<FindingCategory, string[]> = {
   ],
   accessibility: ["image_count", "missing_alt_count"],
   ux_ui: ["content_hierarchy", "conversion_area_clutter"],
-  messaging_content: ["page_text_flags", "messaging_quality", "messaging_alignment"],
+  messaging_content: ["page_text_flags", "messaging_quality", "messaging_alignment", "brand_clarity"],
   conversion: [
     "form_present",
     "cta_present",

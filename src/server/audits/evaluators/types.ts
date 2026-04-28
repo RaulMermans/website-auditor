@@ -41,6 +41,21 @@ export interface FormFrictionMetrics {
   requiredCount: number;
 }
 
+export interface BrandClarityMetrics {
+  heroHeading: string | null;
+  heroExcerpt: string;
+  audienceCueCount: number;
+  outcomeCueCount: number;
+  specificityCueCount: number;
+  differentiationCueCount: number;
+  genericClaimCount: number;
+  proofCueCount: number;
+  hasNamedAudience: boolean;
+  hasSpecificOutcome: boolean;
+  hasDifferentiator: boolean;
+  hasConcreteProofCue: boolean;
+}
+
 export interface MessagingQualityMetrics {
   genericIntroDetected: boolean;
   heroTextLength: number;
@@ -96,6 +111,7 @@ export interface ParsedPageMetrics {
   ctaInventory: CTAInventoryMetrics;
   formFriction: FormFrictionMetrics;
   messagingQuality: MessagingQualityMetrics;
+  brandClarity: BrandClarityMetrics;
   pageStructure: PageStructureMetrics;
   assetWeight: AssetWeightMetrics;
   scriptCount: number;

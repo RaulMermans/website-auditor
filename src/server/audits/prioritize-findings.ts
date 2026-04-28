@@ -152,6 +152,11 @@ function getNarrativeTheme(finding: PrioritizableFinding): keyof typeof THEME_PR
       "offer_sprawl",
       "headline_section_mismatch",
       "generic_hero_messaging",
+      "unclear_audience",
+      "generic_positioning",
+      "weak_differentiation",
+      "vague_outcome_language",
+      "proof_promise_gap",
     ].includes(issueType)
   ) {
     return "homepage_clarity";
