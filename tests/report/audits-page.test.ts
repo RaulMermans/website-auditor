@@ -85,7 +85,7 @@ describe("AuditsPage", () => {
     const element = await AuditsPage();
     const html = renderToStaticMarkup(element);
 
-    expect(html).toContain("Audit Dashboard");
+    expect(html).toContain("Audit Runs");
     expect(html).toContain("Reports ready");
     expect(html).toContain("Open concise report");
     expect(html).toContain("Open full report");
