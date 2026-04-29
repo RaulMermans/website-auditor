@@ -1,6 +1,5 @@
 "use server";
 
-import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { ZodError } from "zod";
 import {
@@ -87,21 +86,23 @@ export async function submitDomainAction(formData: FormData) {
 
   const auditRunId = result.auditRun.id;
 
-  // Register server-side worker trigger BEFORE redirect() throws.
-  // after() runs on the server after the redirect response is sent.
-  // This does NOT depend on client JS, browser rendering, or page hydration.
-  after(async () => {
-    const url = buildWorkerProcessUrl();
-    const headers: Record<string, string> = {};
-    if (env.WORKER_SECRET) headers["x-worker-secret"] = env.WORKER_SECRET;
-
-    try {
-      const res = await fetch(url, { method: "POST", headers });
-      console.log("[intake] server-side worker trigger sent", { auditRunId, url, status: res.status });
-    } catch (err) {
-      console.error("[intake] server-side worker trigger failed", { auditRunId, url, err });
-    }
-  });
+  // Trigger the worker synchronously before redirect so the kickoff is server-owned
+  // and not subject to deferred request-tail execution. The fetch starts a new Vercel
+  // function invocation for the worker; it continues independently if we time out here.
+  const workerUrl = buildWorkerProcessUrl();
+  const workerHeaders: Record<string, string> = { "Content-Type": "application/json" };
+  if (env.WORKER_SECRET) workerHeaders["x-worker-secret"] = env.WORKER_SECRET;
+  try {
+    await fetch(workerUrl, {
+      method: "POST",
+      headers: workerHeaders,
+      body: JSON.stringify({ auditRunId, domain: result.targetDomain.domain }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    console.log("[intake] worker trigger sent", { auditRunId, url: workerUrl });
+  } catch (err) {
+    console.error("[intake] worker trigger failed", { auditRunId, url: workerUrl, err });
+  }
 
   redirect(
     buildIntakeUrl({

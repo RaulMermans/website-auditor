@@ -4,7 +4,6 @@ const {
   redirectMock,
   createAuditJobMock,
   AuditJobEnqueueErrorMock,
-  afterMock,
 } = vi.hoisted(() => ({
   redirectMock: vi.fn((url: string) => {
     throw new Error(`REDIRECT:${url}`);
@@ -19,15 +18,10 @@ const {
       this.name = "AuditJobEnqueueError";
     }
   },
-  afterMock: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
   redirect: redirectMock,
-}));
-
-vi.mock("next/server", () => ({
-  after: afterMock,
 }));
 
 vi.mock("@/server/audits/create-audit-job", () => ({
@@ -37,7 +31,7 @@ vi.mock("@/server/audits/create-audit-job", () => ({
 
 import { submitDomainAction } from "@/app/intake/actions";
 
-const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(new Response(null, { status: 202 }));
+const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
 
 function buildIntakeUrl(params: Record<string, string | undefined>) {
   const searchParams = new URLSearchParams();
@@ -54,7 +48,7 @@ function buildIntakeUrl(params: Record<string, string | undefined>) {
 describe("submitDomainAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    fetchSpy.mockResolvedValue(new Response(null, { status: 202 }));
+    fetchSpy.mockResolvedValue(new Response(null, { status: 200 }));
   });
 
   it("redirects to the success state when audit job creation succeeds", async () => {
@@ -85,7 +79,7 @@ describe("submitDomainAction", () => {
     expect(redirectMock).toHaveBeenCalledTimes(1);
   });
 
-  it("registers after() for server-side worker trigger on success", async () => {
+  it("triggers worker fetch directly (server-side, not deferred) on success", async () => {
     createAuditJobMock.mockResolvedValue({
       targetDomain: { id: "td-1", domain: "example.com" },
       auditRun: { id: "run-1", status: "pending" },
@@ -97,27 +91,7 @@ describe("submitDomainAction", () => {
 
     await expect(submitDomainAction(formData)).rejects.toThrow("REDIRECT:");
 
-    // after() must be registered (server-side trigger path)
-    expect(afterMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("after() callback fires server-side fetch to the process route", async () => {
-    createAuditJobMock.mockResolvedValue({
-      targetDomain: { id: "td-1", domain: "example.com" },
-      auditRun: { id: "run-1", status: "pending" },
-      jobId: "job-1",
-    });
-
-    const formData = new FormData();
-    formData.set("domain", "example.com");
-
-    await expect(submitDomainAction(formData)).rejects.toThrow("REDIRECT:");
-
-    // Execute the registered after() callback
-    const callback = afterMock.mock.calls[0]?.[0] as () => Promise<void>;
-    expect(callback).toBeTypeOf("function");
-    await callback();
-
+    // fetch must be called synchronously before redirect — no after() indirection
     expect(fetchSpy).toHaveBeenCalledOnce();
     expect(fetchSpy).toHaveBeenCalledWith(
       expect.stringContaining("/api/worker/process"),
@@ -125,11 +99,11 @@ describe("submitDomainAction", () => {
     );
   });
 
-  it("after() callback handles trigger failure without throwing", async () => {
+  it("passes auditRunId and domain in the worker trigger body", async () => {
     createAuditJobMock.mockResolvedValue({
       targetDomain: { id: "td-1", domain: "example.com" },
-      auditRun: { id: "run-2", status: "pending" },
-      jobId: "job-2",
+      auditRun: { id: "run-1", status: "pending" },
+      jobId: "job-1",
     });
 
     const formData = new FormData();
@@ -137,14 +111,30 @@ describe("submitDomainAction", () => {
 
     await expect(submitDomainAction(formData)).rejects.toThrow("REDIRECT:");
 
-    fetchSpy.mockRejectedValueOnce(new Error("network error"));
-
-    const callback = afterMock.mock.calls[0]?.[0] as () => Promise<void>;
-    // Must not throw — failure is logged but not propagated
-    await expect(callback()).resolves.toBeUndefined();
+    const [, fetchInit] = fetchSpy.mock.calls[0]!;
+    const body = JSON.parse((fetchInit as RequestInit).body as string);
+    expect(body.auditRunId).toBe("run-1");
+    expect(body.domain).toBe("example.com");
   });
 
-  it("does NOT register after() when job creation fails", async () => {
+  it("still redirects when worker trigger fetch fails", async () => {
+    createAuditJobMock.mockResolvedValue({
+      targetDomain: { id: "td-1", domain: "example.com" },
+      auditRun: { id: "run-2", status: "pending" },
+      jobId: "job-2",
+    });
+
+    fetchSpy.mockRejectedValueOnce(new Error("network error"));
+
+    const formData = new FormData();
+    formData.set("domain", "example.com");
+
+    // fetch failure must not prevent redirect
+    await expect(submitDomainAction(formData)).rejects.toThrow("REDIRECT:");
+    expect(redirectMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT trigger fetch when job creation fails", async () => {
     createAuditJobMock.mockRejectedValue(new Error("db down"));
 
     const formData = new FormData();
@@ -152,7 +142,6 @@ describe("submitDomainAction", () => {
 
     await expect(submitDomainAction(formData)).rejects.toThrow("REDIRECT:");
 
-    expect(afterMock).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

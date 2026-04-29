@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { queueClientMock, dispatchAuditRunMock, afterMock, envMock } = vi.hoisted(() => ({
+const { queueClientMock, dispatchAuditRunMock, envMock } = vi.hoisted(() => ({
   queueClientMock: {
     fetch: vi.fn(),
     fail: vi.fn().mockResolvedValue(undefined),
@@ -8,14 +8,8 @@ const { queueClientMock, dispatchAuditRunMock, afterMock, envMock } = vi.hoisted
     enqueue: vi.fn(),
   },
   dispatchAuditRunMock: vi.fn(),
-  afterMock: vi.fn(),
   envMock: { WORKER_SECRET: undefined as string | undefined },
 }));
-
-vi.mock("next/server", async (importActual) => {
-  const actual = await importActual<typeof import("next/server")>();
-  return { ...actual, after: afterMock };
-});
 
 vi.mock("@/lib/env", () => ({
   env: envMock,
@@ -45,33 +39,36 @@ describe("POST /api/worker/process", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     queueClientMock.fail.mockResolvedValue(undefined);
-    afterMock.mockImplementation((_cb: () => Promise<void>) => {
-      // Capture but don't auto-execute; tests control execution
-    });
     // No WORKER_SECRET by default so auth passes
     envMock.WORKER_SECRET = undefined;
   });
 
-  it("returns 202 and schedules dispatch when job is pending", async () => {
+  it("dispatches inline and returns 200 when job completes successfully", async () => {
     queueClientMock.fetch.mockResolvedValue({
       id: "job-1",
       name: "audit.run",
       payload: { auditRunId: "run-1", domain: "example.com" },
     });
+    dispatchAuditRunMock.mockResolvedValue({
+      auditRunId: "run-1",
+      pagesProcessed: 5,
+      homepageOnly: false,
+    });
 
     const res = await POST(makeRequest());
     const body = await res.json();
 
-    expect(res.status).toBe(202);
-    expect(body.status).toBe("accepted");
+    expect(res.status).toBe(200);
+    expect(body.status).toBe("completed");
     expect(body.auditRunId).toBe("run-1");
     expect(body.jobId).toBe("job-1");
-
-    // after() must be registered for background dispatch
-    expect(afterMock).toHaveBeenCalledOnce();
+    expect(dispatchAuditRunMock).toHaveBeenCalledWith(
+      { jobId: "job-1", auditRunId: "run-1", domain: "example.com" },
+      expect.objectContaining({ queue: queueClientMock })
+    );
   });
 
-  it("after() callback invokes dispatchAuditRun with the correct job", async () => {
+  it("returns 500 when dispatch reports an errorMessage", async () => {
     queueClientMock.fetch.mockResolvedValue({
       id: "job-2",
       name: "audit.run",
@@ -79,24 +76,19 @@ describe("POST /api/worker/process", () => {
     });
     dispatchAuditRunMock.mockResolvedValue({
       auditRunId: "run-2",
-      pagesProcessed: 3,
-      homepageOnly: false,
+      pagesProcessed: 0,
+      homepageOnly: true,
+      errorMessage: "capture failed",
     });
 
-    await POST(makeRequest());
+    const res = await POST(makeRequest());
+    const body = await res.json();
 
-    // Execute the captured after() callback
-    const callback = afterMock.mock.calls[0]?.[0] as () => Promise<void>;
-    expect(callback).toBeTypeOf("function");
-    await callback();
-
-    expect(dispatchAuditRunMock).toHaveBeenCalledWith(
-      { jobId: "job-2", auditRunId: "run-2", domain: "widget.io" },
-      expect.objectContaining({ queue: queueClientMock })
-    );
+    expect(res.status).toBe(500);
+    expect(body.status).toBe("failed");
   });
 
-  it("after() callback swallows dispatch errors so the Lambda does not crash", async () => {
+  it("returns 500 and does not crash when dispatch throws unexpectedly", async () => {
     queueClientMock.fetch.mockResolvedValue({
       id: "job-3",
       name: "audit.run",
@@ -104,10 +96,11 @@ describe("POST /api/worker/process", () => {
     });
     dispatchAuditRunMock.mockRejectedValue(new Error("playwright exploded"));
 
-    await POST(makeRequest());
+    const res = await POST(makeRequest());
+    const body = await res.json();
 
-    const callback = afterMock.mock.calls[0]?.[0] as () => Promise<void>;
-    await expect(callback()).resolves.toBeUndefined();
+    expect(res.status).toBe(500);
+    expect(body.status).toBe("failed");
   });
 
   it("returns 200 idle when no jobs are pending", async () => {
@@ -118,7 +111,7 @@ describe("POST /api/worker/process", () => {
 
     expect(res.status).toBe(200);
     expect(body.status).toBe("idle");
-    expect(afterMock).not.toHaveBeenCalled();
+    expect(dispatchAuditRunMock).not.toHaveBeenCalled();
   });
 
   it("returns 503 when the queue is unavailable", async () => {
@@ -127,7 +120,7 @@ describe("POST /api/worker/process", () => {
     const res = await POST(makeRequest());
 
     expect(res.status).toBe(503);
-    expect(afterMock).not.toHaveBeenCalled();
+    expect(dispatchAuditRunMock).not.toHaveBeenCalled();
   });
 
   it("fails the job and returns 400 for malformed payload", async () => {
@@ -143,7 +136,7 @@ describe("POST /api/worker/process", () => {
     expect(queueClientMock.fail).toHaveBeenCalledWith("audit.run", "job-bad", {
       error: "Malformed job payload",
     });
-    expect(afterMock).not.toHaveBeenCalled();
+    expect(dispatchAuditRunMock).not.toHaveBeenCalled();
   });
 
   it("returns 401 when a wrong secret is provided", async () => {
@@ -156,16 +149,22 @@ describe("POST /api/worker/process", () => {
     expect(queueClientMock.fetch).not.toHaveBeenCalled();
   });
 
-  it("transitions job out of pending by fetching it before returning", async () => {
+  it("transitions job out of created state by fetching before dispatching", async () => {
     queueClientMock.fetch.mockResolvedValue({
       id: "job-stuck",
       name: "audit.run",
       payload: { auditRunId: "run-stuck", domain: "dontecho.com" },
     });
+    dispatchAuditRunMock.mockResolvedValue({
+      auditRunId: "run-stuck",
+      pagesProcessed: 1,
+      homepageOnly: true,
+    });
 
     await POST(makeRequest());
 
-    // Fetching the job is what moves it from 'created' → 'active' in pg-boss
+    // Fetching the job moves it from 'created' → 'active' in pg-boss before dispatch
     expect(queueClientMock.fetch).toHaveBeenCalledWith("audit.run");
+    expect(dispatchAuditRunMock).toHaveBeenCalled();
   });
 });

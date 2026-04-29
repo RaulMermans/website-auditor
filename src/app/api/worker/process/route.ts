@@ -1,4 +1,3 @@
-import { after } from "next/server";
 import { NextResponse } from "next/server";
 import { env } from "@/lib/env";
 
@@ -51,22 +50,20 @@ async function handleWorkerRequest(req: Request) {
     return NextResponse.json({ error: "Malformed job payload" }, { status: 400 });
   }
 
-  // Schedule the long-running audit after sending 202. This keeps the caller's
-  // after() fast (completes in < 1s) while the audit runs to completion server-side.
-  const capturedJob = job;
-  after(async () => {
-    console.log("[worker] processing job", { jobId: capturedJob.id, auditRunId, domain });
-    try {
-      await dispatchAuditRun(
-        { jobId: capturedJob.id, auditRunId, domain },
-        { queue: queueClient, process: (await import("@/server/audits/process-audit-run")).processAuditRun }
-      );
-    } catch (err) {
-      console.error("[worker] dispatch failed unexpectedly", { auditRunId, err });
-    }
-  });
-
-  return NextResponse.json({ status: "accepted", auditRunId, jobId: capturedJob.id }, { status: 202 });
+  console.log("[worker] processing job", { jobId: job.id, auditRunId, domain });
+  try {
+    const result = await dispatchAuditRun(
+      { jobId: job.id, auditRunId, domain },
+      { queue: queueClient, process: (await import("@/server/audits/process-audit-run")).processAuditRun }
+    );
+    return NextResponse.json(
+      { status: result.errorMessage ? "failed" : "completed", auditRunId, jobId: job.id },
+      { status: result.errorMessage ? 500 : 200 }
+    );
+  } catch (err) {
+    console.error("[worker] dispatch failed unexpectedly", { auditRunId, err });
+    return NextResponse.json({ status: "failed", auditRunId, jobId: job.id, error: String(err) }, { status: 500 });
+  }
 }
 
 export const POST = handleWorkerRequest;
