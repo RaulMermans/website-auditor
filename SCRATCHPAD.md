@@ -164,65 +164,56 @@ Synthesis         generate-report-enrichment.ts   LLM downstream of deterministi
 
 ---
 
-## Server-owned worker kickoff fix (2026-04-27)
+## Server-owned worker kickoff fix (2026-04-30, updated)
 
 ### Root cause
 Audit runs were stuck `pending` indefinitely because the only kickoff path was
 `IntakeSuccessTrigger` — a client component that fired `fetch('/api/worker/trigger')`
 from a `useEffect`. If the browser tab was closed, JS blocked, or network flaky,
-the job never started.
+the job never started. A previous attempt using `after()` in the server action was
+also unreliable in practice.
 
-### What changed
+### Current implementation (inline server-side fetch, no after())
 
-1. **`src/app/intake/actions.ts`** — imports `after` from `next/server`. After
-   `createAuditJob()` succeeds (and BEFORE `redirect()` throws), registers an
-   `after()` callback that fires a server-side `fetch` to `/api/worker/process`
-   with the `WORKER_SECRET` header. The callback logs success/failure; failure
-   is caught and does not crash the action.
+1. **`src/app/intake/actions.ts`** — after `createAuditJob()` succeeds, performs a
+   direct `await fetch(workerUrl, { method: "POST", signal: AbortSignal.timeout(10_000) })`
+   to `/api/worker/process` with the `x-worker-secret` header. Failure is caught and
+   does not block the redirect. Logs: `[intake] worker trigger start` (with resolved URL),
+   `[intake] worker trigger sent` (with response status), or `[intake] worker trigger failed`.
+   URL resolution order: `process.env.APP_URL` → `VERCEL_URL` → `http://localhost:3000`.
 
-2. **`src/app/api/worker/process/route.ts`** — now returns 202 Accepted immediately
-   after fetching the job from the queue. The actual `dispatchAuditRun` call moves
-   into a `after()` callback inside the route, so the long-running Playwright work
-   runs after the HTTP response is sent. This keeps the server action's `after()`
-   fast (< 1 s round-trip) instead of waiting 5 minutes.
+2. **`src/app/api/worker/process/route.ts`** — inline `await dispatchAuditRun(...)` (no
+   `after()`). Logs: `[worker/process] entered`, `auth pass/fail`, `queue fetch result`,
+   `dispatch start`, `dispatch end / failure`. Returns 200/500 with full result.
 
-3. **`src/components/intake-success-trigger.tsx`** — stripped of `"use client"`,
-   `useEffect`, and `useState`. Now a plain server component: static panel showing
-   domain, auditRunId, and a link to `/report/[auditRunId]`. No longer part of
-   the critical kickoff path.
+3. **`src/components/intake-success-trigger.tsx`** — plain server component, no
+   `useEffect`, no `useState`, no fetch. Shows domain, auditRunId, and report link.
 
-4. **Tests** — `submit-domain-action.test.ts` updated to mock `after` from
-   `next/server` and verify: (a) `after()` is registered on success, (b) the
-   callback fires fetch to `/api/worker/process`, (c) trigger failure does not
-   throw. New `worker-process-route.test.ts` covers the process route: 202 on
-   valid job, `after()` callback dispatches correctly, auth checks, idle/503/400
-   cases, and dispatch error swallowing.
-
-### Kickoff flow after fix
+### Kickoff flow
 ```
 submitDomainAction()
   → createAuditJob() (enqueue pg-boss job)
-  → after(() => fetch('/api/worker/process', { 'x-worker-secret': ... }))
-  → redirect('/intake?success=1&...')   ← response sent immediately
+  → await fetch('/api/worker/process', { 'x-worker-secret': ... })  ← server-side, inline
+  → redirect('/intake?success=1&...')
 
-                    ↓ [server-side, after response]
 POST /api/worker/process
+  → [worker/process] entered / auth pass
   → queueClient.fetch('audit.run')     ← transitions job created → active
-  → after(() => dispatchAuditRun(...)) ← schedules full audit
-  → return 202 Accepted                ← closes trigger fetch quickly
-
-                    ↓ [server-side, after 202]
-  → dispatchAuditRun → processAuditRun → capture → analyze → complete
+  → [worker/process] dispatch start
+  → await dispatchAuditRun(...)        ← full audit runs inline, up to maxDuration=300s
+  → [worker/process] dispatch end
+  → return 200 completed
 ```
 
-### Plan compatibility
-- Vercel Pro (maxDuration=300): full audit completes within process route's after()
-- Vercel Hobby (maxDuration=60): audit may timeout, but run moves from pending →
-  failed (not stuck pending). An improvement over the previous forever-pending state.
+### Env vars for URL resolution
+- `APP_URL` (new, server-side only): canonical base URL for worker self-call
+- `VERCEL_URL` (Vercel-injected): fallback if APP_URL not set
+- `http://localhost:3000`: final fallback for local dev
 
 ### Risks / follow-ups
-- Local dev: `after()` is polyfilled by Next.js dev server; should work.
-- `NEXT_PUBLIC_APP_URL` must be set in production for the correct self-call URL.
-  Falls back to `VERCEL_URL` (Vercel-injected), then `http://localhost:3000`.
+- The 10s timeout on the intake action's fetch means: if the worker route takes >10s
+  to respond (e.g. queue latency), the fetch will throw but the redirect still happens.
+  The worker route continues independently once the Vercel function is invoked.
+- `APP_URL` should be set in production Vercel env to the canonical deployment URL.
 - The `/api/worker/trigger` route is retained for manual/debug use; no changes.
 - Real blob storage provider is still pending for production artifacts.

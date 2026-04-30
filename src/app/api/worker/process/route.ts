@@ -27,41 +27,54 @@ function requireWorkerSecret(req: Request): Response | null {
 }
 
 async function handleWorkerRequest(req: Request) {
+  console.log("[worker/process] entered");
+
   const authError = requireWorkerSecret(req);
-  if (authError) return authError;
+  if (authError) {
+    console.warn("[worker/process] auth failed");
+    return authError;
+  }
+  console.log("[worker/process] auth pass");
 
   let job: Awaited<ReturnType<typeof queueClient.fetch<AuditRunJobPayload>>> = null;
 
   try {
     job = await queueClient.fetch<AuditRunJobPayload>("audit.run");
   } catch (error) {
-    console.error("[worker] failed to fetch job from queue", { error });
+    console.error("[worker/process] failed to fetch job from queue", { error });
     return NextResponse.json({ error: "Queue unavailable" }, { status: 503 });
   }
 
   if (!job) {
+    console.log("[worker/process] queue fetch: no jobs pending");
     return NextResponse.json({ status: "idle", message: "No jobs pending" }, { status: 200 });
   }
 
   const { auditRunId, domain } = job.payload;
+  console.log("[worker/process] queue fetch: job acquired", { jobId: job.id, auditRunId, domain });
 
   if (!auditRunId || !domain) {
     await queueClient.fail("audit.run", job.id, { error: "Malformed job payload" });
     return NextResponse.json({ error: "Malformed job payload" }, { status: 400 });
   }
 
-  console.log("[worker] processing job", { jobId: job.id, auditRunId, domain });
+  console.log("[worker/process] dispatch start", { jobId: job.id, auditRunId, domain });
   try {
     const result = await dispatchAuditRun(
       { jobId: job.id, auditRunId, domain },
       { queue: queueClient, process: (await import("@/server/audits/process-audit-run")).processAuditRun }
     );
+    if (result.errorMessage) {
+      console.error("[worker/process] dispatch end: failed", { auditRunId, errorMessage: result.errorMessage });
+    } else {
+      console.log("[worker/process] dispatch end: completed", { auditRunId, pagesProcessed: result.pagesProcessed });
+    }
     return NextResponse.json(
       { status: result.errorMessage ? "failed" : "completed", auditRunId, jobId: job.id },
       { status: result.errorMessage ? 500 : 200 }
     );
   } catch (err) {
-    console.error("[worker] dispatch failed unexpectedly", { auditRunId, err });
+    console.error("[worker/process] dispatch failed unexpectedly", { auditRunId, err });
     return NextResponse.json({ status: "failed", auditRunId, jobId: job.id, error: String(err) }, { status: 500 });
   }
 }

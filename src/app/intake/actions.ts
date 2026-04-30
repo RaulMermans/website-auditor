@@ -32,7 +32,7 @@ function buildIntakeUrl(params: Record<string, string | undefined>) {
 }
 
 function buildWorkerProcessUrl(): string {
-  if (env.NEXT_PUBLIC_APP_URL) return `${env.NEXT_PUBLIC_APP_URL}/api/worker/process`;
+  if (process.env.APP_URL) return `${process.env.APP_URL}/api/worker/process`;
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}/api/worker/process`;
   return "http://localhost:3000/api/worker/process";
 }
@@ -90,16 +90,17 @@ export async function submitDomainAction(formData: FormData) {
   // and not subject to deferred request-tail execution. The fetch starts a new Vercel
   // function invocation for the worker; it continues independently if we time out here.
   const workerUrl = buildWorkerProcessUrl();
+  console.log("[intake] worker trigger start", { auditRunId, url: workerUrl });
   const workerHeaders: Record<string, string> = { "Content-Type": "application/json" };
   if (env.WORKER_SECRET) workerHeaders["x-worker-secret"] = env.WORKER_SECRET;
   try {
-    await fetch(workerUrl, {
+    const workerRes = await fetch(workerUrl, {
       method: "POST",
       headers: workerHeaders,
       body: JSON.stringify({ auditRunId, domain: result.targetDomain.domain }),
       signal: AbortSignal.timeout(10_000),
     });
-    console.log("[intake] worker trigger sent", { auditRunId, url: workerUrl });
+    console.log("[intake] worker trigger sent", { auditRunId, url: workerUrl, status: workerRes.status });
   } catch (err) {
     console.error("[intake] worker trigger failed", { auditRunId, url: workerUrl, err });
   }
