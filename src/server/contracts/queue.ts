@@ -1,5 +1,6 @@
 import PgBoss from "pg-boss";
 import { env, getRequiredEnv } from "@/lib/env";
+import { withDbClient } from "@/db/client";
 
 export interface QueueJob<TPayload extends object = Record<string, unknown>> {
   id: string;
@@ -10,6 +11,7 @@ export interface QueueJob<TPayload extends object = Record<string, unknown>> {
 export interface QueueClient {
   enqueue<TPayload extends object>(name: string, payload: TPayload): Promise<QueueJob<TPayload>>;
   fetch<TPayload extends object>(name: string): Promise<QueueJob<TPayload> | null>;
+  fetchById<TPayload extends object>(name: string, id: string): Promise<QueueJob<TPayload> | null>;
   complete(name: string, id: string, data?: object): Promise<void>;
   fail(name: string, id: string, data?: object): Promise<void>;
 }
@@ -54,6 +56,26 @@ export const queueClient: QueueClient = {
     if (!jobs || jobs.length === 0) return null;
 
     const job = jobs[0];
+    return { id: job.id, name: job.name, payload: job.data as never };
+  },
+  async fetchById(name, id) {
+    const schema = env.PG_BOSS_SCHEMA ?? "pgboss";
+    const result = await withDbClient((client) =>
+      client.query<{ id: string; name: string; data: Record<string, unknown> }>(
+        `UPDATE "${schema}".job
+         SET state = 'active',
+             started_on = now()
+         WHERE id = $1::uuid
+           AND name = $2
+           AND state IN ('created', 'retry')
+         RETURNING id, name, data`,
+        [id, name]
+      )
+    );
+
+    if (result.rows.length === 0) return null;
+
+    const job = result.rows[0]!;
     return { id: job.id, name: job.name, payload: job.data as never };
   },
   async complete(name, id, data) {

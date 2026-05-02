@@ -46,6 +46,7 @@ function createDeps() {
       payload: { auditRunId: "audit-run-1", domain: "example.com" },
     }),
     fetch: vi.fn().mockResolvedValue(null),
+    fetchById: vi.fn().mockResolvedValue(null),
     complete: vi.fn().mockResolvedValue(undefined),
     fail: vi.fn().mockResolvedValue(undefined),
   };

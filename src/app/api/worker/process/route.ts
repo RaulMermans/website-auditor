@@ -3,7 +3,7 @@ import { env } from "@/lib/env";
 
 // Allow up to 5 minutes for the Playwright audit pipeline to complete.
 export const maxDuration = 300;
-import { queueClient } from "@/server/contracts/queue";
+import { queueClient, type QueueJob } from "@/server/contracts/queue";
 import { dispatchAuditRun } from "@/server/audits/dispatch-audit-run";
 
 interface AuditRunJobPayload {
@@ -26,6 +26,23 @@ function requireWorkerSecret(req: Request): Response | null {
   return null;
 }
 
+async function parseExplicitJobBody(
+  req: Request
+): Promise<{ jobId?: string; auditRunId?: string; domain?: string }> {
+  try {
+    const text = await req.text();
+    if (!text) return {};
+    const body = JSON.parse(text) as Record<string, unknown>;
+    return {
+      jobId: typeof body.jobId === "string" ? body.jobId : undefined,
+      auditRunId: typeof body.auditRunId === "string" ? body.auditRunId : undefined,
+      domain: typeof body.domain === "string" ? body.domain : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 async function handleWorkerRequest(req: Request) {
   console.log("[worker/process] entered");
 
@@ -36,22 +53,38 @@ async function handleWorkerRequest(req: Request) {
   }
   console.log("[worker/process] auth pass");
 
-  let job: Awaited<ReturnType<typeof queueClient.fetch<AuditRunJobPayload>>> = null;
+  const { jobId: explicitJobId, auditRunId: explicitAuditRunId, domain: explicitDomain } =
+    await parseExplicitJobBody(req);
+
+  const useExplicitPath = !!(explicitJobId && explicitAuditRunId && explicitDomain);
+
+  let job: QueueJob<AuditRunJobPayload> | null = null;
 
   try {
-    job = await queueClient.fetch<AuditRunJobPayload>("audit.run");
+    if (useExplicitPath) {
+      console.log("[worker/process] explicit job path", {
+        jobId: explicitJobId,
+        auditRunId: explicitAuditRunId,
+      });
+      job = await queueClient.fetchById<AuditRunJobPayload>("audit.run", explicitJobId);
+    } else {
+      job = await queueClient.fetch<AuditRunJobPayload>("audit.run");
+    }
   } catch (error) {
     console.error("[worker/process] failed to fetch job from queue", { error });
     return NextResponse.json({ error: "Queue unavailable" }, { status: 503 });
   }
 
   if (!job) {
-    console.log("[worker/process] queue fetch: no jobs pending");
-    return NextResponse.json({ status: "idle", message: "No jobs pending" }, { status: 200 });
+    const message = useExplicitPath
+      ? "Job not claimable or already processed"
+      : "No jobs pending";
+    console.log("[worker/process] no job acquired", { message });
+    return NextResponse.json({ status: "idle", message }, { status: 200 });
   }
 
   const { auditRunId, domain } = job.payload;
-  console.log("[worker/process] queue fetch: job acquired", { jobId: job.id, auditRunId, domain });
+  console.log("[worker/process] job acquired", { jobId: job.id, auditRunId, domain });
 
   if (!auditRunId || !domain) {
     await queueClient.fail("audit.run", job.id, { error: "Malformed job payload" });

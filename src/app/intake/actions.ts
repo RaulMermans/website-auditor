@@ -97,7 +97,7 @@ export async function submitDomainAction(formData: FormData) {
     const workerRes = await fetch(workerUrl, {
       method: "POST",
       headers: workerHeaders,
-      body: JSON.stringify({ auditRunId, domain: result.targetDomain.domain }),
+      body: JSON.stringify({ jobId: result.jobId, auditRunId, domain: result.targetDomain.domain }),
       signal: AbortSignal.timeout(10_000),
     });
     console.log("[intake] worker trigger sent", { auditRunId, url: workerUrl, status: workerRes.status });

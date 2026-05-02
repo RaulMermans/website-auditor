@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { queueClientMock, dispatchAuditRunMock, envMock } = vi.hoisted(() => ({
   queueClientMock: {
     fetch: vi.fn(),
+    fetchById: vi.fn(),
     fail: vi.fn().mockResolvedValue(undefined),
     complete: vi.fn().mockResolvedValue(undefined),
     enqueue: vi.fn(),
@@ -35,10 +36,21 @@ function makeRequest(secret?: string): Request {
   return new Request("http://localhost/api/worker/process", { method: "POST", headers });
 }
 
+function makeRequestWithBody(body: object, secret?: string): Request {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (secret) headers["x-worker-secret"] = secret;
+  return new Request("http://localhost/api/worker/process", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+}
+
 describe("POST /api/worker/process", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     queueClientMock.fail.mockResolvedValue(undefined);
+    queueClientMock.fetchById.mockResolvedValue(null);
     // No WORKER_SECRET by default so auth passes
     envMock.WORKER_SECRET = undefined;
   });
@@ -149,7 +161,7 @@ describe("POST /api/worker/process", () => {
     expect(queueClientMock.fetch).not.toHaveBeenCalled();
   });
 
-  it("transitions job out of created state by fetching before dispatching", async () => {
+  it("transitions job out of created state by fetching before dispatching (fallback path)", async () => {
     queueClientMock.fetch.mockResolvedValue({
       id: "job-stuck",
       name: "audit.run",
@@ -163,8 +175,73 @@ describe("POST /api/worker/process", () => {
 
     await POST(makeRequest());
 
-    // Fetching the job moves it from 'created' → 'active' in pg-boss before dispatch
+    // No explicit job body → fallback generic fetch claims next available job
     expect(queueClientMock.fetch).toHaveBeenCalledWith("audit.run");
+    expect(queueClientMock.fetchById).not.toHaveBeenCalled();
     expect(dispatchAuditRunMock).toHaveBeenCalled();
+  });
+
+  it("uses fetchById and does not call fetch when body contains jobId, auditRunId, and domain", async () => {
+    queueClientMock.fetchById.mockResolvedValue({
+      id: "job-explicit",
+      name: "audit.run",
+      payload: { auditRunId: "run-explicit", domain: "specific.com" },
+    });
+    dispatchAuditRunMock.mockResolvedValue({
+      auditRunId: "run-explicit",
+      pagesProcessed: 3,
+      homepageOnly: false,
+    });
+
+    const res = await POST(
+      makeRequestWithBody({ jobId: "job-explicit", auditRunId: "run-explicit", domain: "specific.com" })
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.status).toBe("completed");
+    expect(body.auditRunId).toBe("run-explicit");
+    expect(body.jobId).toBe("job-explicit");
+    expect(queueClientMock.fetchById).toHaveBeenCalledWith("audit.run", "job-explicit");
+    expect(queueClientMock.fetch).not.toHaveBeenCalled();
+    expect(dispatchAuditRunMock).toHaveBeenCalledWith(
+      { jobId: "job-explicit", auditRunId: "run-explicit", domain: "specific.com" },
+      expect.objectContaining({ queue: queueClientMock })
+    );
+  });
+
+  it("falls back to generic fetch when body is missing jobId", async () => {
+    queueClientMock.fetch.mockResolvedValue({
+      id: "job-fallback",
+      name: "audit.run",
+      payload: { auditRunId: "run-fallback", domain: "fallback.com" },
+    });
+    dispatchAuditRunMock.mockResolvedValue({
+      auditRunId: "run-fallback",
+      pagesProcessed: 1,
+      homepageOnly: true,
+    });
+
+    const res = await POST(
+      makeRequestWithBody({ auditRunId: "run-fallback", domain: "fallback.com" })
+    );
+
+    expect(res.status).toBe(200);
+    expect(queueClientMock.fetch).toHaveBeenCalledWith("audit.run");
+    expect(queueClientMock.fetchById).not.toHaveBeenCalled();
+  });
+
+  it("returns idle when the specific job is not claimable via fetchById", async () => {
+    queueClientMock.fetchById.mockResolvedValue(null);
+
+    const res = await POST(
+      makeRequestWithBody({ jobId: "job-gone", auditRunId: "run-gone", domain: "gone.com" })
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.status).toBe("idle");
+    expect(queueClientMock.fetchById).toHaveBeenCalledWith("audit.run", "job-gone");
+    expect(dispatchAuditRunMock).not.toHaveBeenCalled();
   });
 });

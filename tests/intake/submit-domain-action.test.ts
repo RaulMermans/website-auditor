@@ -99,7 +99,7 @@ describe("submitDomainAction", () => {
     );
   });
 
-  it("passes auditRunId and domain in the worker trigger body", async () => {
+  it("passes jobId, auditRunId, and domain in the worker trigger body", async () => {
     createAuditJobMock.mockResolvedValue({
       targetDomain: { id: "td-1", domain: "example.com" },
       auditRun: { id: "run-1", status: "pending" },
@@ -113,6 +113,7 @@ describe("submitDomainAction", () => {
 
     const [, fetchInit] = fetchSpy.mock.calls[0]!;
     const body = JSON.parse((fetchInit as RequestInit).body as string);
+    expect(body.jobId).toBe("job-1");
     expect(body.auditRunId).toBe("run-1");
     expect(body.domain).toBe("example.com");
   });
