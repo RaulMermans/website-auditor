@@ -1,6 +1,7 @@
 import type { PageType } from "@/lib/types";
 
-export type CaptureMethod = "static" | "browser" | "fallback_static" | "skip";
+// "static_preferred" = try static first; escalate to browser only if HTML is thin/JS-shell.
+export type CaptureMethod = "static" | "browser" | "fallback_static" | "static_preferred" | "skip";
 
 export type CaptureOutcomeState =
   | "public_capture_success"
@@ -20,12 +21,28 @@ export interface CapturePlan {
 }
 
 /**
+ * Returns true when HTML appears to be a JS-rendered shell with minimal public content.
+ * Threshold: fewer than 300 non-tag characters after stripping scripts/styles/tags.
+ * Typical marketing homepages have 800-3000 chars; React shells have 0-50 chars.
+ */
+export function isJsShellHtml(html: string): boolean {
+  const stripped = html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return stripped.length < 300;
+}
+
+/**
  * Decides how to capture a page given run state.
  *
  * Policy:
- * - homepage: browser (needs screenshot + rendered UX evidence)
- * - secondary pages: static HTTP fetch (text extraction is sufficient; no screenshot needed)
- * - any page when browserDegraded: fallback_static
+ * - homepage: static_preferred — try static fetch first; escalate to browser only
+ *   if the HTML is a JS shell. Browser adds screenshot value but is not mandatory.
+ * - secondary pages: static HTTP fetch is sufficient (no screenshot needed).
+ * - any page when browserDegraded: fallback_static.
  */
 export function planCaptureMethod(options: {
   pageType: PageType;
@@ -42,15 +59,14 @@ export function planCaptureMethod(options: {
 
   if (options.pageType === "homepage") {
     return {
-      captureMethod: "browser",
-      requiresScreenshot: true,
+      captureMethod: "static_preferred",
+      requiresScreenshot: false,
       browserAllowed: true,
-      reason: "homepage_discovery_and_screenshot",
+      reason: "homepage_static_preferred",
     };
   }
 
   // Secondary pages: static HTTP fetch is the primary capture method.
-  // Rendered state and screenshots are only needed for homepage UX evidence.
   return {
     captureMethod: "static",
     requiresScreenshot: false,

@@ -410,42 +410,36 @@ describe("captureAuditRun", () => {
 
   // ─── Scenario B: browser still used for homepage ──────────────────────────
 
-  it("marks the run failed when the homepage browser capture cannot be loaded", async () => {
-    // Static discovery succeeds (default fetchStatic returns 200).
-    // Browser capture of homepage then fails with a 5xx response.
+  it("falls back to static when browser returns a 5xx error response for the homepage", async () => {
+    // Static discovery succeeds (default fetchStatic returns 200 with thin HTML).
+    // Browser capture of homepage returns 500. With static-first policy the run should
+    // NOT hard-fail — it degrades to the already-available static HTML.
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { deps } = createDeps({ homepageOk: false });
 
     const result = await captureAuditRun(
-      {
-        auditRunId: "run-999",
-        domain: "example.com",
-      },
+      { auditRunId: "run-999", domain: "example.com" },
       deps
     );
 
+    // Run succeeds via static fallback — a browser 500 is not a terminal failure.
     expect(result.auditRunId).toBe("run-999");
-    expect(result.pagesProcessed).toBe(0);
+    expect(result.pagesProcessed).toBe(1);
     expect(result.homepageOnly).toBe(true);
-    // With static-first discovery, the error now reflects the browser capture failure URL.
-    expect(result.errorMessage).toMatch(/Failed to load https:\/\/example\.com\//i);
-    expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith({
-      auditRunId: "run-999",
-      status: "failed",
-      failureReason: "Failed to load https://example.com/. Status: 500",
-      failureKind: "unknown",
-      failureStage: "capture",
-      failureDetails: {
-        driver: "playwright",
-        marker: "unknown",
-        message: "Failed to load https://example.com/. Status: 500",
-        retryable: true,
-        source: "unknown",
-        statusCode: undefined,
-        url: "https://example.com/",
-      },
-      homepageOnly: true,
-      limitationNote: undefined,
-    });
+    expect(result.errorMessage).toBeUndefined();
+    // Limitation note reflects a browser runtime failure, not a bot challenge.
+    expect(result.limitationNote).toMatch(/runtime error/i);
+
+    // Homepage captured via fallback_static — no screenshot
+    const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
+    const homepageCall = calls.find((c: any) => c[0].url?.endsWith("/"));
+    expect(homepageCall[0].captureMethod).toBe("fallback_static");
+    expect(homepageCall[0].screenshotStorageKey).toBeNull();
+
+    // Run never marked as failed
+    expect(deps.auditJobs.updateAuditRunStatus).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed" })
+    );
   });
 
   it("classifies 403 from static discovery as target access denial at discover stage", async () => {
@@ -653,7 +647,10 @@ describe("captureAuditRun", () => {
 
   // ─── Screenshot timeout distinct from challenge ───────────────────────────
 
-  it("classifies screenshot timeout as rendering_failed, not as capture_blocked", async () => {
+  it("falls back to static (not hard-fail) when browser screenshot times out", async () => {
+    // Static discovery and capture fetch both succeed with thin HTML.
+    // Browser navigation and HTML extraction succeed, but the screenshot times out.
+    // Key: this must NOT be classified as capture_blocked and must NOT kill the run.
     const { deps } = createDeps();
 
     const originalCreateSession = deps.browser.createSession;
@@ -672,16 +669,17 @@ describe("captureAuditRun", () => {
       deps
     );
 
-    // Screenshot timeout on homepage fails the run (homepage is browser-captured)
-    // Key assertion: failure kind is NOT capture_blocked
-    expect(result.errorMessage).not.toMatch(/bot.challenge|security check|captcha/i);
-    if (result.errorMessage) {
-      expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          failureKind: expect.not.stringContaining("capture_blocked"),
-        })
-      );
-    }
+    // Run succeeds via static fallback — screenshot timeout is a runtime error, not a bot challenge.
+    expect(result.pagesProcessed).toBe(1);
+    expect(result.errorMessage).toBeUndefined();
+    expect(result.limitationNote).not.toMatch(/bot.challenge|security check|captcha/i);
+    expect(result.limitationNote).toBeDefined();
+
+    // Homepage captured via fallback_static (browser screenshot failed)
+    const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
+    const homepageCall = calls.find((c: any) => c[0].url?.endsWith("/"));
+    expect(homepageCall[0].captureMethod).toBe("fallback_static");
+    expect(homepageCall[0].screenshotStorageKey).toBeNull();
   });
 
   // ─── Scenario F: static-first secondary pages don't need browser session ──
@@ -728,6 +726,148 @@ describe("captureAuditRun", () => {
     // Browser session never created — only secondary page needed, planner picks static
     expect(deps.browser.createSession).not.toHaveBeenCalled();
     expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/about");
+  });
+
+  // ─── Static-first policy: sufficient HTML bypasses browser entirely ─────────
+
+  it("completes with static capture when homepage HTML has sufficient content (no browser needed)", async () => {
+    const richHtml = [
+      "<html><head><title>Grow Your Business</title></head><body>",
+      "<h1>Predictable Lead Generation for Agencies</h1>",
+      "<p>We help agencies and consultants turn their website into a predictable lead generation machine. ",
+      "Our proven methodology identifies exactly what is holding your site back from converting visitors ",
+      "into qualified prospects. Stop guessing and start growing with evidence-backed recommendations.</p>",
+      "<ul><li>More qualified leads</li><li>Higher conversion rates</li><li>Clear positioning</li></ul>",
+      "<p>Book a free strategy call today and see how we can help you scale your business faster. ",
+      "Over 200 agencies have improved their close rates using our framework. ",
+      "Schedule your audit now and get a full breakdown within 48 hours.</p>",
+      "</body></html>",
+    ].join("");
+
+    const { deps } = createDeps();
+    // Return rich HTML for any URL — both discovery and capture fetches.
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
+      html: richHtml,
+      statusCode: 200,
+      ok: true,
+      finalUrl: url,
+    }));
+
+    const result = await captureAuditRun({ auditRunId: "run-rich", domain: "example.com" }, deps);
+
+    expect(result.pagesProcessed).toBe(1);
+    expect(result.errorMessage).toBeUndefined();
+    expect(result.limitationNote).toBeNull();
+
+    // Browser session never created — static HTML is sufficient
+    expect(deps.browser.createSession).not.toHaveBeenCalled();
+
+    // Homepage captured via plain static (not fallback_static, not browser)
+    const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
+    const homepageCall = calls.find((c: any) => c[0].url?.endsWith("/"));
+    expect(homepageCall[0].captureMethod).toBe("static");
+    expect(homepageCall[0].screenshotStorageKey).toBeNull();
+  });
+
+  it("escalates to browser when homepage HTML is a JS shell (thin/rendered content)", async () => {
+    // Default fetchStatic HTML is <html data-url="..."></html> — thin JS shell.
+    // Browser should be tried as an upgrade.
+    const { deps } = createDeps();
+
+    const result = await captureAuditRun({ auditRunId: "run-shell", domain: "example.com" }, deps);
+
+    expect(result.pagesProcessed).toBe(1);
+    expect(result.errorMessage).toBeUndefined();
+
+    // Browser was used for the homepage (thin HTML triggers escalation)
+    expect(deps.browser.createSession).toHaveBeenCalledTimes(1);
+    const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
+    const homepageCall = calls.find((c: any) => c[0].captureMethod);
+    expect(homepageCall[0].captureMethod).toBe("browser");
+  });
+
+  it("falls back to static with runtime-failure note when browser fails with a non-challenge error", async () => {
+    // Static fetch succeeds (thin HTML), browser navigation returns 500 (non-challenge).
+    // The run should complete — a browser error must not kill an otherwise-auditable page.
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { deps } = createDeps({ homepageOk: false });
+
+    const result = await captureAuditRun({ auditRunId: "run-nonchal", domain: "example.com" }, deps);
+
+    expect(result.pagesProcessed).toBe(1);
+    expect(result.errorMessage).toBeUndefined();
+    expect(result.limitationNote).toMatch(/runtime error/i);
+
+    const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
+    const homepageCall = calls.find((c: any) => c[0].url?.endsWith("/"));
+    expect(homepageCall[0].captureMethod).toBe("fallback_static");
+    expect(homepageCall[0].screenshotStorageKey).toBeNull();
+  });
+
+  it("hard-fails only when both static and browser are blocked (no public evidence)", async () => {
+    // Both static and browser return a bot-challenge page.
+    // No usable HTML evidence: run must hard-fail.
+    const challengeHtml = "<html><body>captcha verify you are human cloudflare</body></html>";
+
+    const { deps } = createDeps();
+    // Static fetcher always returns the challenge, for every URL.
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
+      html: challengeHtml,
+      statusCode: 200,
+      ok: true,
+      finalUrl: url,
+    }));
+    // Browser also gets the challenge via extractHtml.
+    const { session } = createDeps({
+      htmlByUrl: { "https://example.com/": challengeHtml },
+    });
+    deps.browser.createSession = vi.fn().mockResolvedValue(session);
+
+    const result = await captureAuditRun({ auditRunId: "run-both-blocked", domain: "example.com" }, deps);
+
+    // Hard fail: no usable evidence from any path
+    expect(result.pagesProcessed).toBe(0);
+    expect(result.errorMessage).toBeDefined();
+    expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "failed" })
+    );
+  });
+
+  it("browser degradation from homepage disables browser for all remaining pages in the run", async () => {
+    // Static-preferred for homepage: thin HTML → browser tried → bot challenge → degrade.
+    // Remaining secondary pages must use static, not attempt browser.
+    const { deps } = createDeps({
+      htmlByUrl: {
+        // Browser sees challenge when navigating homepage
+        "https://example.com/": "<html><body>captcha verify you are human</body></html>",
+      },
+    });
+    // Static fetcher: discovery URL returns HTML with an about link; all other URLs return thin HTML.
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
+      html: url === "https://example.com"
+        ? '<html><body><a href="https://example.com/about">About</a></body></html>'
+        : `<html data-url="${url}"></html>`,
+      statusCode: 200,
+      ok: true,
+      finalUrl: url,
+    }));
+
+    const result = await captureAuditRun({ auditRunId: "run-degrade", domain: "example.com" }, deps);
+
+    expect(result.pagesProcessed).toBe(2); // homepage (fallback_static) + about (static)
+    expect(result.limitationNote).toMatch(/security challenge/i);
+
+    // Browser was created exactly once (for homepage attempt), then degraded
+    expect(deps.browser.createSession).toHaveBeenCalledTimes(1);
+
+    const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
+    const homepageCall = calls.find((c: any) => c[0].url?.endsWith("/"));
+    expect(homepageCall[0].captureMethod).toBe("fallback_static");
+
+    // About page uses fallback_static (not plain static) because browser is degraded for the run
+    const aboutCall = calls.find((c: any) => c[0].url === "https://example.com/about");
+    expect(aboutCall[0].captureMethod).toBe("fallback_static");
+    expect(aboutCall[0].screenshotStorageKey).toBeNull();
   });
 
   // ─── Limitation reporting reflects degraded capture ───────────────────────

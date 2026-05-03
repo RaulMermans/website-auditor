@@ -231,12 +231,14 @@ function RunStatusView({
   domain,
   statusMeta,
   homepageOnly,
+  limitationNote,
   failurePresentation,
 }: {
   auditRunId: string;
   domain: string;
   statusMeta: BadgePresentation & { description: string };
   homepageOnly: boolean;
+  limitationNote?: string | null;
   failurePresentation: ReturnType<typeof getAuditFailurePresentation>;
 }) {
   return (
@@ -325,6 +327,23 @@ function RunStatusView({
               enough trustworthy evidence.
             </p>
           </div>
+
+          {limitationNote && (
+            <div
+              style={{
+                marginTop: 14,
+                padding: "12px 16px",
+                borderRadius: 12,
+                background: "#fffbeb",
+                border: "1px solid #fcd34d",
+                color: "#92400e",
+                fontSize: "0.88rem",
+                lineHeight: 1.6,
+              }}
+            >
+              <strong>Capture limitation:</strong> {limitationNote}
+            </div>
+          )}
         </section>
 
         {failurePresentation && (
@@ -405,6 +424,7 @@ export default async function ReportPage({
         domain={data.domain}
         statusMeta={statusMeta}
         homepageOnly={data.auditRun.homepageOnly}
+        limitationNote={data.auditRun.limitationNote}
         failurePresentation={failurePresentation}
       />
     );
@@ -550,7 +570,7 @@ export default async function ReportPage({
           {/* Coverage & Limitations callout */}
           <div
             style={{
-              marginBottom: 18,
+              marginBottom: data.auditRun.limitationNote ? 10 : 18,
               padding: "14px 16px",
               borderRadius: 14,
               background: "#fef9c3",
@@ -572,6 +592,23 @@ export default async function ReportPage({
               See full evidence notes →
             </Link>
           </div>
+
+          {data.auditRun.limitationNote && (
+            <div
+              style={{
+                marginBottom: 18,
+                padding: "12px 16px",
+                borderRadius: 14,
+                background: "#fffbeb",
+                border: "1px solid #fcd34d",
+                color: "#92400e",
+                fontSize: "0.88rem",
+                lineHeight: 1.6,
+              }}
+            >
+              <strong>Capture limitation:</strong> {data.auditRun.limitationNote}
+            </div>
+          )}
 
           <div
             style={{

@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   captureOutcomeFromFailureKind,
+  isJsShellHtml,
   planCaptureMethod,
 } from "@/lib/capture-policy";
 
 describe("planCaptureMethod", () => {
-  it("returns browser for homepage when not degraded", () => {
+  it("returns static_preferred for homepage when not degraded", () => {
     const plan = planCaptureMethod({ pageType: "homepage", browserDegraded: false });
-    expect(plan.captureMethod).toBe("browser");
-    expect(plan.requiresScreenshot).toBe(true);
+    expect(plan.captureMethod).toBe("static_preferred");
+    expect(plan.requiresScreenshot).toBe(false);
     expect(plan.browserAllowed).toBe(true);
-    expect(plan.reason).toBe("homepage_discovery_and_screenshot");
+    expect(plan.reason).toBe("homepage_static_preferred");
   });
 
   it("returns static for secondary page when not degraded", () => {
@@ -45,6 +46,35 @@ describe("planCaptureMethod", () => {
       expect(plan.captureMethod).toBe("fallback_static");
       expect(plan.browserAllowed).toBe(false);
     }
+  });
+});
+
+describe("isJsShellHtml", () => {
+  it("returns true for empty or near-empty HTML", () => {
+    expect(isJsShellHtml("<html></html>")).toBe(true);
+    expect(isJsShellHtml("<html><body></body></html>")).toBe(true);
+    expect(isJsShellHtml('<html data-url="https://example.com/"></html>')).toBe(true);
+  });
+
+  it("returns true for HTML with only a few link tags (thin discovery HTML)", () => {
+    const thin = "<html><body><a href='/about'>About</a><a href='/contact'>Contact</a></body></html>";
+    expect(isJsShellHtml(thin)).toBe(true);
+  });
+
+  it("returns true when content is only inside script/style tags (stripped)", () => {
+    const shell = `<html><head><script>var app=window.__APP_DATA__||{}</script><style>body{margin:0}</style></head><body><div id="root"></div></html>`;
+    expect(isJsShellHtml(shell)).toBe(true);
+  });
+
+  it("returns false for HTML with substantial visible text content", () => {
+    const rich = `<html><body>
+      <h1>Grow your business with better leads</h1>
+      <p>We help agencies and consultants turn their website into a predictable lead generation machine.
+      Our audits identify exactly what is holding your site back from converting more visitors into qualified prospects.
+      Book a free strategy call today and see how we can help you scale faster without extra ad spend.</p>
+      <ul><li>More qualified leads</li><li>Higher conversion rates</li><li>Clear messaging</li></ul>
+    </body></html>`;
+    expect(isJsShellHtml(rich)).toBe(false);
   });
 });
 

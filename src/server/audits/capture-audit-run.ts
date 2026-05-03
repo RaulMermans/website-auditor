@@ -10,7 +10,7 @@ import type { StorageClient } from "@/server/contracts/storage";
 import { storageClient } from "@/server/contracts/storage";
 import type { CaptureMethodProvenance, PageSnapshot, PageState, PageType } from "@/lib/types";
 import { buildCapturePlan, getPagePriority } from "@/server/audits/page-archetypes";
-import { planCaptureMethod } from "@/lib/capture-policy";
+import { isJsShellHtml, planCaptureMethod } from "@/lib/capture-policy";
 import { browserDriver } from "@/server/browser/create-browser-driver";
 import type {
   BrowserDiscoveredLink,
@@ -24,6 +24,8 @@ const BROWSER_BLOCKED_LIMITATION_NOTE =
   "Browser capture was blocked by a security challenge. Evidence collected via public HTTP fetch without rendered page state or screenshots.";
 const BROWSER_UNAVAILABLE_LIMITATION_NOTE =
   "Browser rendering is unavailable in this environment. Evidence collected via public HTTP fetch without rendered page state or screenshots.";
+const BROWSER_RUNTIME_FAILURE_LIMITATION_NOTE =
+  "Browser capture encountered a runtime error. This audit continued using public HTML evidence only. Findings reflect static/public evidence and may not include post-render or protected states.";
 
 export interface AuditCaptureRequest {
   auditRunId: string;
@@ -443,6 +445,265 @@ async function captureQueuedPage(
   return { captured: false, captureBlocked: false };
 }
 
+// ─── Static-preferred capture (homepage static-first policy) ─────────────────
+
+type SessionGetter = () => Promise<BrowserSession | null>;
+
+interface StaticPreferredResult {
+  limitationNote: string | null;
+  browserDegraded: boolean;
+}
+
+/**
+ * Captures a homepage using static-first policy:
+ * 1. Fetch via public HTTP. Hard-fail only on non-bot-challenge errors (401, 403, DNS, etc.).
+ * 2. If HTML is rich enough: store static artifact — no browser needed.
+ * 3. If HTML is thin (JS shell) or static was blocked by a bot challenge:
+ *    a. Try browser as upgrade.
+ *    b. If browser fails for any reason: use static HTML (if available) with a limitation note.
+ *    c. If both static and browser are blocked: hard-fail with no_public_evidence.
+ */
+async function captureStaticPreferredPage(
+  auditRunId: string,
+  snapshot: Pick<PageSnapshot, "id" | "url" | "pageType" | "retryCount" | "auditRunId">,
+  deps: CaptureAuditRunDeps,
+  getSession: SessionGetter
+): Promise<StaticPreferredResult> {
+  const fetcher = deps.fetchStatic ?? fetchStaticPage;
+
+  await deps.auditJobs.updatePageSnapshotState({
+    pageSnapshotId: snapshot.id,
+    pageState: "capturing",
+    retryCount: 0,
+    lastError: null,
+  });
+
+  // Phase 1: Static fetch
+  let staticResult: StaticPageResult | null = null;
+  let staticWasBotBlocked = false;
+
+  try {
+    const raw = await fetcher(snapshot.url);
+    if (!raw.ok) {
+      throw new Error(`Static fetch failed. Status: ${raw.statusCode}`);
+    }
+    const barrier = detectAuditCaptureBarrier({
+      stage: "capture",
+      statusCode: raw.statusCode,
+      html: raw.html,
+      url: raw.finalUrl,
+      driver: "static",
+    });
+    if (barrier) {
+      throw new AuditFailureError(barrier);
+    }
+    staticResult = raw;
+  } catch (staticError) {
+    const failure = toAuditFailure(staticError, {
+      stage: "capture",
+      url: snapshot.url,
+      driver: "static",
+    });
+    if (failure.failureKind === "capture_blocked") {
+      // Bot challenge on static fetch: try browser below — it may bypass JS-rendered challenges.
+      staticWasBotBlocked = true;
+    } else {
+      // Hard barrier (401, 403, DNS, etc.): no public evidence available.
+      await deps.auditJobs.updatePageSnapshotState({
+        pageSnapshotId: snapshot.id,
+        pageState: "failed",
+        retryCount: 0,
+        lastError: failure.failureReason,
+      });
+      throw new AuditFailureError(failure);
+    }
+  }
+
+  // Decide whether browser is needed.
+  // Browser is needed when: static was bot-blocked, or the HTML is a JS shell (too thin).
+  const needsBrowser = staticWasBotBlocked || (staticResult !== null && isJsShellHtml(staticResult.html));
+
+  if (!needsBrowser && staticResult !== null) {
+    // Rich static HTML is sufficient — store and finish without a browser.
+    const htmlKey = await deps.storage.put(
+      buildArtifactKey(auditRunId, snapshot.pageType, staticResult.finalUrl, "html"),
+      staticResult.html,
+      "text/html"
+    );
+    await deps.auditJobs.completePageSnapshotCapture({
+      pageSnapshotId: snapshot.id,
+      url: staticResult.finalUrl,
+      htmlStorageKey: htmlKey,
+      screenshotStorageKey: null,
+      captureMethod: "static",
+      retryCount: 0,
+    });
+    return { limitationNote: null, browserDegraded: false };
+  }
+
+  // Phase 2: Attempt browser capture (for JS-shell escalation or bot-challenge bypass).
+  const browserSession = await getSession();
+
+  if (!browserSession) {
+    if (staticResult !== null) {
+      // No browser, but static HTML is available (thin but usable).
+      const htmlKey = await deps.storage.put(
+        buildArtifactKey(auditRunId, snapshot.pageType, staticResult.finalUrl, "html"),
+        staticResult.html,
+        "text/html"
+      );
+      await deps.auditJobs.completePageSnapshotCapture({
+        pageSnapshotId: snapshot.id,
+        url: staticResult.finalUrl,
+        htmlStorageKey: htmlKey,
+        screenshotStorageKey: null,
+        captureMethod: "fallback_static",
+        retryCount: 0,
+      });
+      return { limitationNote: BROWSER_UNAVAILABLE_LIMITATION_NOTE, browserDegraded: true };
+    }
+
+    // No browser and static was bot-blocked: no usable public evidence.
+    const hardFailure = {
+      failureKind: "capture_blocked" as const,
+      failureStage: "capture" as const,
+      failureReason:
+        "The page was blocked from both static capture and browser capture. No usable public evidence could be collected.",
+      failureDetails: {
+        source: "target" as const,
+        marker: "bot_challenge" as const,
+        retryable: false,
+        url: snapshot.url,
+      },
+    };
+    await deps.auditJobs.updatePageSnapshotState({
+      pageSnapshotId: snapshot.id,
+      pageState: "failed",
+      retryCount: 0,
+      lastError: hardFailure.failureReason,
+    });
+    throw new AuditFailureError(hardFailure);
+  }
+
+  // Phase 3: Browser capture attempt.
+  try {
+    await deps.auditJobs.updatePageSnapshotState({
+      pageSnapshotId: snapshot.id,
+      pageState: "capturing",
+      retryCount: 0,
+      lastError: null,
+    });
+
+    const response = await browserSession.navigate({
+      url: snapshot.url,
+      waitUntil: "load",
+      timeoutMs: 30000,
+    });
+    const statusBarrier = detectAuditCaptureBarrier({
+      stage: "capture",
+      statusCode: response.status,
+      url: response.url,
+      driver: deps.browser.name,
+    });
+    if (statusBarrier) {
+      throw new AuditFailureError(statusBarrier);
+    }
+    if (!response.ok) {
+      throw new Error(`Failed to load ${snapshot.url}. Status: ${response.status}`);
+    }
+
+    await deps.waitAfterNavigation(2000);
+
+    const currentUrl = await browserSession.getUrl();
+    const { value: html } = await browserSession.extractHtml();
+    const htmlBarrier = detectAuditCaptureBarrier({
+      stage: "capture",
+      statusCode: response.status,
+      html,
+      url: currentUrl,
+      driver: deps.browser.name,
+    });
+    if (htmlBarrier) {
+      throw new AuditFailureError(htmlBarrier);
+    }
+
+    const screenshot = await browserSession.screenshot({
+      fullPage: true,
+      format: "jpeg",
+      quality: 80,
+      timeoutMs: 90000,
+    });
+
+    const browserHtmlKey = await deps.storage.put(
+      buildArtifactKey(auditRunId, snapshot.pageType, currentUrl, "html"),
+      html,
+      "text/html"
+    );
+    const screenshotKey = await deps.storage.put(
+      buildArtifactKey(auditRunId, snapshot.pageType, currentUrl, "jpg"),
+      screenshot.data,
+      screenshot.contentType
+    );
+
+    await deps.auditJobs.completePageSnapshotCapture({
+      pageSnapshotId: snapshot.id,
+      url: currentUrl,
+      htmlStorageKey: browserHtmlKey,
+      screenshotStorageKey: screenshotKey,
+      captureMethod: "browser",
+      retryCount: 0,
+    });
+
+    return { limitationNote: null, browserDegraded: false };
+  } catch (browserError) {
+    const failure = toAuditFailure(browserError, {
+      stage: "capture",
+      url: snapshot.url,
+      driver: deps.browser.name,
+    });
+    const isBotChallenge = failure.failureKind === "capture_blocked";
+
+    if (staticResult !== null) {
+      // Browser failed but static HTML is available: use it as fallback.
+      const htmlKey = await deps.storage.put(
+        buildArtifactKey(auditRunId, snapshot.pageType, staticResult.finalUrl, "html"),
+        staticResult.html,
+        "text/html"
+      );
+      await deps.auditJobs.completePageSnapshotCapture({
+        pageSnapshotId: snapshot.id,
+        url: staticResult.finalUrl,
+        htmlStorageKey: htmlKey,
+        screenshotStorageKey: null,
+        captureMethod: "fallback_static",
+        retryCount: 0,
+      });
+      const note = isBotChallenge
+        ? BROWSER_BLOCKED_LIMITATION_NOTE
+        : BROWSER_RUNTIME_FAILURE_LIMITATION_NOTE;
+      return { limitationNote: note, browserDegraded: true };
+    }
+
+    // Both static (bot-blocked) and browser failed: no usable public evidence.
+    await deps.auditJobs.updatePageSnapshotState({
+      pageSnapshotId: snapshot.id,
+      pageState: "failed",
+      retryCount: 0,
+      lastError: failure.failureReason,
+    });
+    await deps.auditJobs.insertAuditRunAttempt({
+      auditRunId,
+      pageSnapshotId: snapshot.id,
+      stage: "capture",
+      attempt: 1,
+      failureKind: failure.failureKind,
+      evaluatorFeedback: failure.failureReason,
+      nextRetryStrategy: "escalate_to_failed",
+    }).catch(() => undefined);
+    throw new AuditFailureError(failure);
+  }
+}
+
 // ─── Orchestrator ─────────────────────────────────────────────────────────────
 
 export async function captureAuditRun(
@@ -481,7 +742,6 @@ export async function captureAuditRun(
       return session;
     } catch (launchError) {
       browserDegraded = true;
-      limitationNote = BROWSER_UNAVAILABLE_LIMITATION_NOTE;
       console.warn("[audit-capture] Browser unavailable, degrading to static capture", launchError);
       return null;
     }
@@ -545,18 +805,25 @@ export async function captureAuditRun(
     for (const snapshot of captureTargets) {
       const plan = planCaptureMethod({ pageType: snapshot.pageType, browserDegraded });
 
-      if (plan.captureMethod === "browser") {
+      if (plan.captureMethod === "static_preferred") {
+        // Static-first homepage: try static, escalate to browser only if HTML is thin.
+        const result = await captureStaticPreferredPage(auditRunId, snapshot, deps, getSession);
+        if (result.browserDegraded && !browserDegraded) {
+          browserDegraded = true;
+        }
+        limitationNote = limitationNote ?? result.limitationNote ?? null;
+      } else if (plan.captureMethod === "browser") {
+        // Legacy explicit-browser path (not reached by current policy; kept for safety).
         const browserSession = await getSession();
 
         if (!browserSession) {
-          // Session unavailable after planning — degrade this page to static.
           await captureStaticPage(auditRunId, snapshot, deps, "fallback_static");
+          limitationNote = limitationNote ?? BROWSER_UNAVAILABLE_LIMITATION_NOTE;
         } else {
           const result = await captureQueuedPage(browserSession, auditRunId, snapshot, deps);
           if (result.captureBlocked && !browserDegraded) {
             browserDegraded = true;
             limitationNote = limitationNote ?? BROWSER_BLOCKED_LIMITATION_NOTE;
-            // Page is in needs_review — retry via static fallback.
             await captureStaticPage(auditRunId, snapshot, deps, "fallback_static");
           }
         }
