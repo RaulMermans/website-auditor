@@ -248,3 +248,31 @@ POST /api/worker/process
 - `npm test` ✓ — 269 tests pass (7 new secondary sweep tests + 1 new process test)
 - `npm run build` ✓
 
+---
+
+## Shot 15 — Fallback Sweep Refinements for Commerce and Runtime Failures (2026-05-05)
+
+### What changed
+
+1. **`src/lib/capture-policy.ts`**: Expanded `SAFE_SECONDARY_ROUTES` with 10 new commerce/marketing paths (`/shop`, `/products`, `/locations`, etc.). Relaxed `assessPublicHtmlEvidence` threshold (from 160 to 80 chars) if the page contains at least 2 structural cues, allowing thinner but structured public pages to qualify.
+2. **`src/server/audits/capture-audit-run.ts`**:
+   - Refactored `captureAuditRun` loop to use `while(captureTargets.length > 0)` to dynamically pick up pages added mid-flight.
+   - Updated `captureStaticPreferredPage` to trigger `runSecondaryStaticSweep` if the static phase is bot-blocked or if the browser phase fails and static fallback is unusable.
+   - Updated `runSecondaryStaticSweep` to parse `sitemap.xml` and enqueue up to 2 same-origin URLs.
+3. **`tests/audits/capture-audit-run.test.ts`**: Added 3 new tests covering mid-flight sweep triggers and sitemap bounded discovery.
+
+### Behaviour contract
+
+| Condition | Previous | Now |
+|---|---|---|
+| Homepage static fetch bot-blocked inside capture phase | `failed` | `partial_complete` + limitation note |
+| Homepage browser capture fails + static is unusable | `failed` | `partial_complete` + limitation note |
+| `sitemap.xml` accessible | Ignored | Parses up to 2 same-origin `<loc>` URLs into queue |
+| Target is commerce/service site | Narrow secondary coverage | Expanded safe-route coverage for `/shop`, `/locations`, etc. |
+| Thin structured contact page (80-150 chars) | Ignored (unusable) | Accepted as usable if 2+ structural cues are present |
+
+### Verification
+- `npm run lint` ✓
+- `npm run typecheck` ✓
+- `npm test` ✓ — 272 tests pass (3 new tests added)
+- `npm run build` ✓

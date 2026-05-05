@@ -193,3 +193,20 @@ AC5 ✓ no anti-bot bypass mechanisms introduced
 AC6 ✓ secondary sweep is bounded: page cap, same-origin only, safe routes only
 AC7 ✓ hard barriers (401/403/429) still hard-fail without sweeping
 
+## Shot 15 — Fallback Sweep Refinements for Commerce and Runtime Failures (complete)
+
+Secondary sweep now operates globally for homepage capture failures (bot-challenge or runtime error) rather than just at discovery. Bounded route coverage is expanded to handle ecommerce and local service sites.
+
+- `captureAuditRun` loop refactored to dynamically process pages added mid-flight.
+- `captureStaticPreferredPage` triggers secondary sweep if static is bot-blocked or if browser fails and static is unusable.
+- `SAFE_SECONDARY_ROUTES` expanded with 10 new paths (`/shop`, `/products`, `/locations`, etc.).
+- `runSecondaryStaticSweep` parses `sitemap.xml` for up to 2 same-origin `<loc>` URLs.
+- `assessPublicHtmlEvidence` threshold lowered to 80 chars if 2+ structural cues are present.
+- 3 new tests added; all 272 tests pass.
+
+AC1 ✓ Trigger secondary sweep from `captureStaticPreferredPage(...)` bot-blocked static capture
+AC2 ✓ Trigger secondary sweep from `captureStaticPreferredPage(...)` browser failure
+AC3 ✓ Expand `SAFE_SECONDARY_ROUTES` with commerce/marketing paths
+AC4 ✓ Parse `sitemap.xml` in secondary sweep to enqueue up to 2 same-origin URLs
+AC5 ✓ Relax `assessPublicHtmlEvidence` threshold to 80 chars if 2+ structural cues are present
+AC6 ✓ Tests cover the new fallback triggers and sitemap bounded discovery

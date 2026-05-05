@@ -17,6 +17,16 @@ export const SAFE_SECONDARY_ROUTES: Array<{ path: string; pageType: PageType }> 
   { path: "/contact-us", pageType: "contact" },
   { path: "/services", pageType: "services" },
   { path: "/pricing", pageType: "pricing" },
+  { path: "/locations", pageType: "other" },
+  { path: "/stores", pageType: "other" },
+  { path: "/store-locator", pageType: "other" },
+  { path: "/shop", pageType: "other" },
+  { path: "/products", pageType: "other" },
+  { path: "/categories", pageType: "other" },
+  { path: "/collections", pageType: "other" },
+  { path: "/brands", pageType: "other" },
+  { path: "/faq", pageType: "other" },
+  { path: "/help", pageType: "other" },
   { path: "/privacy", pageType: "legal" },
   { path: "/privacy-policy", pageType: "legal" },
   { path: "/terms", pageType: "legal" },
@@ -122,7 +132,8 @@ export function assessPublicHtmlEvidence(html: string): PublicHtmlEvidenceAssess
     usable:
       visibleText.length >= 450 ||
       (visibleText.length >= 220 && structuralCueCount >= 3) ||
-      (visibleText.length >= 160 && titlePresent && headingCount > 0 && (ctaCueCount > 0 || contactCueCount > 0)),
+      (visibleText.length >= 160 && titlePresent && headingCount > 0 && (ctaCueCount > 0 || contactCueCount > 0)) ||
+      (visibleText.length >= 80 && structuralCueCount >= 2),
     textLength: visibleText.length,
     titlePresent,
     headingCount,

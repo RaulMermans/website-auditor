@@ -1135,4 +1135,90 @@ describe("captureAuditRun", () => {
     // Secondary sweep must not have been called (no extra insertPageSnapshot)
     expect(deps.auditJobs.insertPageSnapshot).not.toHaveBeenCalled();
   });
+  it("runs secondary static sweep when homepage static capture is bot-blocked", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const challengeHtml =
+      "<html><head><title>Just a moment…</title></head><body>Cloudflare security check captcha verify you are human</body></html>";
+    const { deps } = createDeps();
+
+    let fetchCount = 0;
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
+      if (url === "https://example.com" || url === "https://example.com/") {
+        fetchCount++;
+        if (fetchCount === 1) { // discovery phase
+          return { html: USABLE_THIN_HTML, statusCode: 200, ok: true, finalUrl: url };
+        }
+        // capture phase
+        return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
+      }
+      return { html: USABLE_THIN_HTML, statusCode: 200, ok: true, finalUrl: url };
+    });
+
+    const result = await captureAuditRun({ auditRunId: "run-bot-capture", domain: "example.com" }, deps);
+    expect(result.errorMessage).toBeUndefined();
+    expect(result.limitationNote).toMatch(/homepage capture was blocked/i);
+    expect(result.pagesProcessed).toBeGreaterThanOrEqual(1); // captured secondary
+  });
+
+  it("runs secondary static sweep when homepage browser capture fails and static is not usable", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { deps, session } = createDeps();
+
+    // Make `extractHtml` return the challenge HTML so it triggers capture_blocked.
+    session.navigate = vi.fn().mockResolvedValue({ url: "https://example.com", ok: true, status: 200 });
+    session.extractHtml = vi.fn().mockResolvedValue({ value: "<html><body>Cloudflare security check captcha verify you are human</body></html>" });
+
+    // Secondary routes return usable thin html, homepage static returns unusable thin html
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
+      if (url === "https://example.com" || url === "https://example.com/") {
+        return { html: "<html><body>too thin, needs browser</body></html>", statusCode: 200, ok: true, finalUrl: url };
+      }
+      return { html: USABLE_THIN_HTML, statusCode: 200, ok: true, finalUrl: url };
+    });
+
+    const result = await captureAuditRun({ auditRunId: "run-browser-bot-capture", domain: "example.com" }, deps);
+    expect(result.errorMessage).toBeUndefined();
+    expect(result.limitationNote).toMatch(/homepage capture was blocked/i);
+    expect(result.pagesProcessed).toBeGreaterThanOrEqual(1); // captured secondary
+  });
+
+  it("secondary sweep parses sitemap.xml and queues same-origin links", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const challengeHtml =
+      "<html><body>Cloudflare security check captcha verify you are human</body></html>";
+    const sitemapXml = `
+      <?xml version="1.0" encoding="UTF-8"?>
+      <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <url><loc>https://example.com/</loc></url>
+        <url><loc>https://example.com/products/shoes</loc></url>
+        <url><loc>https://example.com/products/shirts</loc></url>
+        <url><loc>https://example.com/products/hats</loc></url>
+        <url><loc>https://other.com/external</loc></url>
+      </urlset>
+    `;
+
+    const { deps } = createDeps();
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
+      if (url === "https://example.com" || url === "https://example.com/") {
+        return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
+      }
+      if (url === "https://example.com/sitemap.xml") {
+        return { html: sitemapXml, statusCode: 200, ok: true, finalUrl: url };
+      }
+      return { html: USABLE_THIN_HTML, statusCode: 200, ok: true, finalUrl: url };
+    });
+
+    const result = await captureAuditRun({ auditRunId: "run-sitemap", domain: "example.com" }, deps);
+    expect(result.errorMessage).toBeUndefined();
+    
+    const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
+    const capturedUrls = calls.map((c: any) => c[0].url);
+    
+    // Should capture shoes and shirts (bounded to max 2 from sitemap)
+    expect(capturedUrls).toContain("https://example.com/products/shoes");
+    expect(capturedUrls).toContain("https://example.com/products/shirts");
+    expect(capturedUrls).not.toContain("https://example.com/products/hats"); // cap
+    expect(capturedUrls).not.toContain("https://other.com/external"); // not same origin
+    expect(capturedUrls.filter((u: string) => u === "https://example.com/").length).toBe(0); // skipped homepage
+  });
 });

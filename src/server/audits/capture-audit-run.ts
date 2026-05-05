@@ -588,6 +588,18 @@ async function captureStaticPreferredPage(
   }
 
   if (staticWasBotBlocked) {
+    console.warn("[audit-capture] Homepage bot-blocked at static capture; attempting secondary static sweep");
+    const secondaryCount = await runSecondaryStaticSweep(snapshot.url, auditRunId, 5, deps);
+    if (secondaryCount >= SECONDARY_SWEEP_MIN_PAGES) {
+      await deps.auditJobs.updatePageSnapshotState({
+        pageSnapshotId: snapshot.id,
+        pageState: "failed",
+        retryCount: snapshot.retryCount ?? 0,
+        lastError: "Homepage blocked at static capture, but secondary pages queued.",
+      });
+      return { limitationNote: HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE, browserDegraded: true };
+    }
+
     await failNoUsablePublicEvidence(
       auditRunId,
       snapshot,
@@ -708,6 +720,21 @@ async function captureStaticPreferredPage(
       return { limitationNote: note, browserDegraded: true };
     }
 
+    console.warn("[audit-capture] Browser capture failed and static was not usable; attempting secondary static sweep");
+    const secondaryCount = await runSecondaryStaticSweep(snapshot.url, auditRunId, 5, deps);
+    if (secondaryCount >= SECONDARY_SWEEP_MIN_PAGES) {
+      await deps.auditJobs.updatePageSnapshotState({
+        pageSnapshotId: snapshot.id,
+        pageState: "failed",
+        retryCount: snapshot.retryCount ?? 0,
+        lastError: failure.failureReason,
+      });
+      const note = isBotChallenge
+        ? HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE
+        : BROWSER_RUNTIME_FAILURE_LIMITATION_NOTE;
+      return { limitationNote: note, browserDegraded: true };
+    }
+
     // Browser failed and the static response was not trustworthy enough for a bounded report.
     await deps.auditJobs.updatePageSnapshotState({
       pageSnapshotId: snapshot.id,
@@ -796,7 +823,7 @@ export async function captureAuditRun(
       progress = await deps.auditJobs.getAuditRunProgress(auditRunId);
     }
 
-    const captureTargets = progress.pageSnapshots
+    let captureTargets = progress.pageSnapshots
       .filter(
         (snapshot) => snapshot.pageState && CAPTURE_PENDING_STATES.has(snapshot.pageState)
       )
@@ -812,38 +839,46 @@ export async function captureAuditRun(
       homepageOnly: summarizeCaptureProgress(progress, limitationNote).homepageOnly,
     });
 
-    for (const snapshot of captureTargets) {
-      const plan = planCaptureMethod({ pageType: snapshot.pageType, browserDegraded });
+    while (captureTargets.length > 0) {
+      for (const snapshot of captureTargets) {
+        const plan = planCaptureMethod({ pageType: snapshot.pageType, browserDegraded });
 
-      if (plan.captureMethod === "static_preferred") {
-        // Static-first homepage: try static, escalate to browser only if HTML is thin.
-        const result = await captureStaticPreferredPage(auditRunId, snapshot, deps, getSession);
-        if (result.browserDegraded && !browserDegraded) {
-          browserDegraded = true;
-        }
-        limitationNote = limitationNote ?? result.limitationNote ?? null;
-      } else if (plan.captureMethod === "browser") {
-        // Legacy explicit-browser path (not reached by current policy; kept for safety).
-        const browserSession = await getSession();
-
-        if (!browserSession) {
-          await captureStaticPage(auditRunId, snapshot, deps, "fallback_static");
-          limitationNote = limitationNote ?? BROWSER_UNAVAILABLE_LIMITATION_NOTE;
-        } else {
-          const result = await captureQueuedPage(browserSession, auditRunId, snapshot, deps);
-          if (result.captureBlocked && !browserDegraded) {
+        if (plan.captureMethod === "static_preferred") {
+          // Static-first homepage: try static, escalate to browser only if HTML is thin.
+          const result = await captureStaticPreferredPage(auditRunId, snapshot, deps, getSession);
+          if (result.browserDegraded && !browserDegraded) {
             browserDegraded = true;
-            limitationNote = limitationNote ?? BROWSER_BLOCKED_LIMITATION_NOTE;
-            await captureStaticPage(auditRunId, snapshot, deps, "fallback_static");
           }
+          limitationNote = limitationNote ?? result.limitationNote ?? null;
+        } else if (plan.captureMethod === "browser") {
+          // Legacy explicit-browser path (not reached by current policy; kept for safety).
+          const browserSession = await getSession();
+
+          if (!browserSession) {
+            await captureStaticPage(auditRunId, snapshot, deps, "fallback_static");
+            limitationNote = limitationNote ?? BROWSER_UNAVAILABLE_LIMITATION_NOTE;
+          } else {
+            const result = await captureQueuedPage(browserSession, auditRunId, snapshot, deps);
+            if (result.captureBlocked && !browserDegraded) {
+              browserDegraded = true;
+              limitationNote = limitationNote ?? BROWSER_BLOCKED_LIMITATION_NOTE;
+              await captureStaticPage(auditRunId, snapshot, deps, "fallback_static");
+            }
+          }
+        } else {
+          // "static" (primary path for secondary pages) or "fallback_static" (degraded)
+          await captureStaticPage(auditRunId, snapshot, deps, plan.captureMethod as CaptureMethodProvenance);
         }
-      } else {
-        // "static" (primary path for secondary pages) or "fallback_static" (degraded)
-        await captureStaticPage(auditRunId, snapshot, deps, plan.captureMethod as CaptureMethodProvenance);
       }
+
+      progress = await deps.auditJobs.getAuditRunProgress(auditRunId);
+      captureTargets = progress.pageSnapshots
+        .filter(
+          (snapshot) => snapshot.pageState && CAPTURE_PENDING_STATES.has(snapshot.pageState)
+        )
+        .sort(compareSnapshots);
     }
 
-    progress = await deps.auditJobs.getAuditRunProgress(auditRunId);
     return summarizeCaptureProgress(progress, limitationNote);
   } catch (error) {
     const refreshedProgress = await deps.auditJobs
@@ -967,6 +1002,34 @@ async function runSecondaryStaticSweep(
 
       seenPageTypes.add(route.pageType);
       queued += 1;
+
+      // Small bounded extraction from sitemap to bolster coverage on commerce/large sites
+      if (route.path === "/sitemap.xml" && queued < maxPages - 1) {
+        const locs = Array.from(result.html.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)).map((m) => m[1]);
+        let sitemapQueued = 0;
+        for (const locUrl of locs) {
+          if (sitemapQueued >= 2 || queued >= maxPages - 1) break; // bounded: max 2 from sitemap
+          try {
+            const parsedLoc = new URL(locUrl);
+            if (parsedLoc.origin !== origin) continue; // same-origin only
+            if (parsedLoc.pathname === "/") continue; // skip homepage
+
+            await deps.auditJobs.insertPageSnapshot({
+              auditRunId,
+              url: parsedLoc.href,
+              pageType: "other",
+              pagePriority: 80 + sitemapQueued * 10,
+              pageState: "queued",
+              retryCount: 0,
+              lastError: null,
+            });
+            queued += 1;
+            sitemapQueued += 1;
+          } catch {
+            continue;
+          }
+        }
+      }
     } catch {
       // Silently skip routes that time out or cannot be reached.
       continue;
