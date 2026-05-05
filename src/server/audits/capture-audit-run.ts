@@ -12,8 +12,11 @@ import type { CaptureMethodProvenance, PageSnapshot, PageState, PageType } from 
 import { buildCapturePlan, getPagePriority } from "@/server/audits/page-archetypes";
 import {
   assessPublicHtmlEvidence,
+  HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE,
   isJsShellHtml,
   planCaptureMethod,
+  SAFE_SECONDARY_ROUTES,
+  SECONDARY_SWEEP_MIN_PAGES,
 } from "@/lib/capture-policy";
 import { browserDriver } from "@/server/browser/create-browser-driver";
 import type {
@@ -779,7 +782,16 @@ export async function captureAuditRun(
 
       // Static-first discovery: fetch homepage via HTTP and extract links without a browser.
       // Browser is used later (capture phase) only for homepage screenshot.
-      await doStaticDiscovery(baseUrl, auditRunId, maxPages, deps);
+      // If homepage is bot-blocked, a secondary static sweep is attempted instead.
+      const discoveryResult = await doStaticDiscovery(baseUrl, auditRunId, maxPages, deps);
+
+      if (discoveryResult.homepageBlocked) {
+        // Homepage was bot-blocked but secondary evidence was found.
+        // Skip browser capture entirely — mark as degraded so the orchestrator
+        // proceeds directly to analyze the secondary pages.
+        browserDegraded = true;
+        limitationNote = discoveryResult.limitationNote;
+      }
 
       progress = await deps.auditJobs.getAuditRunProgress(auditRunId);
     }
@@ -873,12 +885,103 @@ export async function captureAuditRun(
 
 // ─── Static discovery helper ──────────────────────────────────────────────────
 
+/**
+ * Secondary static-only public evidence sweep.
+ *
+ * Called when homepage capture is blocked by a bot/security challenge.
+ * Probes safe public routes (robots.txt, sitemap.xml, /about, /contact, etc.)
+ * using plain HTTP only — no browser, no evasion.
+ *
+ * Returns the number of successfully queued pages.
+ * A page is queued only when it returns a non-challenge 200 OK response.
+ *
+ * Bounds: same-origin only, safe routes only, low page cap (maxPages - 1).
+ */
+async function runSecondaryStaticSweep(
+  baseUrl: string,
+  auditRunId: string,
+  maxPages: number,
+  deps: CaptureAuditRunDeps
+): Promise<number> {
+  const fetcher = deps.fetchStatic ?? fetchStaticPage;
+  const origin = new URL(baseUrl).origin;
+  let queued = 0;
+  const seenPageTypes = new Set<string>();
+
+  for (const route of SAFE_SECONDARY_ROUTES) {
+    if (queued >= maxPages - 1) {
+      break;
+    }
+
+    // Avoid two pages of the same type (e.g. /about and /about-us both being "about").
+    if (seenPageTypes.has(route.pageType) && route.pageType !== "other") {
+      continue;
+    }
+
+    const url = `${origin}${route.path}`;
+
+    try {
+      const result = await fetcher(url);
+
+      if (!result.ok) {
+        continue;
+      }
+
+      // Skip bot-challenge or auth-wall responses.
+      const barrier = detectAuditCaptureBarrier({
+        stage: "capture",
+        statusCode: result.statusCode,
+        html: result.html,
+        url: result.finalUrl,
+        driver: "static",
+      });
+      if (barrier) {
+        continue;
+      }
+
+      // Skip pages with no usable public evidence (bare shells, redirect pages, etc.).
+      // For robots.txt and sitemap.xml: accept only if the response is NOT an HTML page
+      // (real robots.txt starts with "User-agent:" or "#"; real sitemap starts with "<?xml").
+      const isMetaRoute = route.path === "/robots.txt" || route.path === "/sitemap.xml";
+      const looksLikeHtmlPage = /^\s*(<html|<!doctype)/i.test(result.html);
+      if (isMetaRoute) {
+        if (looksLikeHtmlPage) {
+          continue;
+        }
+      } else {
+        const assessment = assessPublicHtmlEvidence(result.html);
+        if (!assessment.usable) {
+          continue;
+        }
+      }
+
+      await deps.auditJobs.insertPageSnapshot({
+        auditRunId,
+        url: result.finalUrl,
+        pageType: route.pageType,
+        pagePriority: 50 + queued * 10, // deprioritized behind any real discovery
+        pageState: "queued",
+        retryCount: 0,
+        lastError: null,
+      });
+
+      seenPageTypes.add(route.pageType);
+      queued += 1;
+    } catch {
+      // Silently skip routes that time out or cannot be reached.
+      continue;
+    }
+  }
+
+  return queued;
+}
+
 async function doStaticDiscovery(
   baseUrl: string,
   auditRunId: string,
   maxPages: number,
   deps: CaptureAuditRunDeps
-): Promise<void> {
+): Promise<{ homepageBlocked: boolean; limitationNote: string | null }> {
   const fetcher = deps.fetchStatic ?? fetchStaticPage;
   const result = await fetcher(baseUrl);
 
@@ -890,6 +993,7 @@ async function doStaticDiscovery(
     driver: "static",
   });
   if (statusBarrier) {
+    // Hard access barriers (401/403/429) are not recoverable via secondary sweep.
     throw new AuditFailureError(statusBarrier);
   }
 
@@ -905,6 +1009,22 @@ async function doStaticDiscovery(
     url: result.finalUrl,
     driver: "static",
   });
+
+  if (htmlBarrier && htmlBarrier.failureKind === "capture_blocked") {
+    // Homepage is bot-blocked. Do NOT hard-fail yet.
+    // Attempt a secondary static-only public evidence sweep.
+    console.warn("[audit-capture] Homepage bot-blocked at discovery; attempting secondary static sweep");
+    const secondaryCount = await runSecondaryStaticSweep(baseUrl, auditRunId, maxPages, deps);
+
+    if (secondaryCount < SECONDARY_SWEEP_MIN_PAGES) {
+      // No trustworthy secondary evidence either → hard-fail.
+      throw new AuditFailureError(htmlBarrier);
+    }
+
+    // Secondary evidence obtained → continue as homepage-blocked partial audit.
+    return { homepageBlocked: true, limitationNote: HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE };
+  }
+
   if (htmlBarrier) {
     throw new AuditFailureError(htmlBarrier);
   }
@@ -925,4 +1045,6 @@ async function doStaticDiscovery(
       })
     )
   );
+
+  return { homepageBlocked: false, limitationNote: null };
 }

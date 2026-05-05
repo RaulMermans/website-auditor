@@ -408,4 +408,85 @@ describe("processAuditRun", () => {
       errorMessage: "browser launch failed",
     });
   });
+
+  it("resolves partial_complete when homepage is blocked but secondary evidence was captured", async () => {
+    // No homepage snapshot — only secondary pages were captured via secondary static sweep.
+    // The limitation note is the signal that this is homepage-blocked mode.
+    const limitationNote =
+      "Homepage capture was blocked by a security or bot-challenge page. This audit was completed using accessible public secondary pages and static technical evidence only. Findings are bounded to the inspected public evidence and do not include homepage-specific observations (hero clarity, above-the-fold UX, or rendered visual hierarchy).";
+
+    const auditJobs = {
+      getAuditRunProgress: vi
+        .fn()
+        .mockResolvedValueOnce(makeProgress())
+        .mockResolvedValueOnce(
+          makeProgress({
+            status: "capturing",
+            pageSnapshots: [
+              {
+                id: "snapshot-1",
+                pageType: "about",
+                pageState: "captured",
+                htmlStorageKey: "shot_about.html",
+              },
+              {
+                id: "snapshot-2",
+                pageType: "contact",
+                pageState: "captured",
+                htmlStorageKey: "shot_contact.html",
+              },
+            ],
+          })
+        )
+        .mockResolvedValueOnce(
+          makeProgress({
+            status: "analyzing",
+            pageSnapshots: [
+              {
+                id: "snapshot-1",
+                pageType: "about",
+                pageState: "accepted",
+                htmlStorageKey: "shot_about.html",
+              },
+              {
+                id: "snapshot-2",
+                pageType: "contact",
+                pageState: "accepted",
+                htmlStorageKey: "shot_contact.html",
+              },
+            ],
+          })
+        ),
+      updateAuditRunStatus: vi.fn().mockResolvedValue(undefined),
+    };
+    const capture = vi.fn().mockResolvedValue({
+      auditRunId: "run-hp-blocked",
+      pagesProcessed: 2,
+      homepageOnly: false,
+      limitationNote,
+    });
+    const analyze = vi.fn().mockResolvedValue({
+      auditRunId: "run-hp-blocked",
+      pageEvidence: [{ id: "evidence-1" }],
+      findings: [],
+    });
+
+    const result = await processAuditRun(
+      { auditRunId: "run-hp-blocked", domain: "example.com" },
+      { auditJobs, capture, analyze }
+    );
+
+    // Must be partial_complete, not failed
+    expect(auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith({
+      auditRunId: "run-hp-blocked",
+      status: "partial_complete",
+      homepageOnly: false,
+      failureReason: null,
+      limitationNote,
+    });
+    expect(result.limitationNote).toBe(limitationNote);
+    expect(result.errorMessage).toBeUndefined();
+    // Analysis still ran on secondary evidence
+    expect(analyze).toHaveBeenCalledWith("run-hp-blocked");
+  });
 });

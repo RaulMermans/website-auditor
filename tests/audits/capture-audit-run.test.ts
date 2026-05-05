@@ -935,4 +935,204 @@ describe("captureAuditRun", () => {
     expect(resultBlocked.errorMessage).toMatch(/security or bot-challenge page/i);
     expect(resultBlocked.limitationNote).toBeNull();
   });
+
+  // ─── Secondary static sweep: homepage bot-blocked ─────────────────────────
+
+  it("runs secondary static sweep when homepage is bot-blocked at discovery and secondary pages are accessible", async () => {
+    // Homepage returns a bot-challenge page (200 OK but challenge HTML).
+    // Secondary routes /about and /contact return usable public HTML.
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const challengeHtml =
+      "<html><head><title>Just a moment…</title></head><body>Cloudflare security check captcha verify you are human</body></html>";
+    const secondaryHtml = USABLE_THIN_HTML;
+
+    const { deps } = createDeps();
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
+      if (url === "https://example.com") {
+        return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
+      }
+      // Secondary routes return usable HTML
+      return { html: secondaryHtml, statusCode: 200, ok: true, finalUrl: url };
+    });
+
+    const result = await captureAuditRun(
+      { auditRunId: "run-secondary-sweep", domain: "example.com" },
+      deps
+    );
+
+    // Must NOT hard-fail
+    expect(result.errorMessage).toBeUndefined();
+    // Must carry the homepage-blocked limitation note
+    expect(result.limitationNote).toMatch(/homepage capture was blocked/i);
+    // Must have captured at least one secondary page
+    expect(result.pagesProcessed).toBeGreaterThanOrEqual(1);
+    // homepageOnly is false because secondary pages were captured
+    expect(result.homepageOnly).toBe(false);
+    // Browser must never have been opened
+    expect(deps.browser.createSession).not.toHaveBeenCalled();
+    // No homepage snapshot inserted (secondary sweep skips homepage entirely)
+    const calls = (deps.auditJobs.insertPageSnapshot as any).mock.calls;
+    const homepageInsert = calls.find((c: any) => c[0].pageType === "homepage");
+    expect(homepageInsert).toBeUndefined();
+  });
+
+  it("hard-fails when homepage is bot-blocked and secondary sweep finds no accessible public pages", async () => {
+    // Homepage and ALL secondary routes return the challenge page.
+    const challengeHtml =
+      "<html><body>Cloudflare security check captcha verify you are human</body></html>";
+
+    const { deps } = createDeps();
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
+      html: challengeHtml,
+      statusCode: 200,
+      ok: true,
+      finalUrl: url,
+    }));
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const result = await captureAuditRun(
+      { auditRunId: "run-all-blocked", domain: "example.com" },
+      deps
+    );
+
+    // Must hard-fail: no trustworthy evidence from any path
+    expect(result.errorMessage).toMatch(/security or bot-challenge page/i);
+    expect(result.pagesProcessed).toBe(0);
+    expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "failed" })
+    );
+  });
+
+  it("secondary sweep respects page cap and remains same-origin only", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const challengeHtml =
+      "<html><body>captcha verify you are human cloudflare</body></html>";
+    const secondaryHtml = USABLE_THIN_HTML;
+    let fetchCount = 0;
+
+    const { deps } = createDeps();
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
+      if (url === "https://example.com") {
+        return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
+      }
+      fetchCount++;
+      return { html: secondaryHtml, statusCode: 200, ok: true, finalUrl: url };
+    });
+
+    await captureAuditRun(
+      { auditRunId: "run-cap", domain: "example.com", maxPages: 3 },
+      deps
+    );
+
+    // maxPages=3 → cap is maxPages-1=2 secondary pages
+    const insertCalls = (deps.auditJobs.insertPageSnapshot as any).mock.calls;
+    // At most 2 secondary snapshots queued (maxPages - 1)
+    expect(insertCalls.length).toBeLessThanOrEqual(2);
+    // All fetched URLs must be same-origin
+    const allFetchedUrls: string[] = (deps.fetchStatic as any).mock.calls.map((c: any[]) => c[0]);
+    for (const url of allFetchedUrls) {
+      expect(url.startsWith("https://example.com")).toBe(true);
+    }
+  });
+
+  it("secondary sweep skips 404 and non-200 responses from secondary routes", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const challengeHtml =
+      "<html><body>captcha verify you are human cloudflare</body></html>";
+    const secondaryHtml = USABLE_THIN_HTML;
+
+    const { deps } = createDeps();
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
+      if (url === "https://example.com") {
+        return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
+      }
+      // Simulate most routes 404'ing, only /contact succeeds
+      if (url.includes("/contact")) {
+        return { html: secondaryHtml, statusCode: 200, ok: true, finalUrl: url };
+      }
+      return { html: "<html><body>Not Found</body></html>", statusCode: 404, ok: false, finalUrl: url };
+    });
+
+    const result = await captureAuditRun(
+      { auditRunId: "run-partial-routes", domain: "example.com" },
+      deps
+    );
+
+    // Should still succeed with just the contact page
+    expect(result.errorMessage).toBeUndefined();
+    expect(result.pagesProcessed).toBeGreaterThanOrEqual(1);
+    expect(result.limitationNote).toMatch(/homepage capture was blocked/i);
+  });
+
+  it("secondary sweep does not insert homepage as a secondary page", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const challengeHtml =
+      "<html><body>captcha verify you are human cloudflare</body></html>";
+
+    const { deps } = createDeps();
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
+      if (url === "https://example.com") {
+        return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
+      }
+      return { html: USABLE_THIN_HTML, statusCode: 200, ok: true, finalUrl: url };
+    });
+
+    await captureAuditRun(
+      { auditRunId: "run-no-homepage-secondary", domain: "example.com" },
+      deps
+    );
+
+    const insertCalls = (deps.auditJobs.insertPageSnapshot as any).mock.calls;
+    for (const call of insertCalls) {
+      expect(call[0].pageType).not.toBe("homepage");
+    }
+  });
+
+  it("limitation note appears in secondary-sweep partial audit result", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const challengeHtml =
+      "<html><body>captcha verify you are human cloudflare</body></html>";
+
+    const { deps } = createDeps();
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
+      if (url === "https://example.com") {
+        return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
+      }
+      return { html: USABLE_THIN_HTML, statusCode: 200, ok: true, finalUrl: url };
+    });
+
+    const result = await captureAuditRun(
+      { auditRunId: "run-note-check", domain: "example.com" },
+      deps
+    );
+
+    // Limitation note must be present and specific
+    expect(result.limitationNote).not.toBeNull();
+    expect(result.limitationNote).toMatch(/homepage capture was blocked/i);
+    expect(result.limitationNote).toMatch(/secondary pages/i);
+    // Run must NOT be marked failed
+    expect(result.errorMessage).toBeUndefined();
+    expect(deps.auditJobs.updateAuditRunStatus).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed" })
+    );
+  });
+
+  it("403 from homepage still hard-fails without attempting secondary sweep", async () => {
+    // HTTP 403 is a hard access barrier, not a bot-challenge — no secondary sweep.
+    const { deps } = createDeps({
+      fetchStaticStatusByUrl: { "https://example.com": 403 },
+    });
+
+    const result = await captureAuditRun(
+      { auditRunId: "run-403-no-sweep", domain: "example.com" },
+      deps
+    );
+
+    expect(result.errorMessage).toMatch(/target denied this audit request/i);
+    expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "failed", failureKind: "access_denied" })
+    );
+    // Secondary sweep must not have been called (no extra insertPageSnapshot)
+    expect(deps.auditJobs.insertPageSnapshot).not.toHaveBeenCalled();
+  });
 });

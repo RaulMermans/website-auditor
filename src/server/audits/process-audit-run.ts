@@ -64,9 +64,22 @@ function resolveCompletionStatus(
   const needsReview = snapshots.filter((s) => s.pageState && NEEDS_REVIEW_STATES.has(s.pageState));
   const failed = snapshots.filter((s) => s.pageState && FAILED_PAGE_STATES.has(s.pageState));
 
-  // Homepage must always be captured for a complete audit.
   const homepageCaptured = captured.some((s) => s.pageType === "homepage");
+  const hasSecondaryCaptured = captured.some((s) => s.pageType !== "homepage");
 
+  // Homepage blocked but secondary evidence exists → bounded partial audit.
+  // The limitation note is the authoritative signal that the run completed
+  // in homepage-blocked / secondary-sweep mode.
+  const isHomepageBlockedPartial =
+    !homepageCaptured &&
+    hasSecondaryCaptured &&
+    limitationNote != null;
+
+  if (isHomepageBlockedPartial) {
+    return "partial_complete";
+  }
+
+  // No homepage and no secondary evidence → failed.
   if (!homepageCaptured) {
     return "failed";
   }

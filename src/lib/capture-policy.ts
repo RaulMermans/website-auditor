@@ -3,6 +3,38 @@ import type { PageType } from "@/lib/types";
 // "static_preferred" = try static first; escalate to browser only if HTML is thin/JS-shell.
 export type CaptureMethod = "static" | "browser" | "fallback_static" | "static_preferred" | "skip";
 
+/**
+ * Safe public routes probed when homepage capture is blocked by a bot/security challenge.
+ * These are low-risk, same-origin endpoints that commonly expose static evidence.
+ * Order reflects evidence value (technical SEO first, then trust/contact, then content).
+ */
+export const SAFE_SECONDARY_ROUTES: Array<{ path: string; pageType: PageType }> = [
+  { path: "/robots.txt", pageType: "other" },
+  { path: "/sitemap.xml", pageType: "other" },
+  { path: "/about", pageType: "about" },
+  { path: "/about-us", pageType: "about" },
+  { path: "/contact", pageType: "contact" },
+  { path: "/contact-us", pageType: "contact" },
+  { path: "/services", pageType: "services" },
+  { path: "/pricing", pageType: "pricing" },
+  { path: "/privacy", pageType: "legal" },
+  { path: "/privacy-policy", pageType: "legal" },
+  { path: "/terms", pageType: "legal" },
+];
+
+/**
+ * Limitation note used when the homepage was blocked by a bot/security challenge
+ * but secondary public evidence allowed a bounded partial audit.
+ */
+export const HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE =
+  "Homepage capture was blocked by a security or bot-challenge page. This audit was completed using accessible public secondary pages and static technical evidence only. Findings are bounded to the inspected public evidence and do not include homepage-specific observations (hero clarity, above-the-fold UX, or rendered visual hierarchy).";
+
+/**
+ * Minimum number of secondary pages that must be successfully captured before
+ * a partial audit is considered trustworthy enough to produce findings.
+ */
+export const SECONDARY_SWEEP_MIN_PAGES = 1;
+
 export type CaptureOutcomeState =
   | "public_capture_success"
   | "browser_capture_success"

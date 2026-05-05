@@ -217,3 +217,34 @@ POST /api/worker/process
 - `APP_URL` should be set in production Vercel env to the canonical deployment URL.
 - The `/api/worker/trigger` route is retained for manual/debug use; no changes.
 - Real blob storage provider is still pending for production artifacts.
+
+---
+
+## Shot 14 — Secondary static-only public evidence sweep (2026-05-05)
+
+### What changed
+
+1. **`src/lib/capture-policy.ts`**: Added `SAFE_SECONDARY_ROUTES` (11 safe public paths: robots.txt, sitemap.xml, /about, /about-us, /contact, /contact-us, /services, /pricing, /privacy, /privacy-policy, /terms), `HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE` (explicit UI-ready limitation note), and `SECONDARY_SWEEP_MIN_PAGES` (threshold = 1).
+
+2. **`src/server/audits/capture-audit-run.ts`**:
+   - Added `runSecondaryStaticSweep()`: probes safe public routes via plain HTTP when the homepage is bot-blocked. Skips barrier responses, HTML shells with no usable evidence, and HTML pages served at meta-route URLs (robots.txt/sitemap.xml must not return an HTML page). Bounded by `maxPages - 1`, same-origin only.
+   - Refactored `doStaticDiscovery()` return type to `{ homepageBlocked, limitationNote }`. When a bot-challenge is detected at discovery (200 OK + challenge HTML), it now calls `runSecondaryStaticSweep()` instead of immediately hard-failing. Hard-fails only if secondary sweep also finds zero usable pages.
+   - `captureAuditRun()` orchestrator: reads `homepageBlocked` from discovery result and sets `browserDegraded = true` + `limitationNote` to enter secondary-only mode.
+
+3. **`src/server/audits/process-audit-run.ts`**: Updated `resolveCompletionStatus()` to recognise homepage-blocked partial audits. When no homepage was captured but secondary pages exist AND a `limitationNote` is present, resolves to `partial_complete` instead of `failed`.
+
+### Behaviour contract
+
+| Condition | Previous | Now |
+|---|---|---|
+| Homepage bot-blocked (200 + challenge HTML) + accessible secondary pages | `failed` | `partial_complete` + limitation note |
+| Homepage bot-blocked + no secondary public evidence | `failed` | `failed` (unchanged) |
+| Homepage HTTP 403/401/429 | `failed` | `failed` (hard barriers not swept) |
+| Homepage accessible, browser blocked | `partial_complete` (unchanged) | `partial_complete` (unchanged) |
+
+### Verification
+- `npm run lint` ✓
+- `npm run typecheck` ✓
+- `npm test` ✓ — 269 tests pass (7 new secondary sweep tests + 1 new process test)
+- `npm run build` ✓
+

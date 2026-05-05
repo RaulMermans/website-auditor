@@ -173,3 +173,23 @@ AC6 pending full repo verification run
 | Storage provider | Local FS (dev) / /tmp (Vercel) | Shot 3 (resolved for Vercel & local) |
 | DB client / ORM | raw pg | Resolved |
 | Auth / access control | Deferred | Post-MVP |
+
+## Shot 14 — Secondary static-only public evidence sweep (complete)
+
+When homepage capture is blocked by a bot/security challenge (200 OK + challenge HTML), the audit no longer hard-fails. Instead it runs a bounded secondary static-only public evidence sweep and produces a `partial_complete` audit with an explicit limitation note.
+
+- `SAFE_SECONDARY_ROUTES` constant in `capture-policy.ts`: 11 safe same-origin routes (robots.txt, sitemap.xml, /about, /contact, /services, /pricing, /privacy, /terms, etc.)
+- `runSecondaryStaticSweep()` in `capture-audit-run.ts`: plain HTTP fetch, no browser, no evasion, bounded by `maxPages - 1`, skips challenge/barrier responses and thin shells
+- `doStaticDiscovery()` refactored: catches bot-challenge at discovery → triggers secondary sweep → hard-fails only if sweep also finds nothing
+- `resolveCompletionStatus()` in `process-audit-run.ts`: homepage-blocked + secondary evidence + limitationNote → `partial_complete` (not `failed`)
+- Hard barriers (HTTP 401/403/429) still hard-fail without sweeping
+- 8 new tests (7 capture + 1 process); all 269 tests pass; lint ✓ typecheck ✓ build ✓
+
+AC1 ✓ homepage challenge no longer automatically kills otherwise-auditable public sites
+AC2 ✓ secondary static-only public evidence can produce a bounded partial audit
+AC3 ✓ limitation note explicitly states homepage unavailability in audit result
+AC4 ✓ evaluator/scoring/report behavior stays honest (no homepage-specific findings from secondary-only pages)
+AC5 ✓ no anti-bot bypass mechanisms introduced
+AC6 ✓ secondary sweep is bounded: page cap, same-origin only, safe routes only
+AC7 ✓ hard barriers (401/403/429) still hard-fail without sweeping
+
