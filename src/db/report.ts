@@ -76,6 +76,7 @@ export interface AuditRunListItem {
   failureKind: AuditFailureKind | null;
   failureStage: AuditFailureStage | null;
   failureDetails: AuditFailureDetails | null;
+  limitationNote: string | null;
 }
 
 export interface ReportData {
@@ -248,6 +249,7 @@ export async function listRecentAuditRuns(limit = 50): Promise<AuditRunListItem[
       failure_kind: AuditFailureKind | null;
       failure_stage: AuditFailureStage | null;
       failure_details: AuditFailureDetails | null;
+      limitation_note: string | null;
     }>(
       `
         SELECT
@@ -260,7 +262,8 @@ export async function listRecentAuditRuns(limit = 50): Promise<AuditRunListItem[
           ar.failure_reason,
           ar.failure_kind,
           ar.failure_stage,
-          ar.failure_details
+          ar.failure_details,
+          ar.limitation_note
         FROM audit_runs ar
         JOIN target_domains td ON td.id = ar.target_domain_id
         ORDER BY ar.created_at DESC
@@ -280,6 +283,7 @@ export async function listRecentAuditRuns(limit = 50): Promise<AuditRunListItem[
       failureKind: row.failure_kind,
       failureStage: row.failure_stage,
       failureDetails: row.failure_details,
+      limitationNote: row.limitation_note,
     }));
   });
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listRecentAuditRuns } from "@/db/report";
 import { getAuditFailurePresentation } from "@/lib/audit-failure";
-import { AUDIT_STATUS_META } from "@/lib/report-presentation";
+import { AUDIT_STATUS_META, REPORT_READY_STATUSES } from "@/lib/report-presentation";
 import type { AuditRunListItem } from "@/db/report";
 import type { AuditStatus } from "@/lib/types";
 
@@ -84,7 +84,7 @@ function StatusBadge({ status }: { status: AuditStatus }) {
 }
 
 function renderActionLinks(run: AuditRunListItem) {
-  if (run.status === "complete") {
+  if (REPORT_READY_STATUSES.includes(run.status)) {
     return (
       <>
         <Link href={`/report/${run.auditRunId}`} style={primaryLinkStyle}>
@@ -222,7 +222,7 @@ function AuditRunCard({ run }: { run: AuditRunListItem }) {
         <div style={metaCardStyle}>
           <p style={metaLabelStyle}>Recommended next step</p>
           <p style={metaValueStyle}>
-            {run.status === "complete"
+            {REPORT_READY_STATUSES.includes(run.status)
               ? "Review the concise report first, then open the full report."
               : run.status === "failed"
                 ? failurePresentation?.retryGuidance ??
@@ -255,6 +255,22 @@ function AuditRunCard({ run }: { run: AuditRunListItem }) {
               {failurePresentation.retryGuidance}
             </p>
           )}
+        </div>
+      )}
+
+      {run.limitationNote && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: "12px 14px",
+            borderRadius: 12,
+            border: "1px solid #fcd34d",
+            background: "#fffbeb",
+            color: "#92400e",
+            fontSize: "0.9rem",
+          }}
+        >
+          <strong>Capture limitation:</strong> {run.limitationNote}
         </div>
       )}
 
@@ -314,7 +330,7 @@ const secondaryLinkStyle: React.CSSProperties = {
 
 export default async function AuditsPage() {
   const { runs, errorMessage } = await loadRecentAuditRuns();
-  const readyCount = runs.filter((run) => run.status === "complete").length;
+  const readyCount = runs.filter((run) => REPORT_READY_STATUSES.includes(run.status)).length;
   const inProgressCount = runs.filter((run) =>
     ["pending", "discovering", "capturing", "analyzing"].includes(run.status)
   ).length;

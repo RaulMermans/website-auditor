@@ -192,6 +192,14 @@ function createDeps(options?: {
   return { deps, session };
 }
 
+const USABLE_THIN_HTML = [
+  "<html><head><title>Example Consulting</title></head><body>",
+  "<main><h1>Practical website audits for growing teams</h1>",
+  "<p>We help local teams clarify their offer, improve trust, and make the next step easier for visitors.</p>",
+  "<button>Contact us</button><p>Services, pricing, and booking details are available on request.</p>",
+  "</main><footer>Contact hello@example.com Privacy Terms</footer></body></html>",
+].join("");
+
 describe("captureAuditRun", () => {
   // ─── Core homepage capture ────────────────────────────────────────────────
 
@@ -415,7 +423,13 @@ describe("captureAuditRun", () => {
     // Browser capture of homepage returns 500. With static-first policy the run should
     // NOT hard-fail — it degrades to the already-available static HTML.
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const { deps } = createDeps({ homepageOk: false });
+    const { deps } = createDeps({
+      homepageOk: false,
+      htmlByUrl: {
+        "https://example.com": USABLE_THIN_HTML,
+        "https://example.com/": USABLE_THIN_HTML,
+      },
+    });
 
     const result = await captureAuditRun(
       { auditRunId: "run-999", domain: "example.com" },
@@ -479,7 +493,12 @@ describe("captureAuditRun", () => {
   // ─── Scenario C: browser unavailable → static fallback (graceful degrade) ─
 
   it("degrades to static capture when Chromium is unavailable at runtime", async () => {
-    const { deps } = createDeps();
+    const { deps } = createDeps({
+      htmlByUrl: {
+        "https://example.com": USABLE_THIN_HTML,
+        "https://example.com/": USABLE_THIN_HTML,
+      },
+    });
     deps.browser.createSession = vi.fn().mockRejectedValue(
       normalizePlaywrightChromiumLaunchError(
         new Error("browserType.launch: Executable doesn't exist at /var/task/.cache/ms-playwright/chromium")
@@ -510,9 +529,9 @@ describe("captureAuditRun", () => {
 
   // ─── Scenario D: bot challenge during static discovery ───────────────────
 
-  it("queues homepage-only and proceeds when static discovery hits a bot challenge", async () => {
+  it("hard-fails when static discovery hits a bot challenge with no public evidence", async () => {
     // Static discovery fetches "https://example.com" and gets a challenge page.
-    // Capture phase then tries browser for the homepage (browser may bypass challenge).
+    // The run must not try browser as a workaround for the challenge.
     const { deps } = createDeps({
       htmlByUrl: {
         "https://example.com": "<html><head><title>Just a moment…</title></head><body>Cloudflare security check captcha verify you are human</body></html>",
@@ -525,27 +544,25 @@ describe("captureAuditRun", () => {
     );
 
     expect(result.auditRunId).toBe("run-challenge");
-    expect(result.limitationNote).toMatch(/blocked by a security challenge/i);
-    // Homepage-only snapshot was queued; browser captured it (browser uses "https://example.com/" — clean HTML)
-    expect(result.pagesProcessed).toBe(1);
+    expect(result.errorMessage).toMatch(/security or bot-challenge page/i);
+    expect(result.pagesProcessed).toBe(0);
     expect(result.homepageOnly).toBe(true);
-    expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({ pageType: "homepage" })
-    );
+    expect(deps.browser.createSession).not.toHaveBeenCalled();
+    expect(deps.auditJobs.insertPageSnapshot).not.toHaveBeenCalled();
   });
 
   it("degrades browser and falls back to static when browser capture hits a bot challenge", async () => {
     // Static discovery succeeds. Browser capture of homepage gets a JS-rendered challenge
     // (common with Cloudflare IUAM). Static fetch of the same URL returns real HTML.
-    const { deps } = createDeps({
+    const { deps, session } = createDeps({
       htmlByUrl: {
         // Browser navigates to "https://example.com/" and sees the challenge via extractHtml.
         "https://example.com/": "<html><body>captcha verify you are human</body></html>",
       },
     });
-    // Override static fetcher to always return clean HTML — simulates JS-only challenge.
+    // Override static fetcher to always return usable public HTML — simulates JS-only challenge.
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
-      html: `<html data-url="${url}"></html>`,
+      html: USABLE_THIN_HTML,
       statusCode: 200,
       ok: true,
       finalUrl: url,
@@ -557,7 +574,7 @@ describe("captureAuditRun", () => {
     );
 
     expect(result.auditRunId).toBe("run-browser-challenge");
-    expect(result.limitationNote).toMatch(/blocked by a security challenge/i);
+    expect(result.limitationNote).toMatch(/blocked or degraded by a security challenge/i);
     expect(result.pagesProcessed).toBe(1);
     expect(result.homepageOnly).toBe(true);
     // Static fallback used for the homepage after browser was degraded
@@ -568,6 +585,7 @@ describe("captureAuditRun", () => {
     );
     expect(homepageCall).toBeDefined();
     expect(homepageCall[0].captureMethod).toBe("fallback_static");
+    expect(session.navigate).toHaveBeenCalledTimes(1);
   });
 
   // ─── Scenario E: capture provenance is explicit ───────────────────────────
@@ -599,9 +617,9 @@ describe("captureAuditRun", () => {
         "https://example.com/": "<html><body>captcha verify you are human</body></html>",
       },
     });
-    // Static fetch returns clean HTML (JS-only challenge).
+    // Static fetch returns usable public HTML (JS-only challenge).
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
-      html: `<html data-url="${url}"></html>`,
+      html: USABLE_THIN_HTML,
       statusCode: 200,
       ok: true,
       finalUrl: url,
@@ -612,7 +630,7 @@ describe("captureAuditRun", () => {
       deps
     );
 
-    expect(result.limitationNote).toMatch(/blocked by a security challenge/i);
+    expect(result.limitationNote).toMatch(/blocked or degraded by a security challenge/i);
     expect(result.pagesProcessed).toBe(1);
     const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
     const homepageCall = calls.find((c: any) =>
@@ -651,7 +669,12 @@ describe("captureAuditRun", () => {
     // Static discovery and capture fetch both succeed with thin HTML.
     // Browser navigation and HTML extraction succeed, but the screenshot times out.
     // Key: this must NOT be classified as capture_blocked and must NOT kill the run.
-    const { deps } = createDeps();
+    const { deps } = createDeps({
+      htmlByUrl: {
+        "https://example.com": USABLE_THIN_HTML,
+        "https://example.com/": USABLE_THIN_HTML,
+      },
+    });
 
     const originalCreateSession = deps.browser.createSession;
     deps.browser.createSession = vi.fn().mockImplementation(async () => {
@@ -790,7 +813,13 @@ describe("captureAuditRun", () => {
     // Static fetch succeeds (thin HTML), browser navigation returns 500 (non-challenge).
     // The run should complete — a browser error must not kill an otherwise-auditable page.
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const { deps } = createDeps({ homepageOk: false });
+    const { deps } = createDeps({
+      homepageOk: false,
+      htmlByUrl: {
+        "https://example.com": USABLE_THIN_HTML,
+        "https://example.com/": USABLE_THIN_HTML,
+      },
+    });
 
     const result = await captureAuditRun({ auditRunId: "run-nonchal", domain: "example.com" }, deps);
 
@@ -846,7 +875,7 @@ describe("captureAuditRun", () => {
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
       html: url === "https://example.com"
         ? '<html><body><a href="https://example.com/about">About</a></body></html>'
-        : `<html data-url="${url}"></html>`,
+        : USABLE_THIN_HTML,
       statusCode: 200,
       ok: true,
       finalUrl: url,
@@ -874,7 +903,12 @@ describe("captureAuditRun", () => {
 
   it("limitation note distinguishes browser-unavailable from challenge-blocked", async () => {
     // Browser unavailable
-    const { deps: depsUnavailable } = createDeps();
+    const { deps: depsUnavailable } = createDeps({
+      htmlByUrl: {
+        "https://example.com": USABLE_THIN_HTML,
+        "https://example.com/": USABLE_THIN_HTML,
+      },
+    });
     depsUnavailable.browser.createSession = vi.fn().mockRejectedValue(
       normalizePlaywrightChromiumLaunchError(
         new Error("browserType.launch: Executable doesn't exist")
@@ -887,7 +921,7 @@ describe("captureAuditRun", () => {
     expect(resultUnavailable.limitationNote).toMatch(/unavailable/i);
     expect(resultUnavailable.limitationNote).not.toMatch(/security challenge/i);
 
-    // Static discovery gets a bot-challenge page → limitation note set to "security challenge"
+    // Static discovery gets a bot-challenge page → hard failure, no limitation report.
     const { deps: depsBlocked } = createDeps({
       htmlByUrl: {
         // Static fetcher is called with the bare baseUrl (no trailing slash).
@@ -898,6 +932,7 @@ describe("captureAuditRun", () => {
       { auditRunId: "run-blocked", domain: "example.com" },
       depsBlocked
     );
-    expect(resultBlocked.limitationNote).toMatch(/security challenge/i);
+    expect(resultBlocked.errorMessage).toMatch(/security or bot-challenge page/i);
+    expect(resultBlocked.limitationNote).toBeNull();
   });
 });

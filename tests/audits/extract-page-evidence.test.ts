@@ -34,6 +34,7 @@ describe("extractPageArtifacts", () => {
             <a href="https://external.example.com/review">External proof</a>
             <button>Book a demo</button>
             <p>Coming soon to more industries.</p>
+            <footer>Privacy hello@example.com</footer>
           </body>
         </html>
       `
@@ -51,6 +52,14 @@ describe("extractPageArtifacts", () => {
     expect(getEvidenceValue<number>(result.pageEvidence, "external_link_count")).toBe(1);
     expect(getEvidenceValue<boolean>(result.pageEvidence, "cta_present")).toBe(true);
     expect(getEvidenceValue<boolean>(result.pageEvidence, "canonical_present")).toBe(true);
+    expect(getEvidenceValue<{ heading: string | null }>(result.pageEvidence, "opening_copy").heading)
+      .toBe("Audit your website");
+    expect(getEvidenceValue<{ contactCue: boolean }>(result.pageEvidence, "page_intent_signals").contactCue)
+      .toBe(true);
+    expect(getEvidenceValue<{ legalCue: boolean }>(result.pageEvidence, "footer_contact_legal").legalCue)
+      .toBe(true);
+    expect(getEvidenceValue<{ total: number }>(result.pageEvidence, "script_inventory").total)
+      .toBe(0);
     expect(
       getEvidenceValue<{ hints: string[] }>(result.pageEvidence, "heading_structure").hints
     ).toContain("skipped_h1_to_h3");

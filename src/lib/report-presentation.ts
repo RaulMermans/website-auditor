@@ -1,6 +1,7 @@
 import type { AuditStatus, Finding, FindingCategory } from "@/lib/types";
 
 export const OVERALL_SCORE_LABEL = "Brand Conversion Readiness Score";
+export const REPORT_READY_STATUSES: AuditStatus[] = ["complete", "partial_complete"];
 
 export const CATEGORY_LABELS: Record<FindingCategory, string> = {
   performance: "Performance",
@@ -95,8 +96,9 @@ export const AUDIT_STATUS_META: Record<
     text: "#4338ca",
   },
   partial_complete: {
-    label: "Partial report",
-    description: "Homepage captured and scored, but some pages were skipped or failed. Findings may be incomplete.",
+    label: "Partial/static report",
+    description:
+      "A bounded report is available, but browser capture, page coverage, or inspection depth was limited. Findings should be read with the limitation notes.",
     background: "#fffbeb",
     border: "#fcd34d",
     text: "#92400e",

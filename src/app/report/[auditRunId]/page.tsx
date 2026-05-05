@@ -9,6 +9,7 @@ import {
   CATEGORY_LABELS,
   EVIDENCE_COLORS,
   REVIEW_STATE_META,
+  REPORT_READY_STATUSES,
   scoreColor,
   SEVERITY_COLORS,
 } from "@/lib/report-presentation";
@@ -417,7 +418,7 @@ export default async function ReportPage({
   const statusMeta = AUDIT_STATUS_META[data.auditRun.status];
   const failurePresentation = getAuditFailurePresentation(data.auditRun);
 
-  if (data.auditRun.status !== "complete") {
+  if (!REPORT_READY_STATUSES.includes(data.auditRun.status)) {
     return (
       <RunStatusView
         auditRunId={auditRunId}

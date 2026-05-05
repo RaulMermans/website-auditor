@@ -3,10 +3,11 @@ import { processAuditRun } from "@/server/audits/process-audit-run";
 
 function makeProgress(options?: {
   auditRunId?: string;
-  status?: "pending" | "discovering" | "capturing" | "analyzing" | "complete" | "failed";
+  status?: import("@/lib/types").AuditStatus;
   pageSnapshots?: Array<Record<string, unknown>>;
   homepageOnly?: boolean;
   failureReason?: string | null;
+  limitationNote?: string | null;
 }) {
   const now = new Date("2026-04-23T10:00:00.000Z");
 
@@ -20,6 +21,7 @@ function makeProgress(options?: {
       startedAt: now,
       completedAt: null,
       failureReason: options?.failureReason ?? null,
+      limitationNote: options?.limitationNote ?? null,
       createdAt: now,
     },
     pageSnapshots: (options?.pageSnapshots ?? []) as any,
@@ -254,6 +256,75 @@ describe("processAuditRun", () => {
       },
     });
     expect(result.errorMessage).toBe("The analysis step failed: analysis failed");
+  });
+
+  it("marks browser-degraded static reports as partial complete with limitation note", async () => {
+    const limitationNote =
+      "Browser capture was blocked or degraded by a security challenge. This audit continued using public HTML/static evidence only, so it may not include rendered, protected, or post-hydration page states.";
+    const auditJobs = {
+      getAuditRunProgress: vi
+        .fn()
+        .mockResolvedValueOnce(makeProgress())
+        .mockResolvedValueOnce(
+          makeProgress({
+            status: "capturing",
+            pageSnapshots: [
+              {
+                id: "snapshot-1",
+                pageType: "homepage",
+                pageState: "captured",
+                htmlStorageKey: "shot_homepage.html",
+                captureMethod: "fallback_static",
+              },
+            ],
+          })
+        )
+        .mockResolvedValueOnce(
+          makeProgress({
+            status: "analyzing",
+            pageSnapshots: [
+              {
+                id: "snapshot-1",
+                pageType: "homepage",
+                pageState: "accepted",
+                htmlStorageKey: "shot_homepage.html",
+                captureMethod: "fallback_static",
+              },
+            ],
+          })
+        ),
+      updateAuditRunStatus: vi.fn().mockResolvedValue(undefined),
+    };
+    const capture = vi.fn().mockResolvedValue({
+      auditRunId: "run-123",
+      pagesProcessed: 1,
+      homepageOnly: true,
+      limitationNote,
+    });
+    const analyze = vi.fn().mockResolvedValue({
+      auditRunId: "run-123",
+      pageEvidence: [{ id: "evidence-1" }],
+      findings: [],
+    });
+
+    const result = await processAuditRun(
+      { auditRunId: "run-123", domain: "example.com" },
+      { auditJobs, capture, analyze }
+    );
+
+    expect(auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith({
+      auditRunId: "run-123",
+      status: "partial_complete",
+      homepageOnly: true,
+      failureReason: null,
+      limitationNote,
+    });
+    expect(result).toEqual({
+      auditRunId: "run-123",
+      pagesProcessed: 1,
+      homepageOnly: true,
+      limitationNote,
+    });
   });
 
   it("calls updateAuditRunStatus with no failure fields when completing cleanly", async () => {

@@ -88,6 +88,38 @@ export interface AssetWeightMetrics {
   imageCount: number;
 }
 
+export interface ScriptInventoryMetrics {
+  total: number;
+  external: number;
+  thirdParty: number;
+  inline: number;
+  externalHosts: string[];
+}
+
+export interface PageIntentSignalsMetrics {
+  pricingCue: boolean;
+  servicesCue: boolean;
+  contactCue: boolean;
+  aboutCue: boolean;
+  legalCue: boolean;
+  contentCue: boolean;
+  cueCount: number;
+}
+
+export interface OpeningCopyMetrics {
+  heading: string | null;
+  excerpt: string;
+  wordCount: number;
+  ctaCueCount: number;
+}
+
+export interface FooterSignalsMetrics {
+  footerPresent: boolean;
+  contactCue: boolean;
+  legalCue: boolean;
+  socialCue: boolean;
+}
+
 export interface ParsedPageMetrics {
   title: { present: boolean; text: string | null };
   metaDescription: { present: boolean; content: string | null };
@@ -114,6 +146,10 @@ export interface ParsedPageMetrics {
   brandClarity: BrandClarityMetrics;
   pageStructure: PageStructureMetrics;
   assetWeight: AssetWeightMetrics;
+  scriptInventory: ScriptInventoryMetrics;
+  pageIntentSignals: PageIntentSignalsMetrics;
+  openingCopy: OpeningCopyMetrics;
+  footerSignals: FooterSignalsMetrics;
   scriptCount: number;
 }
 

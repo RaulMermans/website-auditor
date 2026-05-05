@@ -56,7 +56,8 @@ function summarizeProgress(progress: AuditRunProgress): AuditCaptureResult {
 }
 
 function resolveCompletionStatus(
-  progress: AuditRunProgress
+  progress: AuditRunProgress,
+  limitationNote?: string | null
 ): import("@/lib/types").AuditStatus {
   const snapshots = progress.pageSnapshots;
   const captured = snapshots.filter((s) => s.htmlStorageKey);
@@ -77,6 +78,10 @@ function resolveCompletionStatus(
 
   // Some pages failed or are needs_review but homepage was captured → partial.
   if (failed.length > 0 || needsReview.length > 0) {
+    return "partial_complete";
+  }
+
+  if (limitationNote) {
     return "partial_complete";
   }
 
@@ -108,6 +113,7 @@ export async function processAuditRun(
 
   try {
     progress = await deps.auditJobs.getAuditRunProgress(request.auditRunId);
+    limitationNote = progress.auditRun.limitationNote ?? null;
 
     if (hasPendingCapture(progress)) {
       const captureResult = await deps.capture(request);
@@ -132,7 +138,7 @@ export async function processAuditRun(
     }
 
     const result = summarizeProgress(progress);
-    const completionStatus = resolveCompletionStatus(progress);
+    const completionStatus = resolveCompletionStatus(progress, limitationNote);
 
     await deps.auditJobs.updateAuditRunStatus({
       auditRunId: request.auditRunId,

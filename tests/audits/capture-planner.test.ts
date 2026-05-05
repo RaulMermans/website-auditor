@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assessPublicHtmlEvidence,
   captureOutcomeFromFailureKind,
   isJsShellHtml,
   planCaptureMethod,
@@ -75,6 +76,28 @@ describe("isJsShellHtml", () => {
       <ul><li>More qualified leads</li><li>Higher conversion rates</li><li>Clear messaging</li></ul>
     </body></html>`;
     expect(isJsShellHtml(rich)).toBe(false);
+  });
+});
+
+describe("assessPublicHtmlEvidence", () => {
+  it("accepts bounded static evidence when public HTML has structure and cues", () => {
+    const html = `<html><head><title>Example Consulting</title></head><body>
+      <main><h1>Website audits for growing service teams</h1>
+      <p>We help teams improve clarity, trust, and conversion with public HTML diagnostics.</p>
+      <a href="/contact">Contact us</a><a href="/services">Services</a></main>
+      <footer>Contact hello@example.com Privacy Terms</footer>
+    </body></html>`;
+
+    expect(assessPublicHtmlEvidence(html)).toMatchObject({
+      usable: true,
+      titlePresent: true,
+      headingCount: 1,
+    });
+  });
+
+  it("rejects meaningless shells even when HTML exists", () => {
+    expect(assessPublicHtmlEvidence('<html><body><div id="root"></div></body></html>').usable)
+      .toBe(false);
   });
 });
 

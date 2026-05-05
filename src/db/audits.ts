@@ -373,7 +373,13 @@ export const auditJobRepository: AuditJobRepository = {
     limitationNote,
   }) {
     await withDbClient(async (client) => {
-      const completed = status === "complete" || status === "failed" ? new Date() : null;
+      const completed =
+        status === "complete" ||
+        status === "partial_complete" ||
+        status === "needs_human_review" ||
+        status === "failed"
+          ? new Date()
+          : null;
       await client.query(
         `
           UPDATE audit_runs
@@ -401,7 +407,7 @@ export const auditJobRepository: AuditJobRepository = {
               END,
               completed_at = CASE
                 WHEN $8::timestamptz IS NOT NULL THEN $8::timestamptz
-                WHEN $2 IN ('complete', 'failed') THEN completed_at
+                WHEN $2 IN ('complete', 'partial_complete', 'needs_human_review', 'failed') THEN completed_at
                 ELSE NULL
               END,
               limitation_note = COALESCE($9::text, limitation_note)

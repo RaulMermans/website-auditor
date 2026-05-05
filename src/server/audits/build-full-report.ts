@@ -251,6 +251,14 @@ function getScopeSubject(data: ReportData) {
   return data.auditRun.homepageOnly ? "The homepage" : "The captured page set";
 }
 
+function buildScopeNote(data: ReportData) {
+  const base = data.auditRun.homepageOnly
+    ? "Homepage-only audit. Conclusions apply to the captured homepage snapshot and should not be generalized to the full site."
+    : "Multi-page audit. Conclusions apply only to the captured page set included in this run.";
+
+  return data.auditRun.limitationNote ? `${base} ${data.auditRun.limitationNote}` : base;
+}
+
 function getInspectionLabel(review: ReportCategoryReview) {
   if (review.reviewState === "insufficient_evidence") {
     return "Insufficient evidence";
@@ -631,9 +639,7 @@ export function buildFullReportData(data: ReportData): FullReportData {
           : ["No deeper strategic improvements surfaced beyond the prioritized findings already listed."],
     },
     appendix: {
-      scopeNote: data.auditRun.homepageOnly
-        ? "Homepage-only audit. Conclusions apply to the captured homepage snapshot and should not be generalized to the full site."
-        : "Multi-page audit. Conclusions apply only to the captured page set included in this run.",
+      scopeNote: buildScopeNote(data),
       evidenceCounts,
       severityCounts,
       inspectionNotes: [

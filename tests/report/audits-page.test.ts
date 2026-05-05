@@ -51,6 +51,21 @@ describe("AuditsPage", () => {
         failureKind: null,
         failureStage: null,
         failureDetails: null,
+        limitationNote: null,
+      },
+      {
+        auditRunId: "run-partial",
+        domain: "partial.example",
+        status: "partial_complete",
+        createdAt: now,
+        completedAt: now,
+        homepageOnly: true,
+        failureReason: null,
+        failureKind: null,
+        failureStage: null,
+        failureDetails: null,
+        limitationNote:
+          "Browser capture was blocked or degraded by a security challenge. This audit continued using public HTML/static evidence only.",
       },
       {
         auditRunId: "run-progress",
@@ -63,6 +78,7 @@ describe("AuditsPage", () => {
         failureKind: null,
         failureStage: null,
         failureDetails: null,
+        limitationNote: null,
       },
       {
         auditRunId: "run-failed",
@@ -79,6 +95,7 @@ describe("AuditsPage", () => {
           marker: "unknown",
           retryable: true,
         },
+        limitationNote: null,
       },
     ]);
 
@@ -89,6 +106,8 @@ describe("AuditsPage", () => {
     expect(html).toContain("Reports ready");
     expect(html).toContain("Open concise report");
     expect(html).toContain("Open full report");
+    expect(html).toContain("Partial/static report");
+    expect(html).toContain("public HTML/static evidence only");
     expect(html).toContain("Assembling findings");
     expect(html).toContain("Homepage-only");
     expect(html).toContain("Capture");

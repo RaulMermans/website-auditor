@@ -12,9 +12,13 @@ import type {
   CTAInventoryMetrics,
   FormFrictionMetrics,
   MessagingQualityMetrics,
+  OpeningCopyMetrics,
+  PageIntentSignalsMetrics,
   PageStructureMetrics,
   ParsedPageMetrics,
+  ScriptInventoryMetrics,
   SpecialistFindingDraft,
+  FooterSignalsMetrics,
   TrustSignalMetrics,
 } from "@/server/audits/evaluators/types";
 
@@ -589,6 +593,91 @@ function detectAssetWeight(
   };
 }
 
+function detectScriptInventory(pageUrl: string, html: string): ScriptInventoryMetrics {
+  const scriptTags = findStartTags(html, "script");
+  const externalHosts = new Set<string>();
+  let external = 0;
+  let thirdParty = 0;
+
+  for (const scriptTag of scriptTags) {
+    const src = normalizeWhitespace(scriptTag.attrs.src);
+    if (!src) {
+      continue;
+    }
+
+    const resolved = resolveLink(pageUrl, src);
+    if (!resolved) {
+      continue;
+    }
+
+    external += 1;
+    externalHosts.add(resolved.hostname);
+    if (resolved.hostname !== new URL(pageUrl).hostname) {
+      thirdParty += 1;
+    }
+  }
+
+  return {
+    total: scriptTags.length,
+    external,
+    thirdParty,
+    inline: Math.max(0, scriptTags.length - external),
+    externalHosts: [...externalHosts].slice(0, 12),
+  };
+}
+
+function detectPageIntentSignals(html: string): PageIntentSignalsMetrics {
+  const text = stripTags(html).toLowerCase();
+  const pricingCue = /\b(pricing|prices|plans?|packages?|cost|quote|estimate)\b/i.test(text);
+  const servicesCue = /\b(services?|solutions?|products?|platform|offerings?|capabilities)\b/i.test(text);
+  const contactCue = /\b(contact|book|schedule|call|email|talk to|request)\b/i.test(text) || /href=["'](?:tel:|mailto:)/i.test(html);
+  const aboutCue = /\b(about us|our team|our story|mission|who we are)\b/i.test(text);
+  const legalCue = /\b(privacy|terms|cookie policy|legal|gdpr)\b/i.test(text);
+  const contentCue = /\b(blog|articles?|resources?|guides?|insights?|news)\b/i.test(text);
+
+  return {
+    pricingCue,
+    servicesCue,
+    contactCue,
+    aboutCue,
+    legalCue,
+    contentCue,
+    cueCount: [pricingCue, servicesCue, contactCue, aboutCue, legalCue, contentCue].filter(Boolean).length,
+  };
+}
+
+function detectOpeningCopy(html: string, messagingQuality: MessagingQualityMetrics): OpeningCopyMetrics {
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const bodyHtml = bodyMatch?.[1] ?? html;
+  const bodyText = stripTags(bodyHtml);
+  const openingExcerpt = normalizeWhitespace(
+    [messagingQuality.heroHeading ?? "", bodyText.slice(0, 500)].filter(Boolean).join(" ")
+  ).slice(0, 360);
+
+  return {
+    heading: messagingQuality.heroHeading,
+    excerpt: openingExcerpt,
+    wordCount: countWords(openingExcerpt),
+    ctaCueCount: countCueMatches(openingExcerpt, [
+      /\b(contact|book|schedule|start|get started|request|demo|quote|buy|sign up|subscribe|call|talk|learn more)\b/gi,
+    ]),
+  };
+}
+
+function detectFooterSignals(html: string): FooterSignalsMetrics {
+  const footerMatch = html.match(/<footer\b[^>]*>([\s\S]*?)<\/footer>/i);
+  const footerHtml = footerMatch?.[1] ?? "";
+  const footerText = stripTags(footerHtml).toLowerCase();
+  const footerPresent = Boolean(footerMatch);
+
+  return {
+    footerPresent,
+    contactCue: /href=["'](?:tel:|mailto:)/i.test(footerHtml) || /\b(contact|call|email|address)\b/i.test(footerText),
+    legalCue: /\b(privacy|terms|cookie|legal|accessibility)\b/i.test(footerText),
+    socialCue: /\b(linkedin|facebook|instagram|twitter|x\.com|youtube|tiktok)\b/i.test(footerHtml),
+  };
+}
+
 function matchesCta(text: string) {
   const normalized = normalizeWhitespace(text).toLowerCase();
   return CTA_PATTERNS.some((pattern) => normalized.includes(pattern));
@@ -655,6 +744,10 @@ function parseMetrics(snapshot: Pick<PageSnapshot, "url">, html: string): Parsed
   const brandClarity = detectBrandClarity(html, messagingQuality);
   const pageStructure = detectPageStructure(html);
   const assetWeight = detectAssetWeight(snapshot.url, html, images);
+  const scriptInventory = detectScriptInventory(snapshot.url, html);
+  const pageIntentSignals = detectPageIntentSignals(html);
+  const openingCopy = detectOpeningCopy(html, messagingQuality);
+  const footerSignals = detectFooterSignals(html);
   const scriptCount = (html.match(/<script\b/gi) ?? []).length;
 
   return {
@@ -691,6 +784,10 @@ function parseMetrics(snapshot: Pick<PageSnapshot, "url">, html: string): Parsed
     brandClarity,
     pageStructure,
     assetWeight,
+    scriptInventory,
+    pageIntentSignals,
+    openingCopy,
+    footerSignals,
     scriptCount,
   };
 }
@@ -748,6 +845,12 @@ function buildPageEvidence(
     sectionCount: metrics.pageStructure.sectionCount,
     buttonCount: metrics.buttonCount,
     formFieldCount: metrics.formFriction.fieldCount,
+  };
+  const footerContactLegal = {
+    footerPresent: metrics.footerSignals.footerPresent,
+    contactCue: metrics.footerSignals.contactCue,
+    legalCue: metrics.footerSignals.legalCue,
+    socialCue: metrics.footerSignals.socialCue,
   };
 
   return [
@@ -938,6 +1041,30 @@ function buildPageEvidence(
     {
       auditRunId,
       pageSnapshotId,
+      category: "messaging_content",
+      key: "opening_copy",
+      value: metrics.openingCopy,
+      evidenceLevel: "Observed",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "messaging_content",
+      key: "page_intent_signals",
+      value: metrics.pageIntentSignals,
+      evidenceLevel: "Observed",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "trust_signals",
+      key: "footer_contact_legal",
+      value: footerContactLegal,
+      evidenceLevel: "Observed",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
       category: "ux_ui",
       key: "content_hierarchy",
       value: contentHierarchy,
@@ -973,6 +1100,14 @@ function buildPageEvidence(
       category: "performance",
       key: "asset_weight",
       value: metrics.assetWeight,
+      evidenceLevel: "Measured",
+    },
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "performance",
+      key: "script_inventory",
+      value: metrics.scriptInventory,
       evidenceLevel: "Measured",
     },
     {

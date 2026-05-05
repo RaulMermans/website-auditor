@@ -7,12 +7,12 @@ import {
   CATEGORY_LABELS,
   EVIDENCE_COLORS,
   REVIEW_STATE_META,
+  REPORT_READY_STATUSES,
   scoreColor,
   SEVERITY_COLORS,
 } from "@/lib/report-presentation";
 import {
   buildFullReportData,
-  type FullReportData,
   type FullReportFindingGroup,
 } from "@/server/audits/build-full-report";
 import { buildAiContextPack } from "@/server/audits/build-ai-context-pack";
@@ -216,7 +216,7 @@ export default async function FullReportPage({
   const statusMeta = AUDIT_STATUS_META[data.auditRun.status];
   const failurePresentation = getAuditFailurePresentation(data.auditRun);
 
-  if (data.auditRun.status !== "complete") {
+  if (!REPORT_READY_STATUSES.includes(data.auditRun.status)) {
     return (
       <main
         style={{
@@ -341,6 +341,23 @@ export default async function FullReportPage({
             >
               {failurePresentation?.explanation ?? statusMeta.description}
             </p>
+            {data.auditRun.limitationNote && (
+              <p
+                style={{
+                  margin: "12px 0 0",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  background: "#fffbeb",
+                  border: "1px solid #fcd34d",
+                  color: "#92400e",
+                  fontFamily:
+                    'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                  fontSize: "0.9rem",
+                }}
+              >
+                <strong>Capture limitation:</strong> {data.auditRun.limitationNote}
+              </p>
+            )}
           </header>
 
           {failurePresentation && (
@@ -618,6 +635,23 @@ export default async function FullReportPage({
               >
                 {fullReport.appendix.scopeNote}
               </p>
+              {data.auditRun.limitationNote && (
+                <p
+                  style={{
+                    margin: "12px 0 0",
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    background: "#fffbeb",
+                    border: "1px solid #fcd34d",
+                    color: "#92400e",
+                    fontSize: "0.9rem",
+                    fontFamily:
+                      'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                  }}
+                >
+                  <strong>Capture limitation:</strong> {data.auditRun.limitationNote}
+                </p>
+              )}
             </div>
           </div>
 

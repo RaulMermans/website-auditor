@@ -142,6 +142,28 @@ describe("FullReportPage", () => {
     expect(html).toContain("Homepage opening message stays broad above the fold");
   });
 
+  it("renders partial/static full reports with limitation notes", async () => {
+    getReportDataMock.mockResolvedValue({
+      ...makeReportData(),
+      auditRun: {
+        ...makeReportData().auditRun,
+        status: "partial_complete",
+        limitationNote:
+          "Browser capture was blocked or degraded by a security challenge. This audit continued using public HTML/static evidence only, so it may not include rendered, protected, or post-hydration page states.",
+      },
+    });
+
+    const element = await FullReportPage({
+      params: Promise.resolve({ auditRunId: "run-1" }),
+    });
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("Executive Summary");
+    expect(html).toContain("Capture limitation");
+    expect(html).toContain("public HTML/static evidence only");
+  });
+
+
   it("delegates to notFound when the audit run is missing", async () => {
     getReportDataMock.mockResolvedValue(null);
 

@@ -20,19 +20,86 @@ export interface CapturePlan {
   reason: string;
 }
 
+export interface PublicHtmlEvidenceAssessment {
+  usable: boolean;
+  textLength: number;
+  titlePresent: boolean;
+  headingCount: number;
+  linkCount: number;
+  ctaCueCount: number;
+  contactCueCount: number;
+  formCount: number;
+  structuralCueCount: number;
+}
+
 /**
  * Returns true when HTML appears to be a JS-rendered shell with minimal public content.
  * Threshold: fewer than 300 non-tag characters after stripping scripts/styles/tags.
  * Typical marketing homepages have 800-3000 chars; React shells have 0-50 chars.
  */
-export function isJsShellHtml(html: string): boolean {
-  const stripped = html
+function getVisibleText(html: string): string {
+  return html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+    .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return stripped.length < 300;
+}
+
+export function isJsShellHtml(html: string): boolean {
+  return getVisibleText(html).length < 300;
+}
+
+function countMatches(html: string, pattern: RegExp) {
+  return html.match(pattern)?.length ?? 0;
+}
+
+/**
+ * Conservative public-evidence gate for static fallback.
+ *
+ * A page can be useful without browser rendering when public HTML exposes enough
+ * copy/structure to support bounded findings. A bare app shell, challenge shell,
+ * or mostly-empty document should not become a report.
+ */
+export function assessPublicHtmlEvidence(html: string): PublicHtmlEvidenceAssessment {
+  const visibleText = getVisibleText(html);
+  const titlePresent = /<title\b[^>]*>\s*[^<\s][\s\S]*?<\/title>/i.test(html);
+  const headingCount = countMatches(html, /<h[1-6]\b/gi);
+  const linkCount = countMatches(html, /<a\b[^>]*href=/gi);
+  const formCount = countMatches(html, /<form\b/gi);
+  const ctaCueCount = countMatches(
+    visibleText,
+    /\b(contact|book|schedule|start|get started|request|demo|quote|buy|sign up|subscribe|call|talk|learn more)\b/gi
+  );
+  const contactCueCount = countMatches(
+    html,
+    /href=["'](?:tel:|mailto:)|\b(contact|privacy|terms|address|phone|email)\b/gi
+  );
+  const structuralCueCount = [
+    titlePresent,
+    headingCount > 0,
+    linkCount >= 2,
+    ctaCueCount > 0,
+    contactCueCount > 0,
+    formCount > 0,
+    countMatches(html, /<(main|section|article|footer|nav)\b/gi) >= 2,
+  ].filter(Boolean).length;
+
+  return {
+    usable:
+      visibleText.length >= 450 ||
+      (visibleText.length >= 220 && structuralCueCount >= 3) ||
+      (visibleText.length >= 160 && titlePresent && headingCount > 0 && (ctaCueCount > 0 || contactCueCount > 0)),
+    textLength: visibleText.length,
+    titlePresent,
+    headingCount,
+    linkCount,
+    ctaCueCount,
+    contactCueCount,
+    formCount,
+    structuralCueCount,
+  };
 }
 
 /**
