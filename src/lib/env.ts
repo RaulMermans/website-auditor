@@ -31,6 +31,14 @@ const envSchema = z.object({
 
   // App
   NEXT_PUBLIC_APP_URL: z.string().url().optional(),
+}).superRefine((value, ctx) => {
+  if (value.NODE_ENV === "production" && !value.WORKER_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["WORKER_SECRET"],
+      message: "WORKER_SECRET is required in production",
+    });
+  }
 });
 
 function parseEnv() {

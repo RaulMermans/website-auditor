@@ -1,4 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/db/client", () => ({
+  withDbClient: vi.fn(),
+  withTransaction: vi.fn(),
+}));
+
 import { captureAuditRun } from "@/server/audits/capture-audit-run";
 import { AuditFailureError } from "@/lib/audit-failure";
 import { normalizePlaywrightChromiumLaunchError } from "@/server/browser/playwright-chromium-driver";
@@ -58,7 +64,10 @@ function createDeps(options?: {
     }),
     getUrl: vi.fn(async () => currentUrl),
     extractHtml: vi.fn(async () => ({
-      value: htmlByUrl.get(currentUrl) ?? `<html data-url="${currentUrl}"></html>`,
+      value:
+        htmlByUrl.get(currentUrl) ??
+        htmlByUrl.get(currentUrl.replace(/\/$/, "")) ??
+        `<html data-url="${currentUrl}"></html>`,
     })),
     screenshot: vi.fn().mockResolvedValue({
       data: Buffer.from("fake-image"),

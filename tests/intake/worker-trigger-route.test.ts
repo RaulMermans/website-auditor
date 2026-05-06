@@ -24,6 +24,10 @@ vi.mock("@/server/audits/process-audit-run", () => ({
 
 import { POST } from "@/app/api/worker/trigger/route";
 
+function makeRequest(): Request {
+  return new Request("http://localhost/api/worker/trigger", { method: "POST" });
+}
+
 describe("POST /api/worker/trigger", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -33,7 +37,7 @@ describe("POST /api/worker/trigger", () => {
   it("returns idle when no jobs are pending", async () => {
     queueClientMock.fetch.mockResolvedValue(null);
 
-    const res = await POST();
+    const res = await POST(makeRequest());
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -53,7 +57,7 @@ describe("POST /api/worker/trigger", () => {
       homepageOnly: false,
     });
 
-    const res = await POST();
+    const res = await POST(makeRequest());
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -79,7 +83,7 @@ describe("POST /api/worker/trigger", () => {
       errorMessage: "capture failed",
     });
 
-    const res = await POST();
+    const res = await POST(makeRequest());
     const body = await res.json();
 
     expect(body.status).toBe("failed");
@@ -89,7 +93,7 @@ describe("POST /api/worker/trigger", () => {
   it("returns 503 when the queue is unavailable", async () => {
     queueClientMock.fetch.mockRejectedValue(new Error("db connection failed"));
 
-    const res = await POST();
+    const res = await POST(makeRequest());
 
     expect(res.status).toBe(503);
   });
@@ -101,7 +105,7 @@ describe("POST /api/worker/trigger", () => {
       payload: { auditRunId: "", domain: "" },
     });
 
-    const res = await POST();
+    const res = await POST(makeRequest());
 
     expect(res.status).toBe(400);
     expect(queueClientMock.fail).toHaveBeenCalledWith("audit.run", "job-3", {
@@ -124,7 +128,7 @@ describe("POST /api/worker/trigger", () => {
       homepageOnly: true,
     });
 
-    await POST();
+    await POST(makeRequest());
 
     expect(queueClientMock.fetch).toHaveBeenCalledWith("audit.run");
     expect(dispatchAuditRunMock).toHaveBeenCalled();

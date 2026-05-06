@@ -3,6 +3,7 @@ import { requireAuditApiKey } from "@/lib/api-auth";
 import { auditJobRepository } from "@/db/audits";
 import { reportRepository } from "@/db/report";
 import { enrichmentRepository } from "@/db/enrichment";
+import { prospectIntelligenceRepository } from "@/db/prospect-intelligence";
 import { buildEnrichmentInput, generateReportEnrichment } from "@/server/audits/generate-report-enrichment";
 import { generateOutreachAssets } from "@/server/audits/generate-outreach-assets";
 import {
@@ -86,6 +87,16 @@ export async function POST(
       enrichmentRepository.saveAsset(auditRunId, "loom_script", outreach.data.loomScript),
     ]);
     saved.push("email", "collaboration", "loom_script");
+  }
+
+  if (prospectAuditAgent.status === "success") {
+    await prospectIntelligenceRepository.save({
+      auditRunId,
+      captureFidelity: prospectInput.captureFidelity.primaryFidelity,
+      result: prospectAuditAgent.data,
+      metadata: prospectAuditAgent.metadata,
+    });
+    saved.push("prospect_intelligence");
   }
 
   return NextResponse.json({

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { enrichmentRepository } from "@/db/enrichment";
-import { reportRepository } from "@/db/report";
+import { prospectIntelligenceRepository } from "@/db/prospect-intelligence";
+import { reportRepository, type ReportCaptureFidelity } from "@/db/report";
 import { getAuditFailurePresentation } from "@/lib/audit-failure";
 import type { OutreachAsset } from "@/lib/types";
 import {
@@ -59,6 +60,38 @@ function renderCountRow(label: string, value: number, color: string) {
       <span style={{ color, fontWeight: 800 }}>{value}</span>
     </div>
   );
+}
+
+const CAPTURE_FIDELITY_LABELS = {
+  rendered_browser: "Rendered Browser",
+  static_public: "Static Public",
+  secondary_static: "Secondary Static",
+  manual_evidence: "Manual Evidence",
+  blocked_no_evidence: "Blocked / No Evidence",
+} as const;
+
+function getCaptureLimitations(fidelity?: ReportCaptureFidelity) {
+  if (!fidelity) return ["Capture fidelity metadata was unavailable for this run."];
+  if (fidelity.primaryFidelity === "rendered_browser") {
+    return ["Browser-rendered HTML and screenshot-backed evidence were available for at least one accepted page."];
+  }
+  if (fidelity.primaryFidelity === "secondary_static") {
+    return [
+      "Homepage browser/static capture was blocked or unusable.",
+      "Findings are bounded to accessible secondary public pages and static technical evidence.",
+      "Visual, mobile layout, above-the-fold, and rendered interaction claims are excluded.",
+    ];
+  }
+  if (fidelity.primaryFidelity === "static_public") {
+    return [
+      "The audit used public HTML/static evidence only.",
+      "Visual, mobile layout, above-the-fold, and rendered interaction claims are excluded.",
+    ];
+  }
+  if (fidelity.primaryFidelity === "blocked_no_evidence") {
+    return ["No usable public evidence was captured. Findings should not be generated."];
+  }
+  return ["Manual evidence must stay explicitly labeled and scoped to the supplied artifacts."];
 }
 
 function StatusBadge({ label, background, border, text }: BadgePresentation) {
@@ -411,9 +444,10 @@ export default async function ReportPage({
   params: Promise<{ auditRunId: string }>;
 }) {
   const { auditRunId } = await params;
-  const [data, enrichmentAssets] = await Promise.all([
+  const [data, enrichmentAssets, prospectIntelligence] = await Promise.all([
     reportRepository.getReportData(auditRunId),
     enrichmentRepository.getAssetsForAuditRun(auditRunId).catch(() => [] as OutreachAsset[]),
+    prospectIntelligenceRepository.getForAuditRun(auditRunId).catch(() => null),
   ]);
 
   if (!data) {
@@ -447,6 +481,13 @@ export default async function ReportPage({
     Boolean(assetMap.email) ||
     Boolean(assetMap.collaboration) ||
     Boolean(assetMap.loom_script);
+  const captureFidelity = data.captureFidelity;
+  const scoredCategories = fullReport.categorySections
+    .filter((section) => section.score !== null)
+    .map((section) => section.label);
+  const excludedCategories = fullReport.categorySections
+    .filter((section) => section.score === null)
+    .map((section) => section.label);
   const showLimitationNote = shouldDisplayLimitationNote(
     data.auditRun.status,
     data.auditRun.limitationNote
@@ -690,6 +731,8 @@ export default async function ReportPage({
               ["#overview", "Overview"],
               ["#priorities", "Top Priorities"],
               ["#scores", "Score Summary"],
+              ["#capture", "Capture Fidelity"],
+              ...(prospectIntelligence ? [["#prospect", "Prospect Intelligence"]] : []),
               ["#review", "Category Review"],
               ["#evidence", "Evidence Notes"],
               ...(hasEnrichment ? [["#ai", "AI Enrichment"]] : []),
@@ -850,6 +893,56 @@ export default async function ReportPage({
           </div>
         </section>
 
+        <section id="capture" style={sectionStyle}>
+          <div style={sectionHeaderStyle}>
+            <div>
+              <p style={sectionEyebrowStyle}>Evidence Coverage</p>
+              <h2 style={sectionTitleStyle}>Capture Fidelity</h2>
+              <p style={sectionIntroStyle}>
+                Scoring is constrained by what the deterministic workflow actually captured.
+                Excluded categories are unknown, not clean.
+              </p>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 14,
+            }}
+          >
+            <div style={summaryPanelStyle}>
+              <p style={panelEyebrowStyle}>Capture Fidelity</p>
+              <p style={{ margin: 0, color: "#0f172a", fontSize: "1.35rem", fontWeight: 800 }}>
+                {captureFidelity
+                  ? CAPTURE_FIDELITY_LABELS[captureFidelity.primaryFidelity]
+                  : "Unknown"}
+              </p>
+              {captureFidelity && (
+                <p style={{ margin: "10px 0 0", color: "#64748b", lineHeight: 1.55 }}>
+                  {captureFidelity.acceptedPageCount} accepted page(s), {captureFidelity.browserPageCount} browser,
+                  {" "}{captureFidelity.staticPageCount + captureFidelity.fallbackStaticPageCount} static,
+                  {" "}{captureFidelity.secondaryStaticPageCount} secondary static,
+                  {" "}{captureFidelity.screenshotPageCount} screenshot-backed.
+                </p>
+              )}
+            </div>
+            <div style={summaryPanelStyle}>
+              <p style={panelEyebrowStyle}>Limitations</p>
+              {renderSummaryList(getCaptureLimitations(captureFidelity))}
+            </div>
+            <div style={summaryPanelStyle}>
+              <p style={panelEyebrowStyle}>Scored Categories</p>
+              {renderSummaryList(scoredCategories.length > 0 ? scoredCategories : ["None"])}
+            </div>
+            <div style={summaryPanelStyle}>
+              <p style={panelEyebrowStyle}>Excluded Categories</p>
+              {renderSummaryList(excludedCategories.length > 0 ? excludedCategories : ["None"])}
+            </div>
+          </div>
+        </section>
+
         <section id="review" style={sectionStyle}>
           <div style={sectionHeaderStyle}>
             <div>
@@ -1004,6 +1097,86 @@ export default async function ReportPage({
             </div>
           </div>
         </section>
+
+        {prospectIntelligence && (
+          <section id="prospect" style={sectionStyle}>
+            <div style={sectionHeaderStyle}>
+              <div>
+                <p style={sectionEyebrowStyle}>Internal Prospecting</p>
+                <h2 style={sectionTitleStyle}>Prospect Intelligence</h2>
+                <p style={sectionIntroStyle}>
+                  Internal prospecting intelligence generated from accepted audit evidence.
+                </p>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: 14,
+                marginBottom: 14,
+              }}
+            >
+              <div style={summaryPanelStyle}>
+                <p style={panelEyebrowStyle}>Prospect Fit Score</p>
+                <p style={{ margin: 0, color: scoreColor(prospectIntelligence.prospectFitScore), fontSize: "2rem", fontWeight: 800 }}>
+                  {prospectIntelligence.prospectFitScore}/100
+                </p>
+              </div>
+              <div style={summaryPanelStyle}>
+                <p style={panelEyebrowStyle}>Commercial Opportunity Score</p>
+                <p style={{ margin: 0, color: scoreColor(prospectIntelligence.commercialOpportunityScore), fontSize: "2rem", fontWeight: 800 }}>
+                  {prospectIntelligence.commercialOpportunityScore}/100
+                </p>
+              </div>
+              <div style={summaryPanelStyle}>
+                <p style={panelEyebrowStyle}>Capture Fidelity</p>
+                <p style={{ margin: 0, color: "#0f172a", fontWeight: 800 }}>
+                  {CAPTURE_FIDELITY_LABELS[prospectIntelligence.captureFidelity]}
+                </p>
+                <p style={{ margin: "8px 0 0", color: "#64748b", lineHeight: 1.55 }}>
+                  Confidence: {prospectIntelligence.confidence}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 14 }}>
+              <div style={summaryPanelStyle}>
+                <p style={panelEyebrowStyle}>Primary Gap</p>
+                <p style={{ margin: 0, color: "#334155", lineHeight: 1.6 }}>
+                  {prospectIntelligence.primaryGap}
+                </p>
+              </div>
+              <div style={summaryPanelStyle}>
+                <p style={panelEyebrowStyle}>Top Opportunities</p>
+                {renderSummaryList(prospectIntelligence.result.topOpportunities)}
+              </div>
+              <div style={summaryPanelStyle}>
+                <p style={panelEyebrowStyle}>Recommended Service</p>
+                <p style={{ margin: 0, color: "#334155", lineHeight: 1.6 }}>
+                  {prospectIntelligence.recommendedService}
+                </p>
+              </div>
+              <div style={summaryPanelStyle}>
+                <p style={panelEyebrowStyle}>Outreach Angle</p>
+                <p style={{ margin: 0, color: "#334155", lineHeight: 1.6 }}>
+                  {prospectIntelligence.outreachAngle}
+                </p>
+              </div>
+              <div style={summaryPanelStyle}>
+                <p style={panelEyebrowStyle}>Missing Evidence</p>
+                {renderSummaryList(prospectIntelligence.result.missingEvidence)}
+              </div>
+              <div style={summaryPanelStyle}>
+                <p style={panelEyebrowStyle}>Suggested Next Step</p>
+                <p style={{ margin: 0, color: "#334155", lineHeight: 1.6 }}>
+                  {prospectIntelligence.result.internalNotes}
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
 
         {hasEnrichment && (
           <section id="ai" style={sectionStyle}>

@@ -5,6 +5,7 @@ import type {
   AuditFailureDetails,
   AuditFailureKind,
   AuditFailureStage,
+  CaptureFidelity,
   ClaimPosture,
   EvidenceLabel,
   Finding,
@@ -70,6 +71,7 @@ interface CaptureFidelityRow {
   browser_page_count: string | number;
   static_page_count: string | number;
   fallback_static_page_count: string | number;
+  secondary_static_page_count: string | number;
   screenshot_page_count: string | number;
 }
 
@@ -124,8 +126,10 @@ export interface ReportCaptureFidelity {
   browserPageCount: number;
   staticPageCount: number;
   fallbackStaticPageCount: number;
+  secondaryStaticPageCount: number;
   screenshotPageCount: number;
   hasBrowserEvidence: boolean;
+  primaryFidelity: CaptureFidelity;
 }
 
 function mapAuditRun(row: AuditRunWithDomainRow): AuditRun {
@@ -181,15 +185,38 @@ function mapCaptureFidelity(row?: CaptureFidelityRow): ReportCaptureFidelity {
   const acceptedPageCount = toCount(row?.accepted_page_count);
   const browserPageCount = toCount(row?.browser_page_count);
   const screenshotPageCount = toCount(row?.screenshot_page_count);
+  const secondaryStaticPageCount = toCount(row?.secondary_static_page_count);
+  const staticPageCount = toCount(row?.static_page_count);
+  const fallbackStaticPageCount = toCount(row?.fallback_static_page_count);
+  const hasBrowserEvidence = browserPageCount > 0 || screenshotPageCount > 0;
+  const primaryFidelity: CaptureFidelity = hasBrowserEvidence
+    ? "rendered_browser"
+    : acceptedPageCount === 0
+      ? "blocked_no_evidence"
+      : secondaryStaticPageCount > 0 && staticPageCount + fallbackStaticPageCount === 0
+        ? "secondary_static"
+        : "static_public";
 
   return {
     acceptedPageCount,
     browserPageCount,
-    staticPageCount: toCount(row?.static_page_count),
-    fallbackStaticPageCount: toCount(row?.fallback_static_page_count),
+    staticPageCount,
+    fallbackStaticPageCount,
+    secondaryStaticPageCount,
     screenshotPageCount,
-    hasBrowserEvidence: browserPageCount > 0 || screenshotPageCount > 0,
+    hasBrowserEvidence,
+    primaryFidelity,
   };
+}
+
+const BROWSER_REQUIRED_REPORT_CATEGORIES = new Set<FindingCategory>(["ux_ui", "mobile_experience"]);
+
+function filterFindingsForCaptureFidelity(findings: Finding[], fidelity: ReportCaptureFidelity) {
+  if (fidelity.hasBrowserEvidence || fidelity.primaryFidelity === "manual_evidence") {
+    return findings;
+  }
+
+  return findings.filter((finding) => !BROWSER_REQUIRED_REPORT_CATEGORIES.has(finding.category));
 }
 
 function buildCategoryReview(
@@ -408,6 +435,7 @@ export const reportRepository: ReportRepository = {
             COUNT(*) FILTER (WHERE capture_method = 'browser') AS browser_page_count,
             COUNT(*) FILTER (WHERE capture_method = 'static') AS static_page_count,
             COUNT(*) FILTER (WHERE capture_method = 'fallback_static') AS fallback_static_page_count,
+            COUNT(*) FILTER (WHERE capture_method = 'secondary_static') AS secondary_static_page_count,
             COUNT(*) FILTER (WHERE screenshot_storage_key IS NOT NULL) AS screenshot_page_count
           FROM page_snapshots
           WHERE audit_run_id = $1
@@ -415,7 +443,11 @@ export const reportRepository: ReportRepository = {
         `,
         [auditRunId]
       );
-      const findings = deduplicateFindings(findingsResult.rows.map(mapFinding));
+      const captureFidelity = mapCaptureFidelity(captureFidelityResult.rows[0]);
+      const findings = filterFindingsForCaptureFidelity(
+        deduplicateFindings(findingsResult.rows.map(mapFinding)),
+        captureFidelity
+      );
       const inspectionKeysByCategory = evidenceResult.rows.reduce<
         Partial<Record<FindingCategory, string[]>>
       >((acc, row) => {
@@ -429,6 +461,7 @@ export const reportRepository: ReportRepository = {
       const prioritizedFindings = prioritizeFindings(findings);
       const scores = scoreAuditByCategory(prioritizedFindings, {
         inspectionKeysByCategory,
+        captureFidelity: captureFidelity.primaryFidelity,
       });
       const categoryReviews = buildCategoryReviews(prioritizedFindings, scores);
 
@@ -440,7 +473,7 @@ export const reportRepository: ReportRepository = {
         topPriorities: selectTopPriorityFindings(prioritizedFindings, 5),
         scores,
         categoryReviews,
-        captureFidelity: mapCaptureFidelity(captureFidelityResult.rows[0]),
+        captureFidelity,
       };
     });
   },

@@ -12,6 +12,7 @@ export const TABLES = {
   rubrics: "rubrics",
   scorecards: "scorecards",
   outreach_assets: "outreach_assets",
+  prospect_intelligence: "prospect_intelligence",
 } as const;
 
 export type TableName = (typeof TABLES)[keyof typeof TABLES];

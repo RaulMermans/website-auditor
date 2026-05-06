@@ -7,12 +7,12 @@ import {
 } from "@/lib/capture-policy";
 
 describe("planCaptureMethod", () => {
-  it("returns static_preferred for homepage when not degraded", () => {
+  it("returns browser_first for homepage when not degraded", () => {
     const plan = planCaptureMethod({ pageType: "homepage", browserDegraded: false });
-    expect(plan.captureMethod).toBe("static_preferred");
-    expect(plan.requiresScreenshot).toBe(false);
+    expect(plan.captureMethod).toBe("browser_first");
+    expect(plan.requiresScreenshot).toBe(true);
     expect(plan.browserAllowed).toBe(true);
-    expect(plan.reason).toBe("homepage_static_preferred");
+    expect(plan.reason).toBe("homepage_browser_first");
   });
 
   it("returns static for secondary page when not degraded", () => {
