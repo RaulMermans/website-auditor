@@ -4,32 +4,23 @@ import type { PageType } from "@/lib/types";
 export type CaptureMethod = "static" | "browser" | "fallback_static" | "static_preferred" | "skip";
 
 /**
- * Safe public routes probed when homepage capture is blocked by a bot/security challenge.
- * These are low-risk, same-origin endpoints that commonly expose static evidence.
- * Order reflects evidence value (technical SEO first, then trust/contact, then content).
+ * Compact public routes probed when homepage capture is blocked by a bot/security challenge.
+ * The secondary sweep also uses sitemap and internal-link discovery; this list is only a
+ * bounded generic seed set, not the main discovery mechanism.
  */
 export const SAFE_SECONDARY_ROUTES: Array<{ path: string; pageType: PageType }> = [
-  { path: "/robots.txt", pageType: "other" },
-  { path: "/sitemap.xml", pageType: "other" },
   { path: "/about", pageType: "about" },
   { path: "/about-us", pageType: "about" },
   { path: "/contact", pageType: "contact" },
   { path: "/contact-us", pageType: "contact" },
   { path: "/services", pageType: "services" },
   { path: "/pricing", pageType: "pricing" },
-  { path: "/locations", pageType: "other" },
-  { path: "/stores", pageType: "other" },
-  { path: "/store-locator", pageType: "other" },
-  { path: "/shop", pageType: "other" },
-  { path: "/products", pageType: "other" },
-  { path: "/categories", pageType: "other" },
-  { path: "/collections", pageType: "other" },
-  { path: "/brands", pageType: "other" },
   { path: "/faq", pageType: "other" },
   { path: "/help", pageType: "other" },
-  { path: "/privacy", pageType: "legal" },
-  { path: "/privacy-policy", pageType: "legal" },
   { path: "/terms", pageType: "legal" },
+  { path: "/privacy", pageType: "legal" },
+  { path: "/locations", pageType: "other" },
+  { path: "/stores", pageType: "other" },
 ];
 
 /**

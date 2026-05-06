@@ -152,16 +152,17 @@ export async function processAuditRun(
 
     const result = summarizeProgress(progress);
     const completionStatus = resolveCompletionStatus(progress, limitationNote);
+    const persistedLimitationNote = completionStatus === "failed" ? null : limitationNote;
 
     await deps.auditJobs.updateAuditRunStatus({
       auditRunId: request.auditRunId,
       status: completionStatus,
       homepageOnly: result.homepageOnly,
       failureReason: null,
-      limitationNote,
+      limitationNote: persistedLimitationNote,
     });
 
-    return { ...result, limitationNote };
+    return { ...result, limitationNote: persistedLimitationNote };
   } catch (error) {
     progress = await deps.auditJobs.getAuditRunProgress(request.auditRunId).catch(() => progress);
     const failure = toAuditFailure(error, {

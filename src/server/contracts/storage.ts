@@ -54,12 +54,12 @@ function toBuffer(body: Buffer | Uint8Array | string): Buffer | string {
   return Buffer.from(body);
 }
 
-function buildVercelBlobProvider(token: string): StorageClient {
+export function buildVercelBlobProvider(token: string): StorageClient {
   return {
     async put(key, body, contentType) {
       const { put } = await import("@vercel/blob");
       const result = await put(key, toBuffer(body), {
-        access: "public",
+        access: "private",
         token,
         contentType,
         addRandomSuffix: false,
@@ -67,11 +67,23 @@ function buildVercelBlobProvider(token: string): StorageClient {
       return result.url;
     },
     async get(key) {
-      // Vercel Blob uses public URLs — re-download from the stored URL.
       try {
-        const response = await fetch(key);
-        if (!response.ok) return null;
-        return Buffer.from(await response.arrayBuffer());
+        const { get } = await import("@vercel/blob");
+        const result = await get(key, {
+          access: "private",
+          token,
+          useCache: false,
+        });
+        if (!result || result.statusCode !== 200 || !result.stream) return null;
+
+        const chunks: Buffer[] = [];
+        const reader = result.stream.getReader();
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          chunks.push(Buffer.from(value));
+        }
+        return Buffer.concat(chunks);
       } catch {
         return null;
       }
@@ -81,7 +93,8 @@ function buildVercelBlobProvider(token: string): StorageClient {
       await del(key, { token });
     },
     async presign(key) {
-      // Vercel Blob public URLs are already accessible; just return the URL.
+      // Private Blob artifacts are intentionally not exposed as raw public URLs.
+      // Callers that need artifact bytes should use get() server-side.
       return key;
     },
   };

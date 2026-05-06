@@ -12,6 +12,7 @@ import {
   REPORT_READY_STATUSES,
   scoreColor,
   SEVERITY_COLORS,
+  shouldDisplayLimitationNote,
 } from "@/lib/report-presentation";
 import {
   buildFullReportData,
@@ -230,6 +231,7 @@ function FindingGroupSection({ group }: { group: FullReportFindingGroup }) {
 function RunStatusView({
   auditRunId,
   domain,
+  status,
   statusMeta,
   homepageOnly,
   limitationNote,
@@ -237,11 +239,14 @@ function RunStatusView({
 }: {
   auditRunId: string;
   domain: string;
+  status: import("@/lib/types").AuditStatus;
   statusMeta: BadgePresentation & { description: string };
   homepageOnly: boolean;
   limitationNote?: string | null;
   failurePresentation: ReturnType<typeof getAuditFailurePresentation>;
 }) {
+  const showLimitationNote = shouldDisplayLimitationNote(status, limitationNote);
+
   return (
     <main
       style={{
@@ -329,7 +334,7 @@ function RunStatusView({
             </p>
           </div>
 
-          {limitationNote && (
+          {showLimitationNote && (
             <div
               style={{
                 marginTop: 14,
@@ -423,6 +428,7 @@ export default async function ReportPage({
       <RunStatusView
         auditRunId={auditRunId}
         domain={data.domain}
+        status={data.auditRun.status}
         statusMeta={statusMeta}
         homepageOnly={data.auditRun.homepageOnly}
         limitationNote={data.auditRun.limitationNote}
@@ -441,6 +447,10 @@ export default async function ReportPage({
     Boolean(assetMap.email) ||
     Boolean(assetMap.collaboration) ||
     Boolean(assetMap.loom_script);
+  const showLimitationNote = shouldDisplayLimitationNote(
+    data.auditRun.status,
+    data.auditRun.limitationNote
+  );
   const reviewStateCounts = data.categoryReviews.reduce<
     Record<keyof typeof REVIEW_STATE_META, number>
   >(
@@ -571,7 +581,7 @@ export default async function ReportPage({
           {/* Coverage & Limitations callout */}
           <div
             style={{
-              marginBottom: data.auditRun.limitationNote ? 10 : 18,
+              marginBottom: showLimitationNote ? 10 : 18,
               padding: "14px 16px",
               borderRadius: 14,
               background: "#fef9c3",
@@ -594,7 +604,7 @@ export default async function ReportPage({
             </Link>
           </div>
 
-          {data.auditRun.limitationNote && (
+          {showLimitationNote && (
             <div
               style={{
                 marginBottom: 18,

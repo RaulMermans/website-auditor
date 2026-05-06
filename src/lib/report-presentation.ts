@@ -138,6 +138,10 @@ export function stripHomepageScopePrefix(text: string) {
   return text.replace(HOMEPAGE_ONLY_PREFIX, "").trim();
 }
 
+export function shouldDisplayLimitationNote(status: AuditStatus, limitationNote?: string | null) {
+  return Boolean(limitationNote) && status !== "failed";
+}
+
 export function getFindingSupportLabel(
   finding: Pick<Finding, "evidenceRef">
 ) {

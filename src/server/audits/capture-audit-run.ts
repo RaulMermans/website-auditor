@@ -35,6 +35,17 @@ const BROWSER_RUNTIME_FAILURE_LIMITATION_NOTE =
   "Browser capture encountered a runtime error. This audit continued using public HTML evidence only. Findings reflect static/public evidence and may not include post-render or protected states.";
 const NO_USABLE_PUBLIC_HTML_REASON =
   "No trustworthy public HTML evidence was available after browser capture degraded. The static response looked like a thin shell or access page, so no bounded report was assembled.";
+const SECONDARY_TECHNICAL_ENDPOINTS: Array<{ path: string; pageType: PageType }> = [
+  { path: "/robots.txt", pageType: "other" },
+  { path: "/sitemap.xml", pageType: "other" },
+];
+const SECONDARY_FETCH_ATTEMPT_CAP = 18;
+const SITEMAP_DISCOVERY_CAP = 4;
+const INTERNAL_LINK_DISCOVERY_CAP = 4;
+const PROTECTED_PATH_PATTERN =
+  /\/(?:account|admin|auth|basket|cart|checkout|dashboard|login|logout|my-account|order|orders|password|register|reset|signin|sign-in|signup|sign-up|user|users|wp-admin)(?:\/|$)/i;
+const ASSET_PATH_PATTERN =
+  /\.(?:avif|css|csv|docx?|eot|gif|ico|jpe?g|js|json|map|mp4|pdf|png|svg|webm|webp|woff2?|xlsx?|zip)$/i;
 
 export interface AuditCaptureRequest {
   auditRunId: string;
@@ -219,6 +230,107 @@ export function extractLinksFromStaticHtml(
   }
 
   return links;
+}
+
+interface SecondarySweepCandidate {
+  url: string;
+  pageType: PageType;
+  source: "technical_endpoint" | "generic_route" | "sitemap" | "internal_link";
+  priority: number;
+}
+
+function inferSecondaryPageType(pathname: string): PageType {
+  const normalized = pathname.toLowerCase();
+  if (/\/about(?:-us)?(?:\/|$)/.test(normalized)) return "about";
+  if (/\/contact(?:-us)?(?:\/|$)/.test(normalized)) return "contact";
+  if (/\/(?:services|solutions|capabilities|what-we-do|work-with-us)(?:\/|$)/.test(normalized)) {
+    return "services";
+  }
+  if (/\/(?:pricing|plans)(?:\/|$)/.test(normalized)) return "pricing";
+  if (/\/(?:privacy|terms|legal|cookies?)(?:\/|$)/.test(normalized)) return "legal";
+  return "other";
+}
+
+function normalizeSecondaryCandidateUrl(rawUrl: string, baseUrl: string, origin: string): URL | null {
+  try {
+    const parsed = new URL(rawUrl, baseUrl);
+    parsed.hash = "";
+
+    if (parsed.origin !== origin) return null;
+    if (parsed.pathname === "/") return null;
+    if (parsed.search) return null;
+    if (ASSET_PATH_PATTERN.test(parsed.pathname)) return null;
+    if (PROTECTED_PATH_PATTERN.test(parsed.pathname)) return null;
+
+    const depth = parsed.pathname.split("/").filter(Boolean).length;
+    if (depth > 3) return null;
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function scoreSecondaryPublicPath(url: URL, source: SecondarySweepCandidate["source"]) {
+  const path = url.pathname.toLowerCase();
+  const depth = path.split("/").filter(Boolean).length;
+  let score = source === "sitemap" ? 140 : source === "internal_link" ? 120 : 100;
+
+  if (/\/(?:about|about-us|team|mission|company|who-we-are)(?:\/|$)/.test(path)) score += 40;
+  if (/\/(?:contact|contact-us|booking|book|schedule|locations|stores)(?:\/|$)/.test(path)) score += 36;
+  if (/\/(?:services|solutions|product|products|platform|work|portfolio|case-studies)(?:\/|$)/.test(path)) {
+    score += 34;
+  }
+  if (/\/(?:pricing|plans|faq|help|support|resources|blog|news|insights)(?:\/|$)/.test(path)) score += 24;
+  if (/\/(?:privacy|terms|legal|cookies?)(?:\/|$)/.test(path)) score -= 24;
+  score -= depth * 6;
+
+  return score;
+}
+
+function uniqueRankedCandidates(candidates: SecondarySweepCandidate[], cap: number) {
+  const seen = new Set<string>();
+  return candidates
+    .sort((left, right) => right.priority - left.priority || left.url.localeCompare(right.url))
+    .filter((candidate) => {
+      if (seen.has(candidate.url)) return false;
+      seen.add(candidate.url);
+      return true;
+    })
+    .slice(0, cap);
+}
+
+function parseSitemapCandidates(xml: string, baseUrl: string, origin: string): SecondarySweepCandidate[] {
+  const candidates: SecondarySweepCandidate[] = [];
+  for (const match of xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)) {
+    const parsed = normalizeSecondaryCandidateUrl(match[1], baseUrl, origin);
+    if (!parsed) continue;
+    candidates.push({
+      url: parsed.href,
+      pageType: inferSecondaryPageType(parsed.pathname),
+      source: "sitemap",
+      priority: scoreSecondaryPublicPath(parsed, "sitemap"),
+    });
+  }
+  return uniqueRankedCandidates(candidates, SITEMAP_DISCOVERY_CAP);
+}
+
+function extractInternalLinkCandidates(
+  html: string,
+  baseUrl: string,
+  origin: string
+): SecondarySweepCandidate[] {
+  const candidates = extractLinksFromStaticHtml(html, baseUrl)
+    .map((link) => normalizeSecondaryCandidateUrl(link.href, baseUrl, origin))
+    .filter((url): url is URL => Boolean(url))
+    .map((url) => ({
+      url: url.href,
+      pageType: inferSecondaryPageType(url.pathname),
+      source: "internal_link" as const,
+      priority: scoreSecondaryPublicPath(url, "internal_link"),
+    }));
+
+  return uniqueRankedCandidates(candidates, INTERNAL_LINK_DISCOVERY_CAP);
 }
 
 async function captureStaticPage(
@@ -906,11 +1018,11 @@ export async function captureAuditRun(
       failureStage: failure.failureStage,
       failureDetails: failure.failureDetails,
       homepageOnly: summary.homepageOnly,
-      limitationNote: limitationNote ?? undefined,
     });
 
     return {
       ...summary,
+      limitationNote: null,
       errorMessage: failure.failureReason,
     };
   } finally {
@@ -924,13 +1036,15 @@ export async function captureAuditRun(
  * Secondary static-only public evidence sweep.
  *
  * Called when homepage capture is blocked by a bot/security challenge.
- * Probes safe public routes (robots.txt, sitemap.xml, /about, /contact, etc.)
- * using plain HTTP only — no browser, no evasion.
+ * Uses plain HTTP only — no browser, no evasion. Discovery order:
+ * universal technical endpoints, sitemap URLs, compact generic routes, then
+ * low-depth internal links from any accessible HTML found during the sweep.
  *
  * Returns the number of successfully queued pages.
  * A page is queued only when it returns a non-challenge 200 OK response.
  *
- * Bounds: same-origin only, safe routes only, low page cap (maxPages - 1).
+ * Bounds: same-origin only, no query strings, protected paths/assets skipped,
+ * low fetch and page caps.
  */
 async function runSecondaryStaticSweep(
   baseUrl: string,
@@ -940,26 +1054,30 @@ async function runSecondaryStaticSweep(
 ): Promise<number> {
   const fetcher = deps.fetchStatic ?? fetchStaticPage;
   const origin = new URL(baseUrl).origin;
+  const pageCap = Math.max(0, maxPages - 1);
   let queued = 0;
+  let attempted = 0;
   const seenPageTypes = new Set<string>();
+  const fetchedUrls = new Set<string>();
+  const queuedUrls = new Set<string>();
+  const sitemapCandidates: SecondarySweepCandidate[] = [];
+  const internalLinkCandidates: SecondarySweepCandidate[] = [];
 
-  for (const route of SAFE_SECONDARY_ROUTES) {
-    if (queued >= maxPages - 1) {
-      break;
-    }
+  async function tryCandidate(candidate: SecondarySweepCandidate): Promise<void> {
+    if (queued >= pageCap || attempted >= SECONDARY_FETCH_ATTEMPT_CAP) return;
+    if (fetchedUrls.has(candidate.url)) return;
 
     // Avoid two pages of the same type (e.g. /about and /about-us both being "about").
-    if (seenPageTypes.has(route.pageType) && route.pageType !== "other") {
-      continue;
-    }
+    if (seenPageTypes.has(candidate.pageType) && candidate.pageType !== "other") return;
 
-    const url = `${origin}${route.path}`;
+    fetchedUrls.add(candidate.url);
+    attempted += 1;
 
     try {
-      const result = await fetcher(url);
+      const result = await fetcher(candidate.url);
 
       if (!result.ok) {
-        continue;
+        return;
       }
 
       // Skip bot-challenge or auth-wall responses.
@@ -971,69 +1089,76 @@ async function runSecondaryStaticSweep(
         driver: "static",
       });
       if (barrier) {
-        continue;
+        return;
       }
 
-      // Skip pages with no usable public evidence (bare shells, redirect pages, etc.).
-      // For robots.txt and sitemap.xml: accept only if the response is NOT an HTML page
-      // (real robots.txt starts with "User-agent:" or "#"; real sitemap starts with "<?xml").
-      const isMetaRoute = route.path === "/robots.txt" || route.path === "/sitemap.xml";
+      const isMetaRoute =
+        candidate.url === `${origin}/robots.txt` || candidate.url === `${origin}/sitemap.xml`;
       const looksLikeHtmlPage = /^\s*(<html|<!doctype)/i.test(result.html);
       if (isMetaRoute) {
         if (looksLikeHtmlPage) {
-          continue;
+          return;
         }
       } else {
         const assessment = assessPublicHtmlEvidence(result.html);
         if (!assessment.usable) {
-          continue;
+          return;
         }
+
+        internalLinkCandidates.push(...extractInternalLinkCandidates(result.html, result.finalUrl, origin));
       }
+
+      if (candidate.url === `${origin}/sitemap.xml`) {
+        sitemapCandidates.push(...parseSitemapCandidates(result.html, result.finalUrl, origin));
+      }
+
+      const normalizedFinalUrl = normalizeSecondaryCandidateUrl(result.finalUrl, candidate.url, origin);
+      if (!normalizedFinalUrl) return;
+      const finalUrl = normalizedFinalUrl.href;
+      if (queuedUrls.has(finalUrl)) return;
 
       await deps.auditJobs.insertPageSnapshot({
         auditRunId,
-        url: result.finalUrl,
-        pageType: route.pageType,
-        pagePriority: 50 + queued * 10, // deprioritized behind any real discovery
+        url: finalUrl,
+        pageType: candidate.pageType,
+        pagePriority: 50 + queued * 10,
         pageState: "queued",
         retryCount: 0,
         lastError: null,
       });
 
-      seenPageTypes.add(route.pageType);
+      seenPageTypes.add(candidate.pageType);
+      queuedUrls.add(finalUrl);
       queued += 1;
-
-      // Small bounded extraction from sitemap to bolster coverage on commerce/large sites
-      if (route.path === "/sitemap.xml" && queued < maxPages - 1) {
-        const locs = Array.from(result.html.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)).map((m) => m[1]);
-        let sitemapQueued = 0;
-        for (const locUrl of locs) {
-          if (sitemapQueued >= 2 || queued >= maxPages - 1) break; // bounded: max 2 from sitemap
-          try {
-            const parsedLoc = new URL(locUrl);
-            if (parsedLoc.origin !== origin) continue; // same-origin only
-            if (parsedLoc.pathname === "/") continue; // skip homepage
-
-            await deps.auditJobs.insertPageSnapshot({
-              auditRunId,
-              url: parsedLoc.href,
-              pageType: "other",
-              pagePriority: 80 + sitemapQueued * 10,
-              pageState: "queued",
-              retryCount: 0,
-              lastError: null,
-            });
-            queued += 1;
-            sitemapQueued += 1;
-          } catch {
-            continue;
-          }
-        }
-      }
     } catch {
       // Silently skip routes that time out or cannot be reached.
-      continue;
     }
+  }
+
+  for (const endpoint of SECONDARY_TECHNICAL_ENDPOINTS) {
+    await tryCandidate({
+      url: `${origin}${endpoint.path}`,
+      pageType: endpoint.pageType,
+      source: "technical_endpoint",
+      priority: endpoint.path === "/sitemap.xml" ? 220 : 210,
+    });
+  }
+
+  for (const candidate of uniqueRankedCandidates(sitemapCandidates, SITEMAP_DISCOVERY_CAP)) {
+    await tryCandidate(candidate);
+  }
+
+  for (const route of SAFE_SECONDARY_ROUTES) {
+    await tryCandidate({
+      url: `${origin}${route.path}`,
+      pageType: route.pageType,
+      source: "generic_route",
+      priority: scoreSecondaryPublicPath(new URL(`${origin}${route.path}`), "generic_route"),
+    });
+  }
+
+  for (const candidate of uniqueRankedCandidates(internalLinkCandidates, INTERNAL_LINK_DISCOVERY_CAP)) {
+    await tryCandidate(candidate);
   }
 
   return queued;

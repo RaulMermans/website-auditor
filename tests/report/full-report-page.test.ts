@@ -189,6 +189,8 @@ describe("FullReportPage", () => {
           marker: "unknown",
           retryable: true,
         },
+        limitationNote:
+          "This audit was completed using accessible public secondary pages and static technical evidence only.",
       },
     });
 
@@ -199,6 +201,8 @@ describe("FullReportPage", () => {
 
     expect(html).toContain("Audit Run Status");
     expect(html).toContain("Browser capture failed.");
+    expect(html).not.toContain("Capture limitation");
+    expect(html).not.toContain("completed using accessible public secondary pages");
     expect(html).not.toContain("Executive Summary");
   });
 });

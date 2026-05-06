@@ -10,6 +10,7 @@ import {
   REPORT_READY_STATUSES,
   scoreColor,
   SEVERITY_COLORS,
+  shouldDisplayLimitationNote,
 } from "@/lib/report-presentation";
 import {
   buildFullReportData,
@@ -215,6 +216,10 @@ export default async function FullReportPage({
 
   const statusMeta = AUDIT_STATUS_META[data.auditRun.status];
   const failurePresentation = getAuditFailurePresentation(data.auditRun);
+  const showLimitationNote = shouldDisplayLimitationNote(
+    data.auditRun.status,
+    data.auditRun.limitationNote
+  );
 
   if (!REPORT_READY_STATUSES.includes(data.auditRun.status)) {
     return (
@@ -341,7 +346,7 @@ export default async function FullReportPage({
             >
               {failurePresentation?.explanation ?? statusMeta.description}
             </p>
-            {data.auditRun.limitationNote && (
+            {showLimitationNote && (
               <p
                 style={{
                   margin: "12px 0 0",
@@ -635,7 +640,7 @@ export default async function FullReportPage({
               >
                 {fullReport.appendix.scopeNote}
               </p>
-              {data.auditRun.limitationNote && (
+              {showLimitationNote && (
                 <p
                   style={{
                     margin: "12px 0 0",

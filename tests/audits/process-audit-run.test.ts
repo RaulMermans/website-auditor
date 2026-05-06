@@ -489,4 +489,44 @@ describe("processAuditRun", () => {
     // Analysis still ran on secondary evidence
     expect(analyze).toHaveBeenCalledWith("run-hp-blocked");
   });
+
+  it("keeps homepage-blocked runs failed when no trustworthy secondary evidence was captured", async () => {
+    const limitationNote =
+      "Homepage capture was blocked by a security or bot-challenge page. This audit was completed using accessible public secondary pages and static technical evidence only.";
+    const auditJobs = {
+      getAuditRunProgress: vi
+        .fn()
+        .mockResolvedValueOnce(makeProgress())
+        .mockResolvedValueOnce(
+          makeProgress({
+            status: "capturing",
+            pageSnapshots: [],
+          })
+        ),
+      updateAuditRunStatus: vi.fn().mockResolvedValue(undefined),
+    };
+    const capture = vi.fn().mockResolvedValue({
+      auditRunId: "run-hp-blocked-empty",
+      pagesProcessed: 0,
+      homepageOnly: true,
+      limitationNote,
+    });
+    const analyze = vi.fn();
+
+    const result = await processAuditRun(
+      { auditRunId: "run-hp-blocked-empty", domain: "example.com" },
+      { auditJobs, capture, analyze }
+    );
+
+    expect(auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith({
+      auditRunId: "run-hp-blocked-empty",
+      status: "failed",
+      homepageOnly: true,
+      failureReason: null,
+      limitationNote: null,
+    });
+    expect(result.errorMessage).toBeUndefined();
+    expect(result.limitationNote).toBeNull();
+    expect(analyze).not.toHaveBeenCalled();
+  });
 });

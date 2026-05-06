@@ -1193,6 +1193,7 @@ describe("captureAuditRun", () => {
         <url><loc>https://example.com/products/shoes</loc></url>
         <url><loc>https://example.com/products/shirts</loc></url>
         <url><loc>https://example.com/products/hats</loc></url>
+        <url><loc>https://example.com/products/private?ref=feed</loc></url>
         <url><loc>https://other.com/external</loc></url>
       </urlset>
     `;
@@ -1214,11 +1215,99 @@ describe("captureAuditRun", () => {
     const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
     const capturedUrls = calls.map((c: any) => c[0].url);
     
-    // Should capture shoes and shirts (bounded to max 2 from sitemap)
+    // Should capture bounded same-origin sitemap URLs and skip homepage/external/query URLs.
     expect(capturedUrls).toContain("https://example.com/products/shoes");
     expect(capturedUrls).toContain("https://example.com/products/shirts");
-    expect(capturedUrls).not.toContain("https://example.com/products/hats"); // cap
+    expect(capturedUrls.filter((url: string) => url.startsWith("https://example.com/products/")).length)
+      .toBeLessThanOrEqual(3);
     expect(capturedUrls).not.toContain("https://other.com/external"); // not same origin
+    expect(capturedUrls).not.toContain("https://example.com/products/private?ref=feed"); // no query explosion
     expect(capturedUrls.filter((u: string) => u === "https://example.com/").length).toBe(0); // skipped homepage
+  });
+
+  it("recovers generic sitemap pages when hardcoded public routes are unavailable", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const challengeHtml =
+      "<html><body>Cloudflare security check captcha verify you are human</body></html>";
+    const sitemapXml = `
+      <urlset>
+        <url><loc>https://example.com/work/customer-story</loc></url>
+        <url><loc>https://example.com/insights/audit-guide</loc></url>
+        <url><loc>https://example.com/login</loc></url>
+        <url><loc>https://other.com/about</loc></url>
+      </urlset>
+    `;
+
+    const { deps } = createDeps();
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
+      if (url === "https://example.com" || url === "https://example.com/") {
+        return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
+      }
+      if (url === "https://example.com/robots.txt") {
+        return { html: "User-agent: *\nAllow: /", statusCode: 200, ok: true, finalUrl: url };
+      }
+      if (url === "https://example.com/sitemap.xml") {
+        return { html: sitemapXml, statusCode: 200, ok: true, finalUrl: url };
+      }
+      if (url === "https://example.com/work/customer-story" || url === "https://example.com/insights/audit-guide") {
+        return { html: USABLE_THIN_HTML, statusCode: 200, ok: true, finalUrl: url };
+      }
+      return { html: "Not Found", statusCode: 404, ok: false, finalUrl: url };
+    });
+
+    const result = await captureAuditRun({ auditRunId: "run-generic-sitemap", domain: "example.com" }, deps);
+    const capturedUrls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls.map(
+      (call: any) => call[0].url
+    );
+
+    expect(result.errorMessage).toBeUndefined();
+    expect(result.limitationNote).toMatch(/homepage capture was blocked/i);
+    expect(capturedUrls).toContain("https://example.com/work/customer-story");
+    expect(capturedUrls).toContain("https://example.com/insights/audit-guide");
+    expect(capturedUrls).not.toContain("https://example.com/login");
+  });
+
+  it("uses bounded internal-link recovery and skips protected paths", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const challengeHtml =
+      "<html><body>Cloudflare security check captcha verify you are human</body></html>";
+    const aboutHtml = [
+      "<html><head><title>Studio profile</title></head><body><nav>",
+      '<a href="/portfolio">Portfolio</a>',
+      '<a href="/case-studies/alpha">Case study</a>',
+      '<a href="/login">Client login</a>',
+      '<a href="/cart">Cart</a>',
+      '<a href="/assets/brochure.pdf">PDF</a>',
+      '<a href="https://other.com/contact">External</a>',
+      "</nav><main><h1>Independent studio</h1><p>We design services, publish work, and help teams improve public websites.</p>",
+      "<p>Contact hello@example.com for services and pricing.</p></main><footer>Privacy Terms</footer></body></html>",
+    ].join("");
+
+    const { deps } = createDeps();
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
+      if (url === "https://example.com" || url === "https://example.com/") {
+        return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
+      }
+      if (url === "https://example.com/about") {
+        return { html: aboutHtml, statusCode: 200, ok: true, finalUrl: url };
+      }
+      if (url === "https://example.com/portfolio" || url === "https://example.com/case-studies/alpha") {
+        return { html: USABLE_THIN_HTML, statusCode: 200, ok: true, finalUrl: url };
+      }
+      return { html: "Not Found", statusCode: 404, ok: false, finalUrl: url };
+    });
+
+    await captureAuditRun({ auditRunId: "run-internal-links", domain: "example.com" }, deps);
+
+    const fetchedUrls = (deps.fetchStatic as any).mock.calls.map((call: any[]) => call[0]);
+    const capturedUrls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls.map(
+      (call: any) => call[0].url
+    );
+    expect(capturedUrls).toContain("https://example.com/portfolio");
+    expect(capturedUrls).toContain("https://example.com/case-studies/alpha");
+    expect(fetchedUrls).not.toContain("https://example.com/login");
+    expect(fetchedUrls).not.toContain("https://example.com/cart");
+    expect(fetchedUrls).not.toContain("https://example.com/assets/brochure.pdf");
+    expect(capturedUrls.length).toBeLessThanOrEqual(4);
   });
 });

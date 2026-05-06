@@ -213,6 +213,8 @@ describe("ReportPage", () => {
           marker: "http_403",
           retryable: false,
         },
+        limitationNote:
+          "This audit was completed using accessible public secondary pages and static technical evidence only.",
       },
     });
     getAssetsForAuditRunMock.mockResolvedValue([]);
@@ -224,6 +226,8 @@ describe("ReportPage", () => {
 
     expect(html).toContain("Audit Run Status");
     expect(html).toContain("Access denied by target");
+    expect(html).not.toContain("Capture limitation");
+    expect(html).not.toContain("completed using accessible public secondary pages");
     expect(html).not.toContain("Main Conclusion");
   });
 });

@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { listRecentAuditRuns } from "@/db/report";
 import { getAuditFailurePresentation } from "@/lib/audit-failure";
-import { AUDIT_STATUS_META, REPORT_READY_STATUSES } from "@/lib/report-presentation";
+import {
+  AUDIT_STATUS_META,
+  REPORT_READY_STATUSES,
+  shouldDisplayLimitationNote,
+} from "@/lib/report-presentation";
 import type { AuditRunListItem } from "@/db/report";
 import type { AuditStatus } from "@/lib/types";
 
@@ -125,6 +129,7 @@ function renderActionLinks(run: AuditRunListItem) {
 function AuditRunCard({ run }: { run: AuditRunListItem }) {
   const statusMeta = AUDIT_STATUS_META[run.status];
   const failurePresentation = getAuditFailurePresentation(run);
+  const showLimitationNote = shouldDisplayLimitationNote(run.status, run.limitationNote);
 
   return (
     <article
@@ -258,7 +263,7 @@ function AuditRunCard({ run }: { run: AuditRunListItem }) {
         </div>
       )}
 
-      {run.limitationNote && (
+      {showLimitationNote && (
         <div
           style={{
             marginBottom: 16,

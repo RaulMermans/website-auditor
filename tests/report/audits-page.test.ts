@@ -95,7 +95,8 @@ describe("AuditsPage", () => {
           marker: "unknown",
           retryable: true,
         },
-        limitationNote: null,
+        limitationNote:
+          "This audit was completed using accessible public secondary pages and static technical evidence only.",
       },
     ]);
 
@@ -111,6 +112,7 @@ describe("AuditsPage", () => {
     expect(html).toContain("Assembling findings");
     expect(html).toContain("Homepage-only");
     expect(html).toContain("Capture");
+    expect(html).not.toContain("completed using accessible public secondary pages");
   });
 
   it("renders a diagnostic state when the audit list query fails", async () => {

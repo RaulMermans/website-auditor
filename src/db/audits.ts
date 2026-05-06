@@ -410,7 +410,11 @@ export const auditJobRepository: AuditJobRepository = {
                 WHEN $2 IN ('complete', 'partial_complete', 'needs_human_review', 'failed') THEN completed_at
                 ELSE NULL
               END,
-              limitation_note = COALESCE($9::text, limitation_note)
+              limitation_note = CASE
+                WHEN $2 = 'failed' THEN NULL
+                WHEN $9::text IS NOT NULL THEN $9::text
+                ELSE limitation_note
+              END
           WHERE id = $1
         `,
         [
