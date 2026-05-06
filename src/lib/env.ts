@@ -32,7 +32,9 @@ const envSchema = z.object({
   // App
   NEXT_PUBLIC_APP_URL: z.string().url().optional(),
 }).superRefine((value, ctx) => {
-  if (value.NODE_ENV === "production" && !value.WORKER_SECRET) {
+  const isNextProductionBuild = process.env.NEXT_PHASE === "phase-production-build";
+
+  if (value.NODE_ENV === "production" && !isNextProductionBuild && !value.WORKER_SECRET) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["WORKER_SECRET"],

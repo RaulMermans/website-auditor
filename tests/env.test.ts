@@ -19,4 +19,12 @@ describe("environment validation", () => {
 
     expect(() => getEnv()).not.toThrow();
   });
+
+  it("allows missing WORKER_SECRET during Next production build", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PHASE", "phase-production-build");
+    Reflect.deleteProperty(process.env, "WORKER_SECRET");
+
+    expect(() => getEnv()).not.toThrow();
+  });
 });

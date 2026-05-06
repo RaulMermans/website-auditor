@@ -1,0 +1,34 @@
+name: Worker Drain
+
+on:
+  schedule:
+    # GitHub Actions is used instead of Vercel Cron so Hobby deployments do not
+    # fail on Vercel's once-per-day cron limit.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  drain:
+    name: Drain one audit job
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+
+    steps:
+      - name: Call protected worker endpoint
+        shell: bash
+        env:
+          WORKER_DRAIN_URL: ${{ secrets.WORKER_DRAIN_URL }}
+          WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
+        run: |
+          if [ -z "$WORKER_DRAIN_URL" ] || [ -z "$WORKER_SECRET" ]; then
+            echo "WORKER_DRAIN_URL and WORKER_SECRET repository secrets are required."
+            exit 1
+          fi
+
+          curl --fail-with-body --show-error --silent \
+            --max-time 300 \
+            --request POST \
+            --header "content-type: application/json" \
+            --header "x-worker-secret: ${WORKER_SECRET}" \
+            --data '{}' \
+            "${WORKER_DRAIN_URL}"
