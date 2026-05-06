@@ -257,13 +257,13 @@ describe("captureAuditRun", () => {
     });
   });
 
-  // ─── Scenario A: secondary pages use static (primary path) ───────────────
+  // ─── Scenario A: browser-first homepage, static secondary pages ──────────
 
   it("captures secondary pages via static HTTP fetch by default", async () => {
-    // Static-first discovery: links come from HTML, not session.evaluate.
+    // Browser-first discovery: links come from rendered homepage HTML.
     const { deps } = createDeps({
       htmlByUrl: {
-        "https://example.com": [
+        "https://example.com/": [
           '<html><body>',
           '<a href="https://example.com/about">About</a>',
           '<a href="https://example.com/contact">Contact</a>',
@@ -281,11 +281,10 @@ describe("captureAuditRun", () => {
     expect(result.homepageOnly).toBe(false);
     expect(result.limitationNote).toBeNull();
 
-    // Static discovery fetches homepage; secondary pages are also fetched statically.
-    expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com");
+    // Homepage is rendered in-browser; secondary pages are fetched statically.
+    expect(deps.fetchStatic).not.toHaveBeenCalledWith("https://example.com");
     expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/about");
     expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/contact");
-    // Browser session created only for homepage screenshot (capture phase)
     expect(deps.browser.createSession).toHaveBeenCalledTimes(1);
 
     // Secondary pages completed with static capture method, no screenshot
@@ -465,10 +464,10 @@ describe("captureAuditRun", () => {
     );
   });
 
-  it("classifies 403 from static discovery as target access denial at discover stage", async () => {
-    // With static-first discovery, the 403 is detected from the static fetch, not the browser.
+  it("classifies 403 from homepage capture as target access denial", async () => {
     const { deps } = createDeps({
-      fetchStaticStatusByUrl: { "https://example.com": 403 },
+      statusByUrl: { "https://example.com/": 403 },
+      fetchStaticStatusByUrl: { "https://example.com/": 403 },
     });
 
     const result = await captureAuditRun(
@@ -480,23 +479,15 @@ describe("captureAuditRun", () => {
     );
 
     expect(result.errorMessage).toMatch(/target denied this audit request/i);
-    expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith({
-      auditRunId: "run-403",
-      status: "failed",
-      failureReason: "The target denied this audit request. That does not prove the site is broken for regular visitors.",
-      failureKind: "access_denied",
-      failureStage: "discover",
-      failureDetails: {
-        driver: "static",
-        marker: "http_403",
-        message: undefined,
-        retryable: false,
-        source: "target",
-        statusCode: 403,
-        url: "https://example.com",
-      },
-      homepageOnly: true,
-    });
+    expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        auditRunId: "run-403",
+        status: "failed",
+        failureKind: "access_denied",
+        failureStage: "capture",
+        homepageOnly: true,
+      })
+    );
   });
 
   // ─── Scenario C: browser unavailable → static fallback (graceful degrade) ─
@@ -529,7 +520,7 @@ describe("captureAuditRun", () => {
     expect(result.homepageOnly).toBe(true);
     expect(result.limitationNote).toMatch(/browser.*unavailable/i);
     // Static fetcher was used for homepage
-    expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com");
+    expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/");
     // No failure status update
     expect(deps.auditJobs.updateAuditRunStatus).not.toHaveBeenCalledWith(
       expect.objectContaining({ status: "failed" })
@@ -538,14 +529,18 @@ describe("captureAuditRun", () => {
 
   // ─── Scenario D: bot challenge during static discovery ───────────────────
 
-  it("hard-fails when static discovery hits a bot challenge with no public evidence", async () => {
-    // Static discovery fetches "https://example.com" and gets a challenge page.
-    // The run must not try browser as a workaround for the challenge.
+  it("hard-fails when browser and static fallback hit a bot challenge with no public evidence", async () => {
+    const challengeHtml =
+      "<html><head><title>Just a moment…</title></head><body>Cloudflare security check captcha verify you are human</body></html>";
     const { deps } = createDeps({
-      htmlByUrl: {
-        "https://example.com": "<html><head><title>Just a moment…</title></head><body>Cloudflare security check captcha verify you are human</body></html>",
-      },
+      htmlByUrl: { "https://example.com/": challengeHtml },
     });
+    deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
+      html: challengeHtml,
+      statusCode: 200,
+      ok: true,
+      finalUrl: url,
+    }));
 
     const result = await captureAuditRun(
       { auditRunId: "run-challenge", domain: "example.com" },
@@ -553,11 +548,13 @@ describe("captureAuditRun", () => {
     );
 
     expect(result.auditRunId).toBe("run-challenge");
-    expect(result.errorMessage).toMatch(/security or bot-challenge page/i);
+    expect(result.errorMessage).toMatch(/security challenge/i);
     expect(result.pagesProcessed).toBe(0);
     expect(result.homepageOnly).toBe(true);
-    expect(deps.browser.createSession).not.toHaveBeenCalled();
-    expect(deps.auditJobs.insertPageSnapshot).not.toHaveBeenCalled();
+    expect(deps.browser.createSession).toHaveBeenCalledTimes(1);
+    expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ pageType: "homepage" })
+    );
   });
 
   it("degrades browser and falls back to static when browser capture hits a bot challenge", async () => {
@@ -652,9 +649,9 @@ describe("captureAuditRun", () => {
   // ─── Auth-wall is NOT classified as bot challenge ─────────────────────────
 
   it("classifies 401 as auth_wall and hard-fails the run (not as a bot challenge)", async () => {
-    // With static-first discovery, the 401 is detected from the static fetch.
     const { deps } = createDeps({
-      fetchStaticStatusByUrl: { "https://example.com": 401 },
+      statusByUrl: { "https://example.com/": 401 },
+      fetchStaticStatusByUrl: { "https://example.com/": 401 },
     });
 
     const result = await captureAuditRun(
@@ -760,9 +757,9 @@ describe("captureAuditRun", () => {
     expect(deps.fetchStatic).toHaveBeenCalledWith("https://example.com/about");
   });
 
-  // ─── Static-first policy: sufficient HTML bypasses browser entirely ─────────
+  // ─── Browser-first policy: homepage always starts with rendered capture ───
 
-  it("completes with static capture when homepage HTML has sufficient content (no browser needed)", async () => {
+  it("captures homepage with browser even when public HTML would be sufficient", async () => {
     const richHtml = [
       "<html><head><title>Grow Your Business</title></head><body>",
       "<h1>Predictable Lead Generation for Agencies</h1>",
@@ -776,8 +773,9 @@ describe("captureAuditRun", () => {
       "</body></html>",
     ].join("");
 
-    const { deps } = createDeps();
-    // Return rich HTML for any URL — both discovery and capture fetches.
+    const { deps } = createDeps({
+      htmlByUrl: { "https://example.com/": richHtml },
+    });
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
       html: richHtml,
       statusCode: 200,
@@ -791,14 +789,12 @@ describe("captureAuditRun", () => {
     expect(result.errorMessage).toBeUndefined();
     expect(result.limitationNote).toBeNull();
 
-    // Browser session never created — static HTML is sufficient
-    expect(deps.browser.createSession).not.toHaveBeenCalled();
+    expect(deps.browser.createSession).toHaveBeenCalledTimes(1);
 
-    // Homepage captured via plain static (not fallback_static, not browser)
     const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
     const homepageCall = calls.find((c: any) => c[0].url?.endsWith("/"));
-    expect(homepageCall[0].captureMethod).toBe("static");
-    expect(homepageCall[0].screenshotStorageKey).toBeNull();
+    expect(homepageCall[0].captureMethod).toBe("browser");
+    expect(homepageCall[0].screenshotStorageKey).toBeTruthy();
   });
 
   it("escalates to browser when homepage HTML is a JS shell (thin/rendered content)", async () => {
@@ -882,8 +878,8 @@ describe("captureAuditRun", () => {
     });
     // Static fetcher: discovery URL returns HTML with an about link; all other URLs return thin HTML.
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
-      html: url === "https://example.com"
-        ? '<html><body><a href="https://example.com/about">About</a></body></html>'
+      html: url === "https://example.com" || url === "https://example.com/"
+        ? USABLE_THIN_HTML.replace("</main>", '<a href="https://example.com/about">About</a></main>')
         : USABLE_THIN_HTML,
       statusCode: 200,
       ok: true,
@@ -931,23 +927,29 @@ describe("captureAuditRun", () => {
     expect(resultUnavailable.limitationNote).not.toMatch(/security challenge/i);
 
     // Static discovery gets a bot-challenge page → hard failure, no limitation report.
+    const blockedChallengeHtml = "<html><body>captcha verify you are human</body></html>";
     const { deps: depsBlocked } = createDeps({
       htmlByUrl: {
-        // Static fetcher is called with the bare baseUrl (no trailing slash).
-        "https://example.com": "<html><body>captcha verify you are human</body></html>",
+        "https://example.com/": blockedChallengeHtml,
       },
     });
+    depsBlocked.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
+      html: blockedChallengeHtml,
+      statusCode: 200,
+      ok: true,
+      finalUrl: url,
+    }));
     const resultBlocked = await captureAuditRun(
       { auditRunId: "run-blocked", domain: "example.com" },
       depsBlocked
     );
-    expect(resultBlocked.errorMessage).toMatch(/security or bot-challenge page/i);
+    expect(resultBlocked.errorMessage).toMatch(/security challenge/i);
     expect(resultBlocked.limitationNote).toBeNull();
   });
 
   // ─── Secondary static sweep: homepage bot-blocked ─────────────────────────
 
-  it("runs secondary static sweep when homepage is bot-blocked at discovery and secondary pages are accessible", async () => {
+  it("runs secondary static sweep when homepage browser and static fallback are bot-blocked", async () => {
     // Homepage returns a bot-challenge page (200 OK but challenge HTML).
     // Secondary routes /about and /contact return usable public HTML.
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -955,9 +957,11 @@ describe("captureAuditRun", () => {
       "<html><head><title>Just a moment…</title></head><body>Cloudflare security check captcha verify you are human</body></html>";
     const secondaryHtml = USABLE_THIN_HTML;
 
-    const { deps } = createDeps();
+    const { deps } = createDeps({
+      htmlByUrl: { "https://example.com/": challengeHtml },
+    });
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
-      if (url === "https://example.com") {
+      if (url === "https://example.com" || url === "https://example.com/") {
         return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
       }
       // Secondary routes return usable HTML
@@ -977,12 +981,11 @@ describe("captureAuditRun", () => {
     expect(result.pagesProcessed).toBeGreaterThanOrEqual(1);
     // homepageOnly is false because secondary pages were captured
     expect(result.homepageOnly).toBe(false);
-    // Browser must never have been opened
-    expect(deps.browser.createSession).not.toHaveBeenCalled();
-    // No homepage snapshot inserted (secondary sweep skips homepage entirely)
-    const calls = (deps.auditJobs.insertPageSnapshot as any).mock.calls;
-    const homepageInsert = calls.find((c: any) => c[0].pageType === "homepage");
-    expect(homepageInsert).toBeUndefined();
+    expect(deps.browser.createSession).toHaveBeenCalledTimes(1);
+    const completedUrls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls.map(
+      (call: any) => call[0].url
+    );
+    expect(completedUrls).not.toContain("https://example.com/");
   });
 
   it("hard-fails when homepage is bot-blocked and secondary sweep finds no accessible public pages", async () => {
@@ -990,7 +993,9 @@ describe("captureAuditRun", () => {
     const challengeHtml =
       "<html><body>Cloudflare security check captcha verify you are human</body></html>";
 
-    const { deps } = createDeps();
+    const { deps } = createDeps({
+      htmlByUrl: { "https://example.com/": challengeHtml },
+    });
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
       html: challengeHtml,
       statusCode: 200,
@@ -1005,7 +1010,7 @@ describe("captureAuditRun", () => {
     );
 
     // Must hard-fail: no trustworthy evidence from any path
-    expect(result.errorMessage).toMatch(/security or bot-challenge page/i);
+    expect(result.errorMessage).toMatch(/security challenge/i);
     expect(result.pagesProcessed).toBe(0);
     expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith(
       expect.objectContaining({ status: "failed" })
@@ -1019,9 +1024,11 @@ describe("captureAuditRun", () => {
     const secondaryHtml = USABLE_THIN_HTML;
     let fetchCount = 0;
 
-    const { deps } = createDeps();
+    const { deps } = createDeps({
+      htmlByUrl: { "https://example.com/": challengeHtml },
+    });
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
-      if (url === "https://example.com") {
+      if (url === "https://example.com" || url === "https://example.com/") {
         return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
       }
       fetchCount++;
@@ -1034,7 +1041,9 @@ describe("captureAuditRun", () => {
     );
 
     // maxPages=3 → cap is maxPages-1=2 secondary pages
-    const insertCalls = (deps.auditJobs.insertPageSnapshot as any).mock.calls;
+    const insertCalls = (deps.auditJobs.insertPageSnapshot as any).mock.calls.filter(
+      (call: any) => call[0].pageType !== "homepage"
+    );
     // At most 2 secondary snapshots queued (maxPages - 1)
     expect(insertCalls.length).toBeLessThanOrEqual(2);
     // All fetched URLs must be same-origin
@@ -1050,9 +1059,11 @@ describe("captureAuditRun", () => {
       "<html><body>captcha verify you are human cloudflare</body></html>";
     const secondaryHtml = USABLE_THIN_HTML;
 
-    const { deps } = createDeps();
+    const { deps } = createDeps({
+      htmlByUrl: { "https://example.com/": challengeHtml },
+    });
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
-      if (url === "https://example.com") {
+      if (url === "https://example.com" || url === "https://example.com/") {
         return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
       }
       // Simulate most routes 404'ing, only /contact succeeds
@@ -1078,9 +1089,11 @@ describe("captureAuditRun", () => {
     const challengeHtml =
       "<html><body>captcha verify you are human cloudflare</body></html>";
 
-    const { deps } = createDeps();
+    const { deps } = createDeps({
+      htmlByUrl: { "https://example.com/": challengeHtml },
+    });
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
-      if (url === "https://example.com") {
+      if (url === "https://example.com" || url === "https://example.com/") {
         return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
       }
       return { html: USABLE_THIN_HTML, statusCode: 200, ok: true, finalUrl: url };
@@ -1092,7 +1105,7 @@ describe("captureAuditRun", () => {
     );
 
     const insertCalls = (deps.auditJobs.insertPageSnapshot as any).mock.calls;
-    for (const call of insertCalls) {
+    for (const call of insertCalls.slice(1)) {
       expect(call[0].pageType).not.toBe("homepage");
     }
   });
@@ -1102,9 +1115,11 @@ describe("captureAuditRun", () => {
     const challengeHtml =
       "<html><body>captcha verify you are human cloudflare</body></html>";
 
-    const { deps } = createDeps();
+    const { deps } = createDeps({
+      htmlByUrl: { "https://example.com/": challengeHtml },
+    });
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
-      if (url === "https://example.com") {
+      if (url === "https://example.com" || url === "https://example.com/") {
         return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
       }
       return { html: USABLE_THIN_HTML, statusCode: 200, ok: true, finalUrl: url };
@@ -1129,7 +1144,8 @@ describe("captureAuditRun", () => {
   it("403 from homepage still hard-fails without attempting secondary sweep", async () => {
     // HTTP 403 is a hard access barrier, not a bot-challenge — no secondary sweep.
     const { deps } = createDeps({
-      fetchStaticStatusByUrl: { "https://example.com": 403 },
+      statusByUrl: { "https://example.com/": 403 },
+      fetchStaticStatusByUrl: { "https://example.com/": 403 },
     });
 
     const result = await captureAuditRun(
@@ -1142,22 +1158,18 @@ describe("captureAuditRun", () => {
       expect.objectContaining({ status: "failed", failureKind: "access_denied" })
     );
     // Secondary sweep must not have been called (no extra insertPageSnapshot)
-    expect(deps.auditJobs.insertPageSnapshot).not.toHaveBeenCalled();
+    expect(deps.auditJobs.insertPageSnapshot).toHaveBeenCalledTimes(1);
   });
-  it("runs secondary static sweep when homepage static capture is bot-blocked", async () => {
+  it("runs secondary static sweep when homepage static fallback is bot-blocked", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const challengeHtml =
       "<html><head><title>Just a moment…</title></head><body>Cloudflare security check captcha verify you are human</body></html>";
-    const { deps } = createDeps();
+    const { deps } = createDeps({
+      htmlByUrl: { "https://example.com/": challengeHtml },
+    });
 
-    let fetchCount = 0;
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
       if (url === "https://example.com" || url === "https://example.com/") {
-        fetchCount++;
-        if (fetchCount === 1) { // discovery phase
-          return { html: USABLE_THIN_HTML, statusCode: 200, ok: true, finalUrl: url };
-        }
-        // capture phase
         return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
       }
       return { html: USABLE_THIN_HTML, statusCode: 200, ok: true, finalUrl: url };
@@ -1207,7 +1219,9 @@ describe("captureAuditRun", () => {
       </urlset>
     `;
 
-    const { deps } = createDeps();
+    const { deps } = createDeps({
+      htmlByUrl: { "https://example.com/": challengeHtml },
+    });
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
       if (url === "https://example.com" || url === "https://example.com/") {
         return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
@@ -1247,7 +1261,9 @@ describe("captureAuditRun", () => {
       </urlset>
     `;
 
-    const { deps } = createDeps();
+    const { deps } = createDeps({
+      htmlByUrl: { "https://example.com/": challengeHtml },
+    });
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
       if (url === "https://example.com" || url === "https://example.com/") {
         return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };
@@ -1292,7 +1308,9 @@ describe("captureAuditRun", () => {
       "<p>Contact hello@example.com for services and pricing.</p></main><footer>Privacy Terms</footer></body></html>",
     ].join("");
 
-    const { deps } = createDeps();
+    const { deps } = createDeps({
+      htmlByUrl: { "https://example.com/": challengeHtml },
+    });
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
       if (url === "https://example.com" || url === "https://example.com/") {
         return { html: challengeHtml, statusCode: 200, ok: true, finalUrl: url };

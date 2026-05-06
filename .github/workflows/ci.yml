@@ -38,3 +38,4 @@ jobs:
           # validation does not block the build step on CI.
           DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
           GEMINI_API_KEY: ci-stub
+          WORKER_SECRET: ci-stub-worker-secret
