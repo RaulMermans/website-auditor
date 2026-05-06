@@ -8,9 +8,19 @@ import {
   scoreAuditByCategory,
 } from "@/server/scoring/score-audit";
 
-const { getReportDataMock, getAssetsForAuditRunMock, notFoundMock } = vi.hoisted(() => ({
+vi.mock("@/db/client", () => ({
+  withDbClient: vi.fn(),
+}));
+
+const {
+  getReportDataMock,
+  getAssetsForAuditRunMock,
+  getProspectIntelligenceMock,
+  notFoundMock,
+} = vi.hoisted(() => ({
   getReportDataMock: vi.fn(),
   getAssetsForAuditRunMock: vi.fn(),
+  getProspectIntelligenceMock: vi.fn(),
   notFoundMock: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
@@ -42,16 +52,17 @@ vi.mock("@/db/report", async (importOriginal) => {
   };
 });
 
-vi.mock("@/db/enrichment", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/db/enrichment")>();
+vi.mock("@/db/enrichment", () => ({
+  enrichmentRepository: {
+    getAssetsForAuditRun: getAssetsForAuditRunMock,
+  },
+}));
 
-  return {
-    ...actual,
-    enrichmentRepository: {
-      getAssetsForAuditRun: getAssetsForAuditRunMock,
-    },
-  };
-});
+vi.mock("@/db/prospect-intelligence", () => ({
+  prospectIntelligenceRepository: {
+    getForAuditRun: getProspectIntelligenceMock,
+  },
+}));
 
 import ReportPage from "@/app/report/[auditRunId]/page";
 
@@ -137,6 +148,7 @@ function makeReportData(): ReportData {
 describe("ReportPage", () => {
   it("renders the concise report hierarchy and enrichment section", async () => {
     getReportDataMock.mockResolvedValue(makeReportData());
+    getProspectIntelligenceMock.mockResolvedValue(null);
     getAssetsForAuditRunMock.mockResolvedValue([
       {
         id: "asset-1",
@@ -172,6 +184,7 @@ describe("ReportPage", () => {
           "Browser capture was blocked or degraded by a security challenge. This audit continued using public HTML/static evidence only, so it may not include rendered, protected, or post-hydration page states.",
       },
     });
+    getProspectIntelligenceMock.mockResolvedValue(null);
     getAssetsForAuditRunMock.mockResolvedValue([]);
 
     const element = await ReportPage({
@@ -188,6 +201,7 @@ describe("ReportPage", () => {
 
   it("delegates to notFound when the audit run is missing", async () => {
     getReportDataMock.mockResolvedValue(null);
+    getProspectIntelligenceMock.mockResolvedValue(null);
     getAssetsForAuditRunMock.mockResolvedValue([]);
 
     await expect(
@@ -217,6 +231,7 @@ describe("ReportPage", () => {
           "This audit was completed using accessible public secondary pages and static technical evidence only.",
       },
     });
+    getProspectIntelligenceMock.mockResolvedValue(null);
     getAssetsForAuditRunMock.mockResolvedValue([]);
 
     const element = await ReportPage({

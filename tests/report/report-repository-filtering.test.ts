@@ -60,6 +60,7 @@ describe("reportRepository accepted-only filtering", () => {
             browser_page_count: "1",
             static_page_count: "0",
             fallback_static_page_count: "0",
+            secondary_static_page_count: "0",
             screenshot_page_count: "1",
           },
         ],
@@ -79,6 +80,7 @@ describe("reportRepository accepted-only filtering", () => {
       browserPageCount: 1,
       screenshotPageCount: 1,
       hasBrowserEvidence: true,
+      primaryFidelity: "rendered_browser",
     });
   });
 });

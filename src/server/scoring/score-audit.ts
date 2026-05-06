@@ -1,4 +1,11 @@
-import type { EvidenceLabel, Finding, FindingCategory, FindingConfidence, Scorecard } from "@/lib/types";
+import type {
+  CaptureFidelity,
+  EvidenceLabel,
+  Finding,
+  FindingCategory,
+  FindingConfidence,
+  Scorecard,
+} from "@/lib/types";
 
 const SEVERITY_WEIGHT: Record<Finding["severity"], number> = {
   critical: 18,
@@ -94,6 +101,7 @@ export interface CategoryScores {
 
 export interface ScoreAuditByCategoryOptions {
   inspectionKeysByCategory?: Partial<Record<FindingCategory, string[]>>;
+  captureFidelity?: CaptureFidelity;
 }
 
 type ReviewableFinding = Partial<Pick<Finding, "evaluatorStatus" | "reviewStatus">>;
@@ -150,6 +158,19 @@ function resolveInspectionSummary(
   category: FindingCategory,
   options?: ScoreAuditByCategoryOptions
 ): InspectionSummary {
+  if (
+    options?.captureFidelity &&
+    !allowsBrowserRequiredCategoryScoring(options.captureFidelity) &&
+    BROWSER_REQUIRED_CATEGORIES.has(category)
+  ) {
+    return {
+      status: "not_inspected",
+      depth: 0,
+      observedKeys: [],
+      expectedKeys: CATEGORY_EXPECTED_KEYS[category],
+    };
+  }
+
   const expectedKeys = CATEGORY_EXPECTED_KEYS[category];
 
   if (expectedKeys.length === 0) {
@@ -183,6 +204,12 @@ function resolveInspectionSummary(
     observedKeys,
     expectedKeys,
   };
+}
+
+const BROWSER_REQUIRED_CATEGORIES = new Set<FindingCategory>(["ux_ui", "mobile_experience"]);
+
+function allowsBrowserRequiredCategoryScoring(fidelity: CaptureFidelity) {
+  return fidelity === "rendered_browser" || fidelity === "manual_evidence";
 }
 
 function getInspectionCeiling(summary: InspectionSummary) {

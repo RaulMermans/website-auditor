@@ -6,6 +6,7 @@ import {
   generateProspectAuditAgent,
   type ProspectAuditAgentInput,
 } from "@/server/audits/prospect-audit-agent";
+import { ProspectAuditAgentResultSchema } from "@/server/agents/prospect-audit-agent.schema";
 
 const { generateContentMock, constructorArgs } = vi.hoisted(() => ({
   generateContentMock: vi.fn(),
@@ -232,8 +233,10 @@ function prospectInput(overrides: Partial<ProspectAuditAgentInput> = {}): Prospe
       browserPageCount: 1,
       staticPageCount: 1,
       fallbackStaticPageCount: 0,
+      secondaryStaticPageCount: 0,
       screenshotPageCount: 1,
       hasBrowserEvidence: true,
+      primaryFidelity: "rendered_browser",
     },
     lightlyInspectedCategories: ["conversion"],
     insufficientEvidenceCategories: ["ux_ui"],
@@ -241,6 +244,7 @@ function prospectInput(overrides: Partial<ProspectAuditAgentInput> = {}): Prospe
       "conversion: Light inspection with prioritized issues; 1/2 deterministic checks",
       "ux_ui: Insufficient evidence; 0/2 deterministic checks",
     ],
+    limitationNotes: [],
     acceptedFindings: [
       {
         category: "conversion",
@@ -290,22 +294,38 @@ describe("generateProspectAuditAgent", () => {
     expect(result).toEqual({ status: "disabled" });
   });
 
+  it("rejects extra Prospect Agent schema fields", () => {
+    const parsed = ProspectAuditAgentResultSchema.safeParse({
+      prospectFitScore: 72,
+      commercialOpportunityScore: 78,
+      captureFidelityAssessment: "Browser-backed.",
+      primaryGap: "CTA clarity.",
+      topOpportunities: ["Clarify CTA."],
+      recommendedService: "Conversion sprint.",
+      outreachAngle: "Lead with CTA clarity.",
+      missingEvidence: ["Analytics."],
+      internalNotes: "Bounded.",
+      confidence: "medium",
+      inventedRevenueLoss: "$50k",
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
   it("uses accepted findings and capture fidelity in the agent prompt", async () => {
     process.env.GEMINI_API_KEY = "test-key";
     generateContentMock.mockResolvedValue({
       text: JSON.stringify({
-        commercialOpportunity: "Credible opportunity around conversion clarity.",
-        brandClarityGaps: "Brand clarity is bounded by available evidence.",
-        conversionWeaknesses: "CTA distinction is the strongest signal.",
-        trustProofGaps: "Trust proof is unknown from the supplied evidence.",
-        uxIssues: "UX comments are limited to browser-backed capture and accepted findings.",
-        aiAutomationOpportunities: "Use an AI-assisted intake follow-up workflow.",
-        bestOutreachAngle: "Lead with the observed CTA clarity issue.",
-        recommendedServiceToPitch: "Conversion-focused website audit implementation sprint.",
-        confidence: {
-          level: "medium",
-          rationale: "One browser-backed accepted finding with light conversion coverage.",
-        },
+        prospectFitScore: 72,
+        commercialOpportunityScore: 78,
+        captureFidelityAssessment: "Browser-backed capture supports bounded UX comments.",
+        primaryGap: "CTA distinction is the strongest accepted signal.",
+        topOpportunities: ["Clarify the primary next step."],
+        recommendedService: "Conversion-focused website audit implementation sprint.",
+        outreachAngle: "Lead with the observed CTA clarity issue.",
+        missingEvidence: ["Analytics and broader journey evidence."],
+        internalNotes: "One browser-backed accepted finding with light conversion coverage.",
+        confidence: "medium",
       }),
     });
 
@@ -322,7 +342,7 @@ describe("generateProspectAuditAgent", () => {
     );
     expect(generateContentMock.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
-        contents: expect.stringContaining("You read accepted audit findings only"),
+        contents: expect.stringContaining("Use accepted findings only"),
       })
     );
     expect(generateContentMock.mock.calls[0]?.[0]).toEqual(
@@ -341,18 +361,16 @@ describe("generateProspectAuditAgent", () => {
     process.env.GEMINI_API_KEY = "test-key";
     generateContentMock.mockResolvedValue({
       text: JSON.stringify({
-        commercialOpportunity: "Credible but limited opportunity.",
-        brandClarityGaps: "Unknown.",
-        conversionWeaknesses: "Unknown.",
-        trustProofGaps: "Unknown.",
-        uxIssues: "UX is unverified.",
-        aiAutomationOpportunities: "Use AI to draft follow-up from verified audit outputs.",
-        bestOutreachAngle: "Lead with the evidence limitation.",
-        recommendedServiceToPitch: "Evidence-backed audit review.",
-        confidence: {
-          level: "low",
-          rationale: "No browser or screenshot evidence.",
-        },
+        prospectFitScore: 35,
+        commercialOpportunityScore: 40,
+        captureFidelityAssessment: "Static-only capture blocks visual claims.",
+        primaryGap: "Evidence is limited.",
+        topOpportunities: ["Gather browser evidence."],
+        recommendedService: "Evidence-backed audit review.",
+        outreachAngle: "Lead with the evidence limitation.",
+        missingEvidence: ["Browser screenshot evidence."],
+        internalNotes: "No browser or screenshot evidence.",
+        confidence: "low",
       }),
     });
 
@@ -363,8 +381,10 @@ describe("generateProspectAuditAgent", () => {
           browserPageCount: 0,
           staticPageCount: 1,
           fallbackStaticPageCount: 0,
+          secondaryStaticPageCount: 0,
           screenshotPageCount: 0,
           hasBrowserEvidence: false,
+          primaryFidelity: "static_public",
         },
       })
     );

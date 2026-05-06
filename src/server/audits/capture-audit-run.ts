@@ -13,7 +13,6 @@ import { buildCapturePlan, getPagePriority } from "@/server/audits/page-archetyp
 import {
   assessPublicHtmlEvidence,
   HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE,
-  isJsShellHtml,
   planCaptureMethod,
   SAFE_SECONDARY_ROUTES,
   SECONDARY_SWEEP_MIN_PAGES,
@@ -131,6 +130,46 @@ function summarizeCaptureProgress(
 
 function shouldDiscoverPages(progress: AuditRunProgress) {
   return progress.pageSnapshots.length === 0 || progress.auditRun.status === "discovering";
+}
+
+async function queueHomepageSnapshot(baseUrl: string, auditRunId: string, deps: CaptureAuditRunDeps) {
+  const homepageUrl = new URL(baseUrl).href;
+  await deps.auditJobs.insertPageSnapshot({
+    auditRunId,
+    url: homepageUrl,
+    pageType: "homepage",
+    pagePriority: 0,
+    pageState: "queued",
+    retryCount: 0,
+    lastError: null,
+  });
+}
+
+async function queueDiscoveredPagesFromLinks(options: {
+  auditRunId: string;
+  homepageUrl: string;
+  links: BrowserDiscoveredLink[];
+  maxPages: number;
+  deps: CaptureAuditRunDeps;
+}) {
+  const { auditRunId, homepageUrl, links, maxPages, deps } = options;
+  const captureTargets = buildCapturePlan(homepageUrl, links, maxPages).filter(
+    (target) => target.pageType !== "homepage"
+  );
+
+  await Promise.all(
+    captureTargets.map((target) =>
+      deps.auditJobs.insertPageSnapshot({
+        auditRunId,
+        url: target.url,
+        pageType: target.pageType,
+        pagePriority: target.pagePriority,
+        pageState: "queued",
+        retryCount: 0,
+        lastError: null,
+      })
+    )
+  );
 }
 
 function getCaptureFailureStage(progress: AuditRunProgress | null) {
@@ -628,26 +667,26 @@ async function captureQueuedPage(
 
 type SessionGetter = () => Promise<BrowserSession | null>;
 
-interface StaticPreferredResult {
+interface BrowserFirstResult {
   limitationNote: string | null;
   browserDegraded: boolean;
+  capturedUrl?: string;
+  discoveredLinks: BrowserDiscoveredLink[];
 }
 
 /**
- * Captures a homepage using static-first policy:
- * 1. Fetch via public HTTP. Hard-fail only on non-bot-challenge errors (401, 403, DNS, etc.).
- * 2. If HTML is rich enough: store static artifact — no browser needed.
- * 3. If HTML is thin (JS shell):
- *    a. Try browser as upgrade.
- *    b. If browser fails for any reason: use static HTML (if available) with a limitation note.
- *    c. If both browser and static paths lack trustworthy public evidence, hard-fail.
+ * Captures a homepage using browser-first policy:
+ * 1. Try rendered browser capture and store rendered HTML + screenshot when it succeeds.
+ * 2. If the browser is blocked, unavailable, or fails at runtime, downgrade to public static HTML.
+ * 3. If static HTML is blocked or too limited, try a bounded secondary public sweep.
+ * 4. If no authorized public evidence is available, fail the run without producing findings.
  */
-async function captureStaticPreferredPage(
+async function captureBrowserFirstPage(
   auditRunId: string,
   snapshot: Pick<PageSnapshot, "id" | "url" | "pageType" | "retryCount" | "auditRunId">,
   deps: CaptureAuditRunDeps,
   getSession: SessionGetter
-): Promise<StaticPreferredResult> {
+): Promise<BrowserFirstResult> {
   const fetcher = deps.fetchStatic ?? fetchStaticPage;
 
   await deps.auditJobs.updatePageSnapshotState({
@@ -657,103 +696,21 @@ async function captureStaticPreferredPage(
     lastError: null,
   });
 
-  // Phase 1: Static fetch
-  let staticResult: StaticPageResult | null = null;
-  let staticWasBotBlocked = false;
-
-  try {
-    const raw = await fetcher(snapshot.url);
-    if (!raw.ok) {
-      throw new Error(`Static fetch failed. Status: ${raw.statusCode}`);
-    }
-    const barrier = detectAuditCaptureBarrier({
-      stage: "capture",
-      statusCode: raw.statusCode,
-      html: raw.html,
-      url: raw.finalUrl,
-      driver: "static",
-    });
-    if (barrier) {
-      throw new AuditFailureError(barrier);
-    }
-    staticResult = raw;
-  } catch (staticError) {
-    const failure = toAuditFailure(staticError, {
-      stage: "capture",
-      url: snapshot.url,
-      driver: "static",
-    });
-    if (failure.failureKind === "capture_blocked") {
-      // Public HTTP returned a challenge page, so there is no trustworthy static
-      // evidence to inspect. Do not try to work around the target's challenge.
-      staticWasBotBlocked = true;
-    } else {
-      // Hard barrier (401, 403, DNS, etc.): no public evidence available.
-      await deps.auditJobs.updatePageSnapshotState({
-        pageSnapshotId: snapshot.id,
-        pageState: "failed",
-        retryCount: 0,
-        lastError: failure.failureReason,
-      });
-      throw new AuditFailureError(failure);
-    }
-  }
-
-  if (staticWasBotBlocked) {
-    console.warn("[audit-capture] Homepage bot-blocked at static capture; attempting secondary static sweep");
-    const secondaryCount = await runSecondaryStaticSweep(snapshot.url, auditRunId, 5, deps);
-    if (secondaryCount >= SECONDARY_SWEEP_MIN_PAGES) {
-      await deps.auditJobs.updatePageSnapshotState({
-        pageSnapshotId: snapshot.id,
-        pageState: "failed",
-        retryCount: snapshot.retryCount ?? 0,
-        lastError: "Homepage blocked at static capture, but secondary pages queued.",
-      });
-      return { limitationNote: HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE, browserDegraded: true };
-    }
-
-    await failNoUsablePublicEvidence(
-      auditRunId,
-      snapshot,
-      deps,
-      "Public HTML capture returned a security challenge instead of page content. No trustworthy public evidence was available for a bounded audit."
-    );
-  }
-
-  // Decide whether browser is needed.
-  // Browser is needed when the HTML is a JS shell (too thin) and public HTML
-  // alone is not enough to produce a trustworthy bounded report.
-  const staticAssessment = staticResult ? assessPublicHtmlEvidence(staticResult.html) : null;
-  const needsBrowser = staticResult !== null && isJsShellHtml(staticResult.html);
-
-  if (!needsBrowser && staticResult !== null) {
-    // Rich static HTML is sufficient — store and finish without a browser.
-    await completeWithStaticResult(auditRunId, snapshot, deps, staticResult, "static");
-    return { limitationNote: null, browserDegraded: false };
-  }
-
-  // Phase 2: Attempt browser capture for JS-shell escalation.
   const browserSession = await getSession();
 
   if (!browserSession) {
-    if (staticResult !== null && staticAssessment?.usable) {
-      // No browser, but static HTML is available (thin but usable).
-      await completeWithStaticResult(auditRunId, snapshot, deps, staticResult, "fallback_static");
-      return { limitationNote: BROWSER_UNAVAILABLE_LIMITATION_NOTE, browserDegraded: true };
-    }
-
-    return await failNoUsablePublicEvidence(auditRunId, snapshot, deps);
+    return captureStaticFallbackAfterBrowserFailure({
+      auditRunId,
+      snapshot,
+      deps,
+      fetcher,
+      note: BROWSER_UNAVAILABLE_LIMITATION_NOTE,
+      failureReason: "Browser rendering is unavailable in this environment.",
+      secondarySweepNote: BROWSER_UNAVAILABLE_LIMITATION_NOTE,
+    });
   }
 
-  // Phase 3: Browser capture attempt.
   try {
-    await deps.auditJobs.updatePageSnapshotState({
-      pageSnapshotId: snapshot.id,
-      pageState: "capturing",
-      retryCount: 0,
-      lastError: null,
-    });
-
     const response = await browserSession.navigate({
       url: snapshot.url,
       waitUntil: "load",
@@ -814,7 +771,12 @@ async function captureStaticPreferredPage(
       retryCount: 0,
     });
 
-    return { limitationNote: null, browserDegraded: false };
+    return {
+      limitationNote: null,
+      browserDegraded: false,
+      capturedUrl: currentUrl,
+      discoveredLinks: extractLinksFromStaticHtml(html, currentUrl),
+    };
   } catch (browserError) {
     const failure = toAuditFailure(browserError, {
       stage: "capture",
@@ -823,47 +785,104 @@ async function captureStaticPreferredPage(
     });
     const isBotChallenge = failure.failureKind === "capture_blocked";
 
-    if (staticResult !== null && staticAssessment?.usable) {
-      // Browser failed but static HTML is available: use it as fallback.
-      await completeWithStaticResult(auditRunId, snapshot, deps, staticResult, "fallback_static");
-      const note = isBotChallenge
-        ? BROWSER_BLOCKED_LIMITATION_NOTE
-        : BROWSER_RUNTIME_FAILURE_LIMITATION_NOTE;
-      return { limitationNote: note, browserDegraded: true };
+    return captureStaticFallbackAfterBrowserFailure({
+      auditRunId,
+      snapshot,
+      deps,
+      fetcher,
+      note: isBotChallenge ? BROWSER_BLOCKED_LIMITATION_NOTE : BROWSER_RUNTIME_FAILURE_LIMITATION_NOTE,
+      failureReason: failure.failureReason,
+      secondarySweepNote: isBotChallenge
+        ? HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE
+        : BROWSER_RUNTIME_FAILURE_LIMITATION_NOTE,
+    });
+  }
+}
+
+async function captureStaticFallbackAfterBrowserFailure(options: {
+  auditRunId: string;
+  snapshot: Pick<PageSnapshot, "id" | "url" | "pageType" | "retryCount" | "auditRunId">;
+  deps: CaptureAuditRunDeps;
+  fetcher: typeof fetchStaticPage;
+  note: string;
+  failureReason: string;
+  secondarySweepNote: string;
+}): Promise<BrowserFirstResult> {
+  const { auditRunId, snapshot, deps, fetcher, note, failureReason, secondarySweepNote } = options;
+
+  try {
+    const staticResult = await fetcher(snapshot.url);
+    if (!staticResult.ok) {
+      throw new Error(`Static fetch failed. Status: ${staticResult.statusCode}`);
     }
 
-    console.warn("[audit-capture] Browser capture failed and static was not usable; attempting secondary static sweep");
+    const staticBarrier = detectAuditCaptureBarrier({
+      stage: "capture",
+      statusCode: staticResult.statusCode,
+      html: staticResult.html,
+      url: staticResult.finalUrl,
+      driver: "static",
+    });
+    if (staticBarrier) {
+      throw new AuditFailureError(staticBarrier);
+    }
+
+    const staticAssessment = assessPublicHtmlEvidence(staticResult.html);
+    if (!staticAssessment.usable) {
+      throw new Error(NO_USABLE_PUBLIC_HTML_REASON);
+    }
+
+    await completeWithStaticResult(auditRunId, snapshot, deps, staticResult, "fallback_static");
+    return {
+      limitationNote: note,
+      browserDegraded: true,
+      capturedUrl: staticResult.finalUrl,
+      discoveredLinks: extractLinksFromStaticHtml(staticResult.html, staticResult.finalUrl),
+    };
+  } catch (staticError) {
+    const staticFailure = toAuditFailure(staticError, {
+      stage: "capture",
+      url: snapshot.url,
+      driver: "static",
+    });
+
+    if (
+      staticFailure.failureKind === "access_denied" ||
+      staticFailure.failureKind === "auth_wall"
+    ) {
+      await deps.auditJobs.updatePageSnapshotState({
+        pageSnapshotId: snapshot.id,
+        pageState: "failed",
+        retryCount: snapshot.retryCount ?? 0,
+        lastError: staticFailure.failureReason,
+      });
+      throw new AuditFailureError(staticFailure);
+    }
+
+    console.warn("[audit-capture] Browser-first capture and static fallback failed; attempting secondary static sweep");
     const secondaryCount = await runSecondaryStaticSweep(snapshot.url, auditRunId, 5, deps);
     if (secondaryCount >= SECONDARY_SWEEP_MIN_PAGES) {
       await deps.auditJobs.updatePageSnapshotState({
         pageSnapshotId: snapshot.id,
         pageState: "failed",
         retryCount: snapshot.retryCount ?? 0,
-        lastError: failure.failureReason,
+        lastError: failureReason,
       });
-      const note = isBotChallenge
-        ? HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE
-        : BROWSER_RUNTIME_FAILURE_LIMITATION_NOTE;
-      return { limitationNote: note, browserDegraded: true };
+      return {
+        limitationNote: secondarySweepNote,
+        browserDegraded: true,
+        discoveredLinks: [],
+      };
     }
 
-    // Browser failed and the static response was not trustworthy enough for a bounded report.
-    await deps.auditJobs.updatePageSnapshotState({
-      pageSnapshotId: snapshot.id,
-      pageState: "failed",
-      retryCount: 0,
-      lastError: failure.failureReason,
-    });
-    await deps.auditJobs.insertAuditRunAttempt({
+    return await failNoUsablePublicEvidence(
       auditRunId,
-      pageSnapshotId: snapshot.id,
-      stage: "capture",
-      attempt: 1,
-      failureKind: failure.failureKind,
-      evaluatorFeedback: failure.failureReason,
-      nextRetryStrategy: "escalate_to_failed",
-    }).catch(() => undefined);
-    throw new AuditFailureError(failure);
+      snapshot,
+      deps,
+      staticFailure.failureKind === "capture_blocked"
+        ? "Public static fallback returned a security challenge after browser capture failed. No trustworthy public evidence was available for a bounded audit."
+        : failureReason
+    );
   }
 }
 
@@ -919,18 +938,10 @@ export async function captureAuditRun(
         status: "discovering",
       });
 
-      // Static-first discovery: fetch homepage via HTTP and extract links without a browser.
-      // Browser is used later (capture phase) only for homepage screenshot.
-      // If homepage is bot-blocked, a secondary static sweep is attempted instead.
-      const discoveryResult = await doStaticDiscovery(baseUrl, auditRunId, maxPages, deps);
-
-      if (discoveryResult.homepageBlocked) {
-        // Homepage was bot-blocked but secondary evidence was found.
-        // Skip browser capture entirely — mark as degraded so the orchestrator
-        // proceeds directly to analyze the secondary pages.
-        browserDegraded = true;
-        limitationNote = discoveryResult.limitationNote;
-      }
+      // Browser-first milestone: queue the homepage without fetching it statically.
+      // Link discovery happens after rendered capture, or from authorized static
+      // fallback HTML if browser capture degrades.
+      await queueHomepageSnapshot(baseUrl, auditRunId, deps);
 
       progress = await deps.auditJobs.getAuditRunProgress(auditRunId);
     }
@@ -955,13 +966,21 @@ export async function captureAuditRun(
       for (const snapshot of captureTargets) {
         const plan = planCaptureMethod({ pageType: snapshot.pageType, browserDegraded });
 
-        if (plan.captureMethod === "static_preferred") {
-          // Static-first homepage: try static, escalate to browser only if HTML is thin.
-          const result = await captureStaticPreferredPage(auditRunId, snapshot, deps, getSession);
+        if (plan.captureMethod === "browser_first") {
+          const result = await captureBrowserFirstPage(auditRunId, snapshot, deps, getSession);
           if (result.browserDegraded && !browserDegraded) {
             browserDegraded = true;
           }
           limitationNote = limitationNote ?? result.limitationNote ?? null;
+          if (result.capturedUrl && result.discoveredLinks.length > 0) {
+            await queueDiscoveredPagesFromLinks({
+              auditRunId,
+              homepageUrl: result.capturedUrl,
+              links: result.discoveredLinks,
+              maxPages,
+              deps,
+            });
+          }
         } else if (plan.captureMethod === "browser") {
           // Legacy explicit-browser path (not reached by current policy; kept for safety).
           const browserSession = await getSession();
@@ -979,7 +998,13 @@ export async function captureAuditRun(
           }
         } else {
           // "static" (primary path for secondary pages) or "fallback_static" (degraded)
-          await captureStaticPage(auditRunId, snapshot, deps, plan.captureMethod as CaptureMethodProvenance);
+          const method =
+            browserDegraded &&
+            limitationNote === HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE &&
+            snapshot.pageType !== "homepage"
+              ? "secondary_static"
+              : (plan.captureMethod as CaptureMethodProvenance);
+          await captureStaticPage(auditRunId, snapshot, deps, method);
         }
       }
 

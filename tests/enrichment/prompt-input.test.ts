@@ -1,4 +1,10 @@
 import { describe, it, expect } from "vitest";
+import { vi } from "vitest";
+
+vi.mock("@/db/client", () => ({
+  withDbClient: vi.fn(),
+}));
+
 import { buildCategoryReviews, type ReportData } from "@/db/report";
 import { buildEnrichmentInput } from "@/server/audits/generate-report-enrichment";
 import { buildProspectAuditAgentInput } from "@/server/audits/prospect-audit-agent";
@@ -169,8 +175,10 @@ describe("buildProspectAuditAgentInput", () => {
         browserPageCount: 1,
         staticPageCount: 1,
         fallbackStaticPageCount: 0,
+        secondaryStaticPageCount: 0,
         screenshotPageCount: 1,
         hasBrowserEvidence: true,
+        primaryFidelity: "rendered_browser",
       },
     });
 

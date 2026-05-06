@@ -1,7 +1,13 @@
 import type { PageType } from "@/lib/types";
 
-// "static_preferred" = try static first; escalate to browser only if HTML is thin/JS-shell.
-export type CaptureMethod = "static" | "browser" | "fallback_static" | "static_preferred" | "skip";
+// "browser_first" = try rendered browser capture first; downgrade only to authorized public/static evidence.
+export type CaptureMethod =
+  | "static"
+  | "browser"
+  | "fallback_static"
+  | "secondary_static"
+  | "browser_first"
+  | "skip";
 
 /**
  * Compact public routes probed when homepage capture is blocked by a bot/security challenge.
@@ -140,8 +146,8 @@ export function assessPublicHtmlEvidence(html: string): PublicHtmlEvidenceAssess
  * Decides how to capture a page given run state.
  *
  * Policy:
- * - homepage: static_preferred — try static fetch first; escalate to browser only
- *   if the HTML is a JS shell. Browser adds screenshot value but is not mandatory.
+ * - homepage: browser_first — try rendered browser capture first so visual and
+ *   post-render evidence are primary when available.
  * - secondary pages: static HTTP fetch is sufficient (no screenshot needed).
  * - any page when browserDegraded: fallback_static.
  */
@@ -160,10 +166,10 @@ export function planCaptureMethod(options: {
 
   if (options.pageType === "homepage") {
     return {
-      captureMethod: "static_preferred",
-      requiresScreenshot: false,
+      captureMethod: "browser_first",
+      requiresScreenshot: true,
       browserAllowed: true,
-      reason: "homepage_static_preferred",
+      reason: "homepage_browser_first",
     };
   }
 

@@ -124,6 +124,36 @@ describe("scoreAuditByCategory", () => {
     expect(result.inspectionSummaryByCategory.ux_ui.status).toBe("not_inspected");
   });
 
+  it("excludes visual and mobile categories when capture fidelity is static-only", () => {
+    const result = scoreAuditByCategory([], {
+      captureFidelity: "static_public",
+      inspectionKeysByCategory: {
+        ux_ui: CATEGORY_EXPECTED_KEYS.ux_ui,
+        mobile_experience: CATEGORY_EXPECTED_KEYS.mobile_experience,
+        technical_seo: CATEGORY_EXPECTED_KEYS.technical_seo,
+      },
+    });
+
+    expect(result.inspectionSummaryByCategory.ux_ui.status).toBe("not_inspected");
+    expect(result.inspectionSummaryByCategory.mobile_experience.status).toBe("not_inspected");
+    expect(result.inspectionSummaryByCategory.technical_seo.status).toBe("inspected");
+    expect(result.inspectedCategories).not.toContain("ux_ui");
+    expect(result.inspectedCategories).not.toContain("mobile_experience");
+  });
+
+  it("allows screenshot-backed UX scoring when capture fidelity is rendered browser", () => {
+    const result = scoreAuditByCategory([], {
+      captureFidelity: "rendered_browser",
+      inspectionKeysByCategory: {
+        ux_ui: CATEGORY_EXPECTED_KEYS.ux_ui,
+        mobile_experience: CATEGORY_EXPECTED_KEYS.mobile_experience,
+      },
+    });
+
+    expect(result.inspectionSummaryByCategory.ux_ui.status).toBe("inspected");
+    expect(result.inspectionSummaryByCategory.mobile_experience.status).toBe("inspected");
+  });
+
   it("weights confidence and evidence strength inside the same category", () => {
     const highConfidence = scoreAuditByCategory(
       [

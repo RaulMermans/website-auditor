@@ -4,6 +4,8 @@ import type { ReportData } from "@/db/report";
 const {
   getReportDataMock,
   saveAssetMock,
+  saveProspectIntelligenceMock,
+  insertAuditRunAttemptMock,
   buildEnrichmentInputMock,
   generateReportEnrichmentMock,
   generateOutreachAssetsMock,
@@ -12,6 +14,8 @@ const {
 } = vi.hoisted(() => ({
   getReportDataMock: vi.fn(),
   saveAssetMock: vi.fn(),
+  saveProspectIntelligenceMock: vi.fn(),
+  insertAuditRunAttemptMock: vi.fn(),
   buildEnrichmentInputMock: vi.fn(),
   generateReportEnrichmentMock: vi.fn(),
   generateOutreachAssetsMock: vi.fn(),
@@ -28,6 +32,18 @@ vi.mock("@/db/report", () => ({
 vi.mock("@/db/enrichment", () => ({
   enrichmentRepository: {
     saveAsset: saveAssetMock,
+  },
+}));
+
+vi.mock("@/db/prospect-intelligence", () => ({
+  prospectIntelligenceRepository: {
+    save: saveProspectIntelligenceMock,
+  },
+}));
+
+vi.mock("@/db/audits", () => ({
+  auditJobRepository: {
+    insertAuditRunAttempt: insertAuditRunAttemptMock,
   },
 }));
 
@@ -134,8 +150,10 @@ describe("POST /api/reports/[auditRunId]/enrich", () => {
         browserPageCount: 0,
         staticPageCount: 0,
         fallbackStaticPageCount: 0,
+        secondaryStaticPageCount: 0,
         screenshotPageCount: 0,
         hasBrowserEvidence: false,
+        primaryFidelity: "blocked_no_evidence",
       },
       lightlyInspectedCategories: [],
       insufficientEvidenceCategories: ["ux_ui"],
@@ -143,6 +161,8 @@ describe("POST /api/reports/[auditRunId]/enrich", () => {
       acceptedFindings: [],
     });
     saveAssetMock.mockResolvedValue(undefined);
+    saveProspectIntelligenceMock.mockResolvedValue(undefined);
+    insertAuditRunAttemptMock.mockResolvedValue(undefined);
   });
 
   it("returns 404 when the audit run does not exist", async () => {
@@ -193,18 +213,22 @@ describe("POST /api/reports/[auditRunId]/enrich", () => {
     generateProspectAuditAgentMock.mockResolvedValue({
       status: "success",
       data: {
-        commercialOpportunity: "Credible opportunity.",
-        brandClarityGaps: "Clarity gap.",
-        conversionWeaknesses: "Conversion weakness.",
-        trustProofGaps: "Trust gap.",
-        uxIssues: "UX bounded by evidence.",
-        aiAutomationOpportunities: "AI follow-up workflow.",
-        bestOutreachAngle: "Lead with clarity.",
-        recommendedServiceToPitch: "Website conversion sprint.",
-        confidence: {
-          level: "medium",
-          rationale: "Accepted evidence with bounded coverage.",
-        },
+        prospectFitScore: 72,
+        commercialOpportunityScore: 78,
+        captureFidelityAssessment: "Bounded static evidence.",
+        primaryGap: "Clarity gap.",
+        topOpportunities: ["Improve clarity."],
+        recommendedService: "Website conversion sprint.",
+        outreachAngle: "Lead with clarity.",
+        missingEvidence: ["Browser evidence."],
+        internalNotes: "Accepted evidence with bounded coverage.",
+        confidence: "medium",
+      },
+      metadata: {
+        model: "gemini-2.5-flash",
+        promptVersion: "prospect-audit-agent.v2",
+        schemaVersion: "prospect-intelligence.v1",
+        inputHash: "hash",
       },
     });
 
@@ -214,23 +238,27 @@ describe("POST /api/reports/[auditRunId]/enrich", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      saved: ["summary", "quick_wins", "email", "collaboration", "loom_script"],
+      saved: ["summary", "quick_wins", "email", "collaboration", "loom_script", "prospect_intelligence"],
       prospectAuditAgent: {
-        commercialOpportunity: "Credible opportunity.",
-        brandClarityGaps: "Clarity gap.",
-        conversionWeaknesses: "Conversion weakness.",
-        trustProofGaps: "Trust gap.",
-        uxIssues: "UX bounded by evidence.",
-        aiAutomationOpportunities: "AI follow-up workflow.",
-        bestOutreachAngle: "Lead with clarity.",
-        recommendedServiceToPitch: "Website conversion sprint.",
-        confidence: {
-          level: "medium",
-          rationale: "Accepted evidence with bounded coverage.",
-        },
+        prospectFitScore: 72,
+        commercialOpportunityScore: 78,
+        captureFidelityAssessment: "Bounded static evidence.",
+        primaryGap: "Clarity gap.",
+        topOpportunities: ["Improve clarity."],
+        recommendedService: "Website conversion sprint.",
+        outreachAngle: "Lead with clarity.",
+        missingEvidence: ["Browser evidence."],
+        internalNotes: "Accepted evidence with bounded coverage.",
+        confidence: "medium",
       },
     });
     expect(saveAssetMock).toHaveBeenCalledTimes(5);
+    expect(saveProspectIntelligenceMock).toHaveBeenCalledWith({
+      auditRunId: "run-123",
+      captureFidelity: "blocked_no_evidence",
+      result: expect.objectContaining({ primaryGap: "Clarity gap." }),
+      metadata: expect.objectContaining({ inputHash: "hash" }),
+    });
     expect(saveAssetMock).toHaveBeenNthCalledWith(1, "run-123", "summary", "Grounded summary.");
     expect(saveAssetMock).toHaveBeenNthCalledWith(2, "run-123", "quick_wins", "Grounded quick wins.");
     expect(saveAssetMock).toHaveBeenNthCalledWith(3, "run-123", "email", "Grounded email.");

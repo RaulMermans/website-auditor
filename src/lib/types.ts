@@ -79,6 +79,13 @@ export type PageType =
   | "legal"
   | "other";
 
+export type CaptureFidelity =
+  | "rendered_browser"
+  | "static_public"
+  | "secondary_static"
+  | "manual_evidence"
+  | "blocked_no_evidence";
+
 export type PageReviewStatus =
   | "queued"
   | "capturing"
@@ -125,7 +132,13 @@ export interface AuditRun {
   createdAt: Date;
 }
 
-export type CaptureMethodProvenance = "browser" | "static" | "fallback_static" | "skipped";
+export type CaptureMethodProvenance =
+  | "browser"
+  | "static"
+  | "fallback_static"
+  | "secondary_static"
+  | "manual_evidence"
+  | "skipped";
 
 export interface PageSnapshot {
   id: string;
