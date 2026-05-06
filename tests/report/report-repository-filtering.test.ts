@@ -52,6 +52,17 @@ describe("reportRepository accepted-only filtering", () => {
       })
       .mockResolvedValueOnce({
         rows: [{ category: "technical_seo", key: "title" }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            accepted_page_count: "1",
+            browser_page_count: "1",
+            static_page_count: "0",
+            fallback_static_page_count: "0",
+            screenshot_page_count: "1",
+          },
+        ],
       });
 
     withDbClientMock.mockImplementation(async (callback: any) => callback({ query }));
@@ -62,5 +73,12 @@ describe("reportRepository accepted-only filtering", () => {
     expect(query.mock.calls[1]?.[0]).toContain("f.review_status = 'accepted'");
     expect(query.mock.calls[1]?.[0]).toContain("ps.page_state = 'accepted'");
     expect(query.mock.calls[2]?.[0]).toContain("ps.page_state = 'accepted'");
+    expect(query.mock.calls[3]?.[0]).toContain("page_state = 'accepted'");
+    expect(result?.captureFidelity).toMatchObject({
+      acceptedPageCount: 1,
+      browserPageCount: 1,
+      screenshotPageCount: 1,
+      hasBrowserEvidence: true,
+    });
   });
 });

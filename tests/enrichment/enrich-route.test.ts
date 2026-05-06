@@ -7,12 +7,16 @@ const {
   buildEnrichmentInputMock,
   generateReportEnrichmentMock,
   generateOutreachAssetsMock,
+  buildProspectAuditAgentInputMock,
+  generateProspectAuditAgentMock,
 } = vi.hoisted(() => ({
   getReportDataMock: vi.fn(),
   saveAssetMock: vi.fn(),
   buildEnrichmentInputMock: vi.fn(),
   generateReportEnrichmentMock: vi.fn(),
   generateOutreachAssetsMock: vi.fn(),
+  buildProspectAuditAgentInputMock: vi.fn(),
+  generateProspectAuditAgentMock: vi.fn(),
 }));
 
 vi.mock("@/db/report", () => ({
@@ -34,6 +38,11 @@ vi.mock("@/server/audits/generate-report-enrichment", () => ({
 
 vi.mock("@/server/audits/generate-outreach-assets", () => ({
   generateOutreachAssets: generateOutreachAssetsMock,
+}));
+
+vi.mock("@/server/audits/prospect-audit-agent", () => ({
+  buildProspectAuditAgentInput: buildProspectAuditAgentInputMock,
+  generateProspectAuditAgent: generateProspectAuditAgentMock,
 }));
 
 import { POST } from "@/app/api/reports/[auditRunId]/enrich/route";
@@ -116,6 +125,23 @@ describe("POST /api/reports/[auditRunId]/enrich", () => {
       findingSummaries: [],
       topRecommendations: [],
     });
+    buildProspectAuditAgentInputMock.mockReturnValue({
+      domain: "example.com",
+      homepageOnly: false,
+      overallScore: 75,
+      captureFidelity: {
+        acceptedPageCount: 0,
+        browserPageCount: 0,
+        staticPageCount: 0,
+        fallbackStaticPageCount: 0,
+        screenshotPageCount: 0,
+        hasBrowserEvidence: false,
+      },
+      lightlyInspectedCategories: [],
+      insufficientEvidenceCategories: ["ux_ui"],
+      categoryReviewSummaries: ["ux_ui: Insufficient evidence"],
+      acceptedFindings: [],
+    });
     saveAssetMock.mockResolvedValue(undefined);
   });
 
@@ -134,6 +160,7 @@ describe("POST /api/reports/[auditRunId]/enrich", () => {
     getReportDataMock.mockResolvedValue(createReportData());
     generateReportEnrichmentMock.mockResolvedValue({ status: "disabled" });
     generateOutreachAssetsMock.mockResolvedValue({ status: "disabled" });
+    generateProspectAuditAgentMock.mockResolvedValue({ status: "disabled" });
 
     const response = await POST(new Request("http://localhost/api/reports/run-123/enrich"), {
       params: Promise.resolve({ auditRunId: "run-123" }),
@@ -163,6 +190,23 @@ describe("POST /api/reports/[auditRunId]/enrich", () => {
         loomScript: "Grounded loom script.",
       },
     });
+    generateProspectAuditAgentMock.mockResolvedValue({
+      status: "success",
+      data: {
+        commercialOpportunity: "Credible opportunity.",
+        brandClarityGaps: "Clarity gap.",
+        conversionWeaknesses: "Conversion weakness.",
+        trustProofGaps: "Trust gap.",
+        uxIssues: "UX bounded by evidence.",
+        aiAutomationOpportunities: "AI follow-up workflow.",
+        bestOutreachAngle: "Lead with clarity.",
+        recommendedServiceToPitch: "Website conversion sprint.",
+        confidence: {
+          level: "medium",
+          rationale: "Accepted evidence with bounded coverage.",
+        },
+      },
+    });
 
     const response = await POST(new Request("http://localhost/api/reports/run-123/enrich"), {
       params: Promise.resolve({ auditRunId: "run-123" }),
@@ -171,6 +215,20 @@ describe("POST /api/reports/[auditRunId]/enrich", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       saved: ["summary", "quick_wins", "email", "collaboration", "loom_script"],
+      prospectAuditAgent: {
+        commercialOpportunity: "Credible opportunity.",
+        brandClarityGaps: "Clarity gap.",
+        conversionWeaknesses: "Conversion weakness.",
+        trustProofGaps: "Trust gap.",
+        uxIssues: "UX bounded by evidence.",
+        aiAutomationOpportunities: "AI follow-up workflow.",
+        bestOutreachAngle: "Lead with clarity.",
+        recommendedServiceToPitch: "Website conversion sprint.",
+        confidence: {
+          level: "medium",
+          rationale: "Accepted evidence with bounded coverage.",
+        },
+      },
     });
     expect(saveAssetMock).toHaveBeenCalledTimes(5);
     expect(saveAssetMock).toHaveBeenNthCalledWith(1, "run-123", "summary", "Grounded summary.");
@@ -199,6 +257,9 @@ describe("POST /api/reports/[auditRunId]/enrich", () => {
     generateOutreachAssetsMock.mockResolvedValue({
       status: "error",
       message: "Gemini upstream timeout",
+    });
+    generateProspectAuditAgentMock.mockResolvedValue({
+      status: "disabled",
     });
 
     const response = await POST(new Request("http://localhost/api/reports/run-123/enrich"), {

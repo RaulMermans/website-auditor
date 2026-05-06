@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildCategoryReviews, type ReportData } from "@/db/report";
 import { buildEnrichmentInput } from "@/server/audits/generate-report-enrichment";
+import { buildProspectAuditAgentInput } from "@/server/audits/prospect-audit-agent";
 import type { Finding, AuditRun } from "@/lib/types";
 import { CATEGORY_EXPECTED_KEYS, scoreAuditByCategory } from "@/server/scoring/score-audit";
 
@@ -136,5 +137,47 @@ describe("buildEnrichmentInput", () => {
     const input = buildEnrichmentInput(makeReportData([]));
     expect(input.insufficientEvidenceCategories).toContain("ux_ui");
     expect(input.categoryReviewSummaries?.length).toBeGreaterThan(0);
+  });
+});
+
+describe("buildProspectAuditAgentInput", () => {
+  it("keeps the prospect agent scoped to accepted findings", () => {
+    const accepted = makeFinding({
+      id: "accepted",
+      title: "Accepted issue",
+      evaluatorStatus: "accepted",
+      reviewStatus: "accepted",
+    });
+    const needsReview = makeFinding({
+      id: "review",
+      title: "Unverified issue",
+      evaluatorStatus: "needs_review",
+      reviewStatus: "needs_review",
+    });
+
+    const input = buildProspectAuditAgentInput(makeReportData([accepted, needsReview]));
+
+    expect(input.acceptedFindings).toHaveLength(1);
+    expect(input.acceptedFindings[0].title).toBe("Accepted issue");
+  });
+
+  it("passes capture fidelity through to the prospect agent", () => {
+    const input = buildProspectAuditAgentInput({
+      ...makeReportData([]),
+      captureFidelity: {
+        acceptedPageCount: 2,
+        browserPageCount: 1,
+        staticPageCount: 1,
+        fallbackStaticPageCount: 0,
+        screenshotPageCount: 1,
+        hasBrowserEvidence: true,
+      },
+    });
+
+    expect(input.captureFidelity).toMatchObject({
+      acceptedPageCount: 2,
+      browserPageCount: 1,
+      hasBrowserEvidence: true,
+    });
   });
 });

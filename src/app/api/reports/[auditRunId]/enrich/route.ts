@@ -5,6 +5,10 @@ import { reportRepository } from "@/db/report";
 import { enrichmentRepository } from "@/db/enrichment";
 import { buildEnrichmentInput, generateReportEnrichment } from "@/server/audits/generate-report-enrichment";
 import { generateOutreachAssets } from "@/server/audits/generate-outreach-assets";
+import {
+  buildProspectAuditAgentInput,
+  generateProspectAuditAgent,
+} from "@/server/audits/prospect-audit-agent";
 
 export async function POST(
   req: Request,
@@ -21,22 +25,36 @@ export async function POST(
   }
 
   const input = buildEnrichmentInput(reportData);
+  const prospectInput = buildProspectAuditAgentInput(reportData);
 
-  const [enrichment, outreach] = await Promise.all([
+  const [enrichment, outreach, prospectAuditAgent] = await Promise.all([
     generateReportEnrichment(input),
     generateOutreachAssets(input),
+    generateProspectAuditAgent(prospectInput),
   ]);
 
-  if (enrichment.status === "disabled" && outreach.status === "disabled") {
+  if (
+    enrichment.status === "disabled" &&
+    outreach.status === "disabled" &&
+    prospectAuditAgent.status === "disabled"
+  ) {
     return NextResponse.json(
       { error: "LLM enrichment unavailable — GEMINI_API_KEY not configured" },
       { status: 503 }
     );
   }
 
-  if (enrichment.status === "error" || outreach.status === "error") {
+  if (
+    enrichment.status === "error" ||
+    outreach.status === "error" ||
+    prospectAuditAgent.status === "error"
+  ) {
     const errorMsg =
-      enrichment.status === "error" ? enrichment.message : (outreach as { status: "error"; message: string }).message;
+      enrichment.status === "error"
+        ? enrichment.message
+        : outreach.status === "error"
+          ? outreach.message
+          : (prospectAuditAgent as { status: "error"; message: string }).message;
     await auditJobRepository.insertAuditRunAttempt({
       auditRunId,
       stage: "enrich",
@@ -70,5 +88,9 @@ export async function POST(
     saved.push("email", "collaboration", "loom_script");
   }
 
-  return NextResponse.json({ saved });
+  return NextResponse.json({
+    saved,
+    prospectAuditAgent:
+      prospectAuditAgent.status === "success" ? prospectAuditAgent.data : undefined,
+  });
 }

@@ -65,6 +65,14 @@ interface FindingRow {
   created_at: Date;
 }
 
+interface CaptureFidelityRow {
+  accepted_page_count: string | number;
+  browser_page_count: string | number;
+  static_page_count: string | number;
+  fallback_static_page_count: string | number;
+  screenshot_page_count: string | number;
+}
+
 export interface AuditRunListItem {
   auditRunId: string;
   domain: string;
@@ -87,6 +95,7 @@ export interface ReportData {
   topPriorities: Finding[];
   scores: CategoryScores;
   categoryReviews: ReportCategoryReview[];
+  captureFidelity?: ReportCaptureFidelity;
 }
 
 export interface ReportRepository {
@@ -108,6 +117,15 @@ export interface ReportCategoryReview {
     | "insufficient_evidence";
   headline: string;
   summary: string;
+}
+
+export interface ReportCaptureFidelity {
+  acceptedPageCount: number;
+  browserPageCount: number;
+  staticPageCount: number;
+  fallbackStaticPageCount: number;
+  screenshotPageCount: number;
+  hasBrowserEvidence: boolean;
 }
 
 function mapAuditRun(row: AuditRunWithDomainRow): AuditRun {
@@ -148,6 +166,29 @@ function mapFinding(row: FindingRow): Finding {
     reviewStatus: row.review_status,
     reviewReason: row.review_reason,
     createdAt: row.created_at,
+  };
+}
+
+function toCount(value: string | number | null | undefined) {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  return Number(value ?? 0);
+}
+
+function mapCaptureFidelity(row?: CaptureFidelityRow): ReportCaptureFidelity {
+  const acceptedPageCount = toCount(row?.accepted_page_count);
+  const browserPageCount = toCount(row?.browser_page_count);
+  const screenshotPageCount = toCount(row?.screenshot_page_count);
+
+  return {
+    acceptedPageCount,
+    browserPageCount,
+    staticPageCount: toCount(row?.static_page_count),
+    fallbackStaticPageCount: toCount(row?.fallback_static_page_count),
+    screenshotPageCount,
+    hasBrowserEvidence: browserPageCount > 0 || screenshotPageCount > 0,
   };
 }
 
@@ -360,6 +401,20 @@ export const reportRepository: ReportRepository = {
         `,
         [auditRunId]
       );
+      const captureFidelityResult = await client.query<CaptureFidelityRow>(
+        `
+          SELECT
+            COUNT(*) AS accepted_page_count,
+            COUNT(*) FILTER (WHERE capture_method = 'browser') AS browser_page_count,
+            COUNT(*) FILTER (WHERE capture_method = 'static') AS static_page_count,
+            COUNT(*) FILTER (WHERE capture_method = 'fallback_static') AS fallback_static_page_count,
+            COUNT(*) FILTER (WHERE screenshot_storage_key IS NOT NULL) AS screenshot_page_count
+          FROM page_snapshots
+          WHERE audit_run_id = $1
+            AND page_state = 'accepted'
+        `,
+        [auditRunId]
+      );
       const findings = deduplicateFindings(findingsResult.rows.map(mapFinding));
       const inspectionKeysByCategory = evidenceResult.rows.reduce<
         Partial<Record<FindingCategory, string[]>>
@@ -385,6 +440,7 @@ export const reportRepository: ReportRepository = {
         topPriorities: selectTopPriorityFindings(prioritizedFindings, 5),
         scores,
         categoryReviews,
+        captureFidelity: mapCaptureFidelity(captureFidelityResult.rows[0]),
       };
     });
   },
