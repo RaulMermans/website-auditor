@@ -7,15 +7,17 @@ describe("migration helpers", () => {
     const files = (await getMigrationPaths("up")).map((file) => path.basename(file));
 
     expect(files[0]).toBe("0001_shot_2_domain_intake.up.sql");
-    expect(files.at(-1)).toBe("0011_shot_19_durable_worker.up.sql");
     expect(files).toEqual([...files].sort());
+    expect(files).toContain("0011_shot_19_durable_worker.up.sql");
+    expect(files).toContain("0012_prospect_intelligence.up.sql");
   });
 
   it("loads down migrations in reverse filename order", async () => {
     const files = (await getMigrationPaths("down")).map((file) => path.basename(file));
 
-    expect(files[0]).toBe("0011_shot_19_durable_worker.down.sql");
     expect(files.at(-1)).toBe("0001_shot_2_domain_intake.down.sql");
     expect(files).toEqual([...files].sort().reverse());
+    expect(files).toContain("0011_shot_19_durable_worker.down.sql");
+    expect(files).toContain("0012_prospect_intelligence.down.sql");
   });
 });

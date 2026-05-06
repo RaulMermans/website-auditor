@@ -146,7 +146,7 @@ Preferred commit shapes:
 - Artifact storage currently uses a local filesystem provider in code; private Vercel Blob support exists behind the storage abstraction but production artifact access control still needs validation.
 - Queue abstraction is available and Vercel-compatible.
 - Gemini is the active enrichment provider for report enrichment and Prospect Audit Agent synthesis.
-- Worker processing is available at `/api/worker/process` and scheduled by Vercel cron; `WORKER_SECRET` is mandatory in production. `/api/worker/trigger` is retained only as a protected compatibility route.
+- Worker processing is available at `/api/worker/process` from request-triggered intake processing and optional GitHub Actions draining; Vercel Cron is not configured for Hobby compatibility. `WORKER_SECRET` is mandatory in production. `/api/worker/trigger` is retained only as a protected compatibility route.
 - Operational smoke validation is still pending, and the production intake flow is currently failing at runtime.
 - Sensitivity is set to none, but captured artifacts are still handled conservatively.
 - Default test target is 80% line coverage.

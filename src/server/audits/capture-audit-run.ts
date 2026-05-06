@@ -685,7 +685,8 @@ async function captureBrowserFirstPage(
   auditRunId: string,
   snapshot: Pick<PageSnapshot, "id" | "url" | "pageType" | "retryCount" | "auditRunId">,
   deps: CaptureAuditRunDeps,
-  getSession: SessionGetter
+  getSession: SessionGetter,
+  maxPages: number
 ): Promise<BrowserFirstResult> {
   const fetcher = deps.fetchStatic ?? fetchStaticPage;
 
@@ -707,6 +708,7 @@ async function captureBrowserFirstPage(
       note: BROWSER_UNAVAILABLE_LIMITATION_NOTE,
       failureReason: "Browser rendering is unavailable in this environment.",
       secondarySweepNote: BROWSER_UNAVAILABLE_LIMITATION_NOTE,
+      maxPages,
     });
   }
 
@@ -795,6 +797,7 @@ async function captureBrowserFirstPage(
       secondarySweepNote: isBotChallenge
         ? HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE
         : BROWSER_RUNTIME_FAILURE_LIMITATION_NOTE,
+      maxPages,
     });
   }
 }
@@ -807,8 +810,10 @@ async function captureStaticFallbackAfterBrowserFailure(options: {
   note: string;
   failureReason: string;
   secondarySweepNote: string;
+  maxPages: number;
 }): Promise<BrowserFirstResult> {
-  const { auditRunId, snapshot, deps, fetcher, note, failureReason, secondarySweepNote } = options;
+  const { auditRunId, snapshot, deps, fetcher, note, failureReason, secondarySweepNote, maxPages } =
+    options;
 
   try {
     const staticResult = await fetcher(snapshot.url);
@@ -860,7 +865,7 @@ async function captureStaticFallbackAfterBrowserFailure(options: {
     }
 
     console.warn("[audit-capture] Browser-first capture and static fallback failed; attempting secondary static sweep");
-    const secondaryCount = await runSecondaryStaticSweep(snapshot.url, auditRunId, 5, deps);
+    const secondaryCount = await runSecondaryStaticSweep(snapshot.url, auditRunId, maxPages, deps);
     if (secondaryCount >= SECONDARY_SWEEP_MIN_PAGES) {
       await deps.auditJobs.updatePageSnapshotState({
         pageSnapshotId: snapshot.id,
@@ -967,7 +972,7 @@ export async function captureAuditRun(
         const plan = planCaptureMethod({ pageType: snapshot.pageType, browserDegraded });
 
         if (plan.captureMethod === "browser_first") {
-          const result = await captureBrowserFirstPage(auditRunId, snapshot, deps, getSession);
+          const result = await captureBrowserFirstPage(auditRunId, snapshot, deps, getSession, maxPages);
           if (result.browserDegraded && !browserDegraded) {
             browserDegraded = true;
           }
@@ -1187,77 +1192,4 @@ async function runSecondaryStaticSweep(
   }
 
   return queued;
-}
-
-async function doStaticDiscovery(
-  baseUrl: string,
-  auditRunId: string,
-  maxPages: number,
-  deps: CaptureAuditRunDeps
-): Promise<{ homepageBlocked: boolean; limitationNote: string | null }> {
-  const fetcher = deps.fetchStatic ?? fetchStaticPage;
-  const result = await fetcher(baseUrl);
-
-  // HTTP status is the authoritative signal for access barriers (401/403/429).
-  const statusBarrier = detectAuditCaptureBarrier({
-    stage: "discover",
-    statusCode: result.statusCode,
-    url: result.finalUrl,
-    driver: "static",
-  });
-  if (statusBarrier) {
-    // Hard access barriers (401/403/429) are not recoverable via secondary sweep.
-    throw new AuditFailureError(statusBarrier);
-  }
-
-  if (!result.ok) {
-    throw new Error(`Static discovery failed. Status: ${result.statusCode}`);
-  }
-
-  // HTML content check: catches bot-challenge pages served with 200 OK.
-  const htmlBarrier = detectAuditCaptureBarrier({
-    stage: "discover",
-    statusCode: result.statusCode,
-    html: result.html,
-    url: result.finalUrl,
-    driver: "static",
-  });
-
-  if (htmlBarrier && htmlBarrier.failureKind === "capture_blocked") {
-    // Homepage is bot-blocked. Do NOT hard-fail yet.
-    // Attempt a secondary static-only public evidence sweep.
-    console.warn("[audit-capture] Homepage bot-blocked at discovery; attempting secondary static sweep");
-    const secondaryCount = await runSecondaryStaticSweep(baseUrl, auditRunId, maxPages, deps);
-
-    if (secondaryCount < SECONDARY_SWEEP_MIN_PAGES) {
-      // No trustworthy secondary evidence either → hard-fail.
-      throw new AuditFailureError(htmlBarrier);
-    }
-
-    // Secondary evidence obtained → continue as homepage-blocked partial audit.
-    return { homepageBlocked: true, limitationNote: HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE };
-  }
-
-  if (htmlBarrier) {
-    throw new AuditFailureError(htmlBarrier);
-  }
-
-  const links = extractLinksFromStaticHtml(result.html, baseUrl);
-  const captureTargets = buildCapturePlan(result.finalUrl, links, maxPages);
-
-  await Promise.all(
-    captureTargets.map((target) =>
-      deps.auditJobs.insertPageSnapshot({
-        auditRunId,
-        url: target.url,
-        pageType: target.pageType,
-        pagePriority: target.pagePriority,
-        pageState: "queued",
-        retryCount: 0,
-        lastError: null,
-      })
-    )
-  );
-
-  return { homepageBlocked: false, limitationNote: null };
 }
