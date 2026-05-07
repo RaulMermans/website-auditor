@@ -11,7 +11,12 @@ import { env } from "@/lib/env";
  */
 export function requireAuditApiKey(req: Request): Response | null {
   const apiKey = env.AUDIT_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) {
+    if (env.NODE_ENV === "production") {
+      return NextResponse.json({ error: "Server auth is not configured" }, { status: 500 });
+    }
+    return null;
+  }
 
   const provided =
     req.headers.get("x-api-key") ??

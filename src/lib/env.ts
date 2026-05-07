@@ -12,7 +12,7 @@ const envSchema = z.object({
   BROWSER_USE_BASE_URL: z.string().url().optional(),
   BROWSER_USE_API_TOKEN: z.string().min(1).optional(),
 
-  // Worker — secret for POST /api/worker/process (optional in dev, required in production)
+  // Worker — secret for POST /api/worker/process (optional in dev/test, required in production)
   WORKER_SECRET: z.string().min(16).optional(),
 
   // Storage
@@ -22,7 +22,7 @@ const envSchema = z.object({
   STORAGE_ACCESS_KEY: z.string().optional(),
   STORAGE_SECRET_KEY: z.string().optional(),
 
-  // Auth — shared API key for enrichment and PDF export (optional in dev)
+  // Auth — shared API key for report enrichment/PDF/prospect routes (optional in dev/test)
   AUDIT_API_KEY: z.string().min(16).optional(),
 
   // LLM
@@ -39,6 +39,27 @@ const envSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["WORKER_SECRET"],
       message: "WORKER_SECRET is required in production",
+    });
+  }
+
+  if (value.NODE_ENV === "production" && !isNextProductionBuild && !value.AUDIT_API_KEY) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["AUDIT_API_KEY"],
+      message: "AUDIT_API_KEY is required in production",
+    });
+  }
+
+  if (
+    value.NODE_ENV === "production" &&
+    !isNextProductionBuild &&
+    value.STORAGE_PROVIDER === "vercel_blob" &&
+    !value.BLOB_READ_WRITE_TOKEN
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["BLOB_READ_WRITE_TOKEN"],
+      message: "BLOB_READ_WRITE_TOKEN is required when STORAGE_PROVIDER=vercel_blob in production",
     });
   }
 });

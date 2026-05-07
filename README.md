@@ -94,8 +94,9 @@ This checklist is still pending, not a report of current success. The deployed i
 
 App runtime envs:
 - Required: `DATABASE_URL` (canonical DB connection string used by both app runtime and migrations)
-- Required in production: `WORKER_SECRET` for worker routes
-- Optional: `PG_BOSS_SCHEMA` (defaults to `pgboss`), `BROWSER_DRIVER` (defaults to `playwright`), `BROWSER_USE_BASE_URL`, `BROWSER_USE_API_TOKEN`, `GEMINI_API_KEY`, `GEMINI_MODEL` (defaults to `gemini-2.5-flash`), `NEXT_PUBLIC_APP_URL`, `STORAGE_PROVIDER`, `BLOB_READ_WRITE_TOKEN`
+- Required in production: `WORKER_SECRET` for worker routes and `AUDIT_API_KEY` for report enrichment/PDF/prospect routes
+- Required when `STORAGE_PROVIDER=vercel_blob` in production: `BLOB_READ_WRITE_TOKEN`
+- Optional: `PG_BOSS_SCHEMA` (defaults to `pgboss`), `BROWSER_DRIVER` (defaults to `playwright`), `BROWSER_USE_BASE_URL`, `BROWSER_USE_API_TOKEN`, `GEMINI_API_KEY`, `GEMINI_MODEL` (defaults to `gemini-2.5-flash`), `NEXT_PUBLIC_APP_URL`, `STORAGE_PROVIDER`
 
 No Vercel Cron is configured because Hobby deployments reject sub-daily cron schedules. `.github/workflows/worker-drain.yml` can drain `/api/worker/process` every 5 minutes using GitHub repository secrets `WORKER_DRAIN_URL` (for example, `https://your-app.vercel.app/api/worker/process`) and `WORKER_SECRET`. `/api/worker/trigger` is retained as a protected compatibility route only.
 Browser capture defaults to `@sparticuz/chromium` (Lambda-compatible binary) + `playwright-core`. No `postinstall` step or browser download is required; `npm install` is sufficient for both local dev and Vercel. The optional `browser_use` path is not in-process product logic; it expects a separately run sidecar/service that exposes the repo-owned browser session contract over HTTP. The `worker/` directory is legacy and is **not** a workspace — it is excluded from the root install to prevent the full `playwright` package from being installed and polluting `playwright-core/.local-browsers/`.
