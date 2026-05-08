@@ -1,6 +1,6 @@
 # Project Overview
 
-Website Audit Agent is Raul's internal Prospect Audit Agent tool: a fullstack Node/TypeScript system that accepts a prospect URL and produces a credible, evidence-backed website audit plus persisted client-acquisition intelligence. The audit engine is deterministic. LLMs may synthesize accepted evidence but must not create audit truth. Architecture: Next.js app on Vercel, Postgres, async queue, artifact storage abstractions, browser-first capture, deterministic scoring, and Gemini-powered Prospect Audit Agent synthesis.
+This is an **internal Prospect Audit Tool** for Raul — not a public SaaS. It accepts a prospect URL and produces a credible, evidence-backed website audit plus persisted client-acquisition intelligence. The audit engine is deterministic. LLMs may synthesize accepted evidence but must not create audit truth. Architecture: Next.js app on Vercel, Postgres, async queue, artifact storage abstractions, browser-first capture, deterministic scoring, and Gemini-powered Prospect Audit Agent synthesis.
 
 Resolved setup:
 - Target: fullstack
@@ -13,7 +13,7 @@ Resolved setup:
 - Repo type: single-repo
 - Coverage target: 80% lines
 
-Current phase: Browser-first capture + persisted Prospect Intelligence is in progress. Operational smoke validation is still pending, and deployed intake/worker durability must be proven on Vercel.
+Current phase: Browser-first capture with final URL safety validation, structured Prospect Intelligence schema (v2), and decision-grade report UX are implemented. Operational smoke validation is still pending, and deployed intake/worker durability must be proven on Vercel.
 
 # Goals
 
@@ -45,6 +45,7 @@ Current phase: Browser-first capture + persisted Prospect Intelligence is in pro
 - Heavy browser work, screenshots, DOM extraction, and traces must run through the server-side audit processing path, not client/UI flows.
 - No revenue-loss claims unless tied to a transparent estimation rule.
 - Never suggest bypassing anti-bot protection; detect, classify, downgrade capture fidelity, and continue only with authorized public evidence.
+- Browser capture validates the final URL after navigation — before any HTML extraction, screenshot, or artifact storage. Off-origin redirects and private/internal redirect targets are rejected as capture failures.
 
 # Codebase Map
 
@@ -146,7 +147,9 @@ Preferred commit shapes:
 - Artifact storage currently uses a local filesystem provider in code; private Vercel Blob support exists behind the storage abstraction but production artifact access control still needs validation.
 - Queue abstraction is available and Vercel-compatible.
 - Gemini is the active enrichment provider for report enrichment and Prospect Audit Agent synthesis.
-- Worker processing is available at `/api/worker/process` from request-triggered intake processing and optional GitHub Actions draining; Vercel Cron is not configured for Hobby compatibility. `WORKER_SECRET` is mandatory in production. `/api/worker/trigger` is retained only as a protected compatibility route.
+- Worker processing is available at `/api/worker/process` — the canonical and only worker execution route. GitHub Actions can drain the queue by POSTing to this route with `WORKER_SECRET`. Required production env vars: `WORKER_SECRET`, `AUDIT_API_KEY`, `GEMINI_API_KEY`, `DATABASE_URL`.
+- `/api/worker/trigger` has been removed. Do not reference or recreate it.
+- Prospect Intelligence is structured around a reach-out decision (yes/maybe/no), service recommendation, per-opportunity evidence labels, and outreach angle. Old flat records are normalized on read via `normalizeProspectIntelligenceResult`.
 - Operational smoke validation is still pending, and the production intake flow is currently failing at runtime.
 - Sensitivity is set to none, but captured artifacts are still handled conservatively.
 - Default test target is 80% line coverage.

@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { enrichmentRepository } from "@/db/enrichment";
-import { prospectIntelligenceRepository } from "@/db/prospect-intelligence";
+import { prospectIntelligenceRepository, type ProspectIntelligenceRecord } from "@/db/prospect-intelligence";
 import { reportRepository, type ReportCaptureFidelity } from "@/db/report";
 import { getAuditFailurePresentation } from "@/lib/audit-failure";
 import type { OutreachAsset } from "@/lib/types";
+import type { ProspectAuditAgentResult } from "@/server/agents/prospect-audit-agent";
 import {
   AUDIT_STATUS_META,
   CATEGORY_LABELS,
@@ -437,6 +438,211 @@ const findingSectionValueStyle: React.CSSProperties = {
   fontSize: "0.93rem",
   lineHeight: 1.55,
 };
+
+const REACH_OUT_COLORS: Record<"yes" | "maybe" | "no", { bg: string; border: string; text: string }> = {
+  yes: { bg: "#f0fdf4", border: "#86efac", text: "#166534" },
+  maybe: { bg: "#fffbeb", border: "#fcd34d", text: "#92400e" },
+  no: { bg: "#fef2f2", border: "#fca5a5", text: "#991b1b" },
+};
+
+const PRIORITY_COLORS: Record<string, string> = {
+  critical: "#dc2626",
+  high: "#ea580c",
+  medium: "#d97706",
+  low: "#16a34a",
+};
+
+function ProspectIntelligenceBlock({
+  record,
+  result,
+}: {
+  record: ProspectIntelligenceRecord;
+  result: ProspectAuditAgentResult;
+}) {
+  const reachOut = result.reachOutRecommendation;
+  const reachOutColors = REACH_OUT_COLORS[reachOut.decision];
+
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      {/* Decision block — topmost, answers "should I reach out?" */}
+      <div
+        style={{
+          padding: "18px 20px",
+          borderRadius: 18,
+          background: reachOutColors.bg,
+          border: `1px solid ${reachOutColors.border}`,
+        }}
+      >
+        <p style={{ margin: "0 0 6px", fontSize: "0.76rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: reachOutColors.text }}>
+          Reach-out Recommendation
+        </p>
+        <p style={{ margin: "0 0 10px", fontSize: "1.6rem", fontWeight: 800, color: reachOutColors.text }}>
+          {reachOut.decision.toUpperCase()} · {reachOut.confidence} confidence
+        </p>
+        <p style={{ margin: "0 0 14px", color: reachOutColors.text, lineHeight: 1.6 }}>
+          {reachOut.rationale}
+        </p>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+          <div>
+            <p style={{ margin: "0 0 4px", fontSize: "0.74rem", fontWeight: 800, color: reachOutColors.text, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Best Pitch
+            </p>
+            <p style={{ margin: 0, color: reachOutColors.text, fontWeight: 700, lineHeight: 1.5 }}>
+              {result.recommendedService.name}
+            </p>
+            <p style={{ margin: "4px 0 0", color: reachOutColors.text, fontSize: "0.86rem", lineHeight: 1.5 }}>
+              {result.recommendedService.rationale}
+            </p>
+          </div>
+          <div>
+            <p style={{ margin: "0 0 4px", fontSize: "0.74rem", fontWeight: 800, color: reachOutColors.text, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              First Outreach Hook
+            </p>
+            <p style={{ margin: 0, color: reachOutColors.text, lineHeight: 1.5, fontSize: "0.9rem" }}>
+              {result.outreachAngle.openingInsight}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Scores */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+        <div style={summaryPanelStyle}>
+          <p style={panelEyebrowStyle}>Prospect Fit Score</p>
+          <p style={{ margin: 0, color: scoreColor(record.prospectFitScore), fontSize: "2rem", fontWeight: 800 }}>
+            {record.prospectFitScore}/100
+          </p>
+        </div>
+        <div style={summaryPanelStyle}>
+          <p style={panelEyebrowStyle}>Commercial Opportunity</p>
+          <p style={{ margin: 0, color: scoreColor(record.commercialOpportunityScore), fontSize: "2rem", fontWeight: 800 }}>
+            {record.commercialOpportunityScore}/100
+          </p>
+        </div>
+        <div style={summaryPanelStyle}>
+          <p style={panelEyebrowStyle}>Capture Fidelity</p>
+          <p style={{ margin: 0, color: "#0f172a", fontWeight: 800 }}>
+            {CAPTURE_FIDELITY_LABELS[record.captureFidelity]}
+          </p>
+          <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: "0.86rem", lineHeight: 1.5 }}>
+            {result.captureFidelityAssessment.summary}
+          </p>
+          {result.captureFidelityAssessment.limitations.length > 0 && (
+            <ul style={{ margin: "8px 0 0", paddingLeft: 16, color: "#64748b", fontSize: "0.84rem" }}>
+              {result.captureFidelityAssessment.limitations.map((lim) => (
+                <li key={lim} style={{ marginBottom: 4 }}>{lim}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {/* Primary gap */}
+      <div style={summaryPanelStyle}>
+        <p style={panelEyebrowStyle}>Primary Gap</p>
+        <p style={{ margin: 0, color: "#334155", lineHeight: 1.6 }}>{result.primaryGap}</p>
+      </div>
+
+      {/* Opportunity cards */}
+      <div>
+        <p style={{ margin: "0 0 10px", fontSize: "0.76rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#64748b" }}>
+          Top Opportunities
+        </p>
+        <div style={{ display: "grid", gap: 10 }}>
+          {result.topOpportunities.map((opp, idx) => (
+            <div
+              key={idx}
+              style={{
+                padding: "14px 16px",
+                borderRadius: 16,
+                background: "#fff",
+                border: "1px solid #e5e7eb",
+              }}
+            >
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ padding: "3px 8px", borderRadius: 999, background: `${PRIORITY_COLORS[opp.priority] ?? "#64748b"}1a`, color: PRIORITY_COLORS[opp.priority] ?? "#64748b", fontSize: "0.72rem", fontWeight: 800 }}>
+                  {opp.priority.toUpperCase()}
+                </span>
+                <span style={{ padding: "3px 8px", borderRadius: 999, background: `${EVIDENCE_COLORS[opp.evidenceLabel]}1a`, color: EVIDENCE_COLORS[opp.evidenceLabel], fontSize: "0.72rem", fontWeight: 800 }}>
+                  {opp.evidenceLabel}
+                </span>
+                <span style={{ padding: "3px 8px", borderRadius: 999, background: "#f1f5f9", color: "#475569", fontSize: "0.72rem", fontWeight: 700 }}>
+                  {opp.confidence} confidence
+                </span>
+              </div>
+              <p style={{ margin: "0 0 8px", fontWeight: 800, color: "#0f172a" }}>{opp.title}</p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+                <div>
+                  <p style={findingSectionLabelStyle}>Evidence</p>
+                  <p style={findingSectionValueStyle}>{opp.evidence}</p>
+                </div>
+                <div>
+                  <p style={findingSectionLabelStyle}>Business Impact</p>
+                  <p style={findingSectionValueStyle}>{opp.businessImpact}</p>
+                </div>
+                <div>
+                  <p style={findingSectionLabelStyle}>Recommended Action</p>
+                  <p style={findingSectionValueStyle}>{opp.recommendedAction}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Missing evidence */}
+      {result.missingEvidence.length > 0 && (
+        <div style={summaryPanelStyle}>
+          <p style={panelEyebrowStyle}>Missing Evidence</p>
+          {renderSummaryList(result.missingEvidence)}
+        </div>
+      )}
+
+      {/* Internal notes */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
+        {result.internalNotes.whyNow && (
+          <div style={summaryPanelStyle}>
+            <p style={panelEyebrowStyle}>Why Now</p>
+            <p style={{ margin: 0, color: "#334155", lineHeight: 1.6 }}>{result.internalNotes.whyNow}</p>
+          </div>
+        )}
+        {result.internalNotes.suggestedNextStep && (
+          <div style={summaryPanelStyle}>
+            <p style={panelEyebrowStyle}>Suggested Next Step</p>
+            <p style={{ margin: 0, color: "#334155", lineHeight: 1.6 }}>{result.internalNotes.suggestedNextStep}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Outreach draft */}
+      {(result.outreachAngle.subjectLine || result.outreachAngle.messageDraft) && (
+        <div
+          style={{
+            padding: 18,
+            borderRadius: 18,
+            background: "#fefce8",
+            border: "1px solid #fde68a",
+          }}
+        >
+          <p style={{ ...panelEyebrowStyle, color: "#92400e" }}>Outreach Draft</p>
+          {result.outreachAngle.subjectLine && (
+            <div style={{ marginBottom: 10 }}>
+              <p style={outreachLabelStyle}>Subject</p>
+              <p style={{ margin: 0, color: "#78350f", fontWeight: 700 }}>{result.outreachAngle.subjectLine}</p>
+            </div>
+          )}
+          {result.outreachAngle.messageDraft && (
+            <div>
+              <p style={outreachLabelStyle}>Message</p>
+              <p style={{ ...outreachCopyStyle, whiteSpace: "pre-wrap" }}>{result.outreachAngle.messageDraft}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default async function ReportPage({
   params,
@@ -1106,75 +1312,30 @@ export default async function ReportPage({
                 <h2 style={sectionTitleStyle}>Prospect Intelligence</h2>
                 <p style={sectionIntroStyle}>
                   Internal prospecting intelligence generated from accepted audit evidence.
+                  {!prospectIntelligence.result && " (Legacy record — re-run enrichment for full structured output.)"}
                 </p>
               </div>
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                gap: 14,
-                marginBottom: 14,
-              }}
-            >
-              <div style={summaryPanelStyle}>
-                <p style={panelEyebrowStyle}>Prospect Fit Score</p>
-                <p style={{ margin: 0, color: scoreColor(prospectIntelligence.prospectFitScore), fontSize: "2rem", fontWeight: 800 }}>
-                  {prospectIntelligence.prospectFitScore}/100
-                </p>
+            {prospectIntelligence.result ? (
+              <ProspectIntelligenceBlock
+                record={prospectIntelligence}
+                result={prospectIntelligence.result}
+              />
+            ) : (
+              <div
+                style={{
+                  padding: "14px 16px",
+                  borderRadius: 14,
+                  background: "#fffbeb",
+                  border: "1px solid #fcd34d",
+                  color: "#92400e",
+                  fontSize: "0.88rem",
+                }}
+              >
+                Prospect Intelligence data could not be parsed. Re-run enrichment to generate structured output.
               </div>
-              <div style={summaryPanelStyle}>
-                <p style={panelEyebrowStyle}>Commercial Opportunity Score</p>
-                <p style={{ margin: 0, color: scoreColor(prospectIntelligence.commercialOpportunityScore), fontSize: "2rem", fontWeight: 800 }}>
-                  {prospectIntelligence.commercialOpportunityScore}/100
-                </p>
-              </div>
-              <div style={summaryPanelStyle}>
-                <p style={panelEyebrowStyle}>Capture Fidelity</p>
-                <p style={{ margin: 0, color: "#0f172a", fontWeight: 800 }}>
-                  {CAPTURE_FIDELITY_LABELS[prospectIntelligence.captureFidelity]}
-                </p>
-                <p style={{ margin: "8px 0 0", color: "#64748b", lineHeight: 1.55 }}>
-                  Confidence: {prospectIntelligence.confidence}
-                </p>
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gap: 14 }}>
-              <div style={summaryPanelStyle}>
-                <p style={panelEyebrowStyle}>Primary Gap</p>
-                <p style={{ margin: 0, color: "#334155", lineHeight: 1.6 }}>
-                  {prospectIntelligence.primaryGap}
-                </p>
-              </div>
-              <div style={summaryPanelStyle}>
-                <p style={panelEyebrowStyle}>Top Opportunities</p>
-                {renderSummaryList(prospectIntelligence.result.topOpportunities)}
-              </div>
-              <div style={summaryPanelStyle}>
-                <p style={panelEyebrowStyle}>Recommended Service</p>
-                <p style={{ margin: 0, color: "#334155", lineHeight: 1.6 }}>
-                  {prospectIntelligence.recommendedService}
-                </p>
-              </div>
-              <div style={summaryPanelStyle}>
-                <p style={panelEyebrowStyle}>Outreach Angle</p>
-                <p style={{ margin: 0, color: "#334155", lineHeight: 1.6 }}>
-                  {prospectIntelligence.outreachAngle}
-                </p>
-              </div>
-              <div style={summaryPanelStyle}>
-                <p style={panelEyebrowStyle}>Missing Evidence</p>
-                {renderSummaryList(prospectIntelligence.result.missingEvidence)}
-              </div>
-              <div style={summaryPanelStyle}>
-                <p style={panelEyebrowStyle}>Suggested Next Step</p>
-                <p style={{ margin: 0, color: "#334155", lineHeight: 1.6 }}>
-                  {prospectIntelligence.result.internalNotes}
-                </p>
-              </div>
-            </div>
+            )}
           </section>
         )}
 

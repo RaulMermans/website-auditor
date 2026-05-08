@@ -101,6 +101,28 @@ export async function assertPublicHostname(hostname: string): Promise<void> {
 }
 
 /**
+ * Asserts that browser navigation did not redirect off the original origin.
+ * Must be called after getUrl() and before any HTML extraction or artifact storage.
+ * Throws SSRFError if the final origin differs from the original origin, preventing
+ * an open-redirect from tunneling browser capture into a private host.
+ */
+export function assertSameOriginOrApproved(originalUrl: string, finalUrl: string): void {
+  let original: URL;
+  let final: URL;
+  try {
+    original = new URL(originalUrl);
+    final = new URL(finalUrl);
+  } catch {
+    throw new SSRFError(`Invalid URL in origin check: ${originalUrl} → ${finalUrl}`);
+  }
+  if (original.origin !== final.origin) {
+    throw new SSRFError(
+      `Browser navigation redirected off-origin: ${original.origin} → ${final.origin}`
+    );
+  }
+}
+
+/**
  * Validates a full URL before any fetch or browser navigation.
  * Throws SSRFError for non-public targets.
  */

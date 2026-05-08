@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isBlockedIPv4, isBlockedIPv6, isBlockedIP, assertPublicUrl, SSRFError } from "@/lib/ssrf";
+import { isBlockedIPv4, isBlockedIPv6, isBlockedIP, assertPublicUrl, assertSameOriginOrApproved, SSRFError } from "@/lib/ssrf";
 
 describe("isBlockedIPv4", () => {
   it("blocks loopback addresses", () => {
@@ -91,6 +91,55 @@ describe("isBlockedIP", () => {
     expect(isBlockedIP("127.0.0.1")).toBe(true);
     expect(isBlockedIP("::1")).toBe(true);
     expect(isBlockedIP("1.1.1.1")).toBe(false);
+  });
+});
+
+describe("assertSameOriginOrApproved", () => {
+  it("allows navigation within the same origin", () => {
+    expect(() =>
+      assertSameOriginOrApproved("https://example.com/", "https://example.com/about")
+    ).not.toThrow();
+  });
+
+  it("allows navigation that normalizes trailing slash on the same origin", () => {
+    expect(() =>
+      assertSameOriginOrApproved("https://example.com", "https://example.com/")
+    ).not.toThrow();
+  });
+
+  it("throws SSRFError when browser redirects to a different public origin", () => {
+    expect(() =>
+      assertSameOriginOrApproved("https://example.com/", "https://other.com/")
+    ).toThrowError(SSRFError);
+  });
+
+  it("throws SSRFError when browser redirects from https to http on different origin", () => {
+    expect(() =>
+      assertSameOriginOrApproved("https://example.com/", "http://example.com/")
+    ).toThrowError(SSRFError);
+  });
+
+  it("throws SSRFError when browser redirects to internal IP", () => {
+    expect(() =>
+      assertSameOriginOrApproved("https://example.com/", "http://192.168.1.1/")
+    ).toThrowError(SSRFError);
+  });
+
+  it("throws SSRFError when browser redirects to localhost", () => {
+    expect(() =>
+      assertSameOriginOrApproved("https://example.com/", "http://localhost/admin")
+    ).toThrowError(SSRFError);
+  });
+
+  it("error message names both origins", () => {
+    let msg = "";
+    try {
+      assertSameOriginOrApproved("https://example.com/", "https://attacker.internal/");
+    } catch (e) {
+      if (e instanceof SSRFError) msg = e.message;
+    }
+    expect(msg).toContain("https://example.com");
+    expect(msg).toContain("https://attacker.internal");
   });
 });
 

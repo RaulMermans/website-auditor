@@ -6,7 +6,7 @@ import {
   generateProspectAuditAgent,
   type ProspectAuditAgentInput,
 } from "@/server/audits/prospect-audit-agent";
-import { ProspectAuditAgentResultSchema } from "@/server/agents/prospect-audit-agent.schema";
+import { ProspectAuditAgentOutputSchema } from "@/server/agents/prospect-audit-agent.schema";
 
 const { generateContentMock, constructorArgs } = vi.hoisted(() => ({
   generateContentMock: vi.fn(),
@@ -295,17 +295,17 @@ describe("generateProspectAuditAgent", () => {
   });
 
   it("rejects extra Prospect Agent schema fields", () => {
-    const parsed = ProspectAuditAgentResultSchema.safeParse({
+    const parsed = ProspectAuditAgentOutputSchema.safeParse({
       prospectFitScore: 72,
       commercialOpportunityScore: 78,
-      captureFidelityAssessment: "Browser-backed.",
+      captureFidelityAssessment: { level: "static_public", confidence: "medium", summary: "Static.", limitations: [] },
+      reachOutRecommendation: { decision: "maybe", rationale: "Limited evidence.", confidence: "medium" },
       primaryGap: "CTA clarity.",
-      topOpportunities: ["Clarify CTA."],
-      recommendedService: "Conversion sprint.",
-      outreachAngle: "Lead with CTA clarity.",
+      topOpportunities: [{ title: "Clarify CTA.", evidence: "Weak CTA found.", evidenceLabel: "Observed", businessImpact: "Lower conversion.", recommendedAction: "Improve CTA.", priority: "high", confidence: "medium" }],
+      recommendedService: { name: "Conversion sprint.", rationale: "CTA gap.", confidence: "medium" },
+      outreachAngle: { subjectLine: "CTA issue", openingInsight: "Lead with CTA clarity.", messageDraft: "Hi..." },
       missingEvidence: ["Analytics."],
-      internalNotes: "Bounded.",
-      confidence: "medium",
+      internalNotes: { whyNow: "Now.", suggestedNextStep: "Reach out." },
       inventedRevenueLoss: "$50k",
     });
 
@@ -318,14 +318,14 @@ describe("generateProspectAuditAgent", () => {
       text: JSON.stringify({
         prospectFitScore: 72,
         commercialOpportunityScore: 78,
-        captureFidelityAssessment: "Browser-backed capture supports bounded UX comments.",
+        captureFidelityAssessment: { level: "rendered_browser", confidence: "medium", summary: "Browser-backed capture supports bounded UX comments.", limitations: [] },
+        reachOutRecommendation: { decision: "yes", rationale: "CTA distinction is the strongest accepted signal.", confidence: "medium" },
         primaryGap: "CTA distinction is the strongest accepted signal.",
-        topOpportunities: ["Clarify the primary next step."],
-        recommendedService: "Conversion-focused website audit implementation sprint.",
-        outreachAngle: "Lead with the observed CTA clarity issue.",
+        topOpportunities: [{ title: "Clarify the primary next step.", evidence: "CTA finding accepted.", evidenceLabel: "Observed", businessImpact: "Conversion improvement.", recommendedAction: "Clarify CTA.", priority: "high", confidence: "medium" }],
+        recommendedService: { name: "Conversion-focused website audit implementation sprint.", rationale: "CTA gap.", confidence: "medium" },
+        outreachAngle: { subjectLine: "CTA observation", openingInsight: "Lead with the observed CTA clarity issue.", messageDraft: "Hi, noticed your CTA clarity..." },
         missingEvidence: ["Analytics and broader journey evidence."],
-        internalNotes: "One browser-backed accepted finding with light conversion coverage.",
-        confidence: "medium",
+        internalNotes: { whyNow: "One browser-backed accepted finding.", suggestedNextStep: "Send outreach." },
       }),
     });
 
@@ -363,14 +363,14 @@ describe("generateProspectAuditAgent", () => {
       text: JSON.stringify({
         prospectFitScore: 35,
         commercialOpportunityScore: 40,
-        captureFidelityAssessment: "Static-only capture blocks visual claims.",
+        captureFidelityAssessment: { level: "static_public", confidence: "low", summary: "Static-only capture blocks visual claims.", limitations: ["No screenshots available."] },
+        reachOutRecommendation: { decision: "maybe", rationale: "Evidence is limited.", confidence: "low" },
         primaryGap: "Evidence is limited.",
-        topOpportunities: ["Gather browser evidence."],
-        recommendedService: "Evidence-backed audit review.",
-        outreachAngle: "Lead with the evidence limitation.",
+        topOpportunities: [{ title: "Gather browser evidence.", evidence: "No browser capture available.", evidenceLabel: "Inferred", businessImpact: "Better evidence improves recommendations.", recommendedAction: "Re-audit with browser.", priority: "medium", confidence: "low" }],
+        recommendedService: { name: "Evidence-backed audit review.", rationale: "Limited evidence.", confidence: "low" },
+        outreachAngle: { subjectLine: "Evidence gap", openingInsight: "Lead with the evidence limitation.", messageDraft: "Hi..." },
         missingEvidence: ["Browser screenshot evidence."],
-        internalNotes: "No browser or screenshot evidence.",
-        confidence: "low",
+        internalNotes: { whyNow: "No browser evidence available.", suggestedNextStep: "Re-audit with browser." },
       }),
     });
 
@@ -391,7 +391,7 @@ describe("generateProspectAuditAgent", () => {
 
     expect(generateContentMock.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
-        contents: expect.stringContaining("No browser or screenshot-backed evidence is available"),
+        contents: expect.stringContaining("NO BROWSER/SCREENSHOT EVIDENCE"),
       })
     );
   });

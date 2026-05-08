@@ -1,9 +1,10 @@
 import { randomUUID } from "crypto";
 import { withDbClient } from "@/db/client";
 import type { CaptureFidelity } from "@/lib/types";
-import type {
-  ProspectAuditAgentMetadata,
-  ProspectAuditAgentResult,
+import {
+  normalizeProspectIntelligenceResult,
+  type ProspectAuditAgentMetadata,
+  type ProspectAuditAgentResult,
 } from "@/server/agents/prospect-audit-agent";
 
 interface ProspectIntelligenceRow {
@@ -16,7 +17,7 @@ interface ProspectIntelligenceRow {
   primary_gap: string;
   recommended_service: string;
   outreach_angle: string;
-  result_json: ProspectAuditAgentResult;
+  result_json: unknown;
   model: string;
   prompt_version: string;
   schema_version: string;
@@ -35,10 +36,10 @@ export interface ProspectIntelligenceRecord {
   primaryGap: string;
   recommendedService: string;
   outreachAngle: string;
-  result: ProspectAuditAgentResult;
+  result: ProspectAuditAgentResult | null;
+  schemaVersion: string;
   model: string;
   promptVersion: string;
-  schemaVersion: string;
   inputHash: string;
   createdAt: Date;
   updatedAt: Date;
@@ -55,10 +56,10 @@ function mapRow(row: ProspectIntelligenceRow): ProspectIntelligenceRecord {
     primaryGap: row.primary_gap,
     recommendedService: row.recommended_service,
     outreachAngle: row.outreach_angle,
-    result: row.result_json,
+    result: normalizeProspectIntelligenceResult(row.result_json),
+    schemaVersion: row.schema_version,
     model: row.model,
     promptVersion: row.prompt_version,
-    schemaVersion: row.schema_version,
     inputHash: row.input_hash,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -114,10 +115,10 @@ export const prospectIntelligenceRepository = {
           input.result.prospectFitScore,
           input.result.commercialOpportunityScore,
           input.captureFidelity,
-          input.result.confidence,
+          input.result.reachOutRecommendation.confidence,
           input.result.primaryGap,
-          input.result.recommendedService,
-          input.result.outreachAngle,
+          input.result.recommendedService.name,
+          input.result.outreachAngle.openingInsight,
           JSON.stringify(input.result),
           input.metadata.model,
           input.metadata.promptVersion,

@@ -5,7 +5,7 @@ import {
   detectAuditCaptureBarrier,
   toAuditFailure,
 } from "@/lib/audit-failure";
-import { assertPublicUrl, SSRFError } from "@/lib/ssrf";
+import { assertPublicUrl, assertSameOriginOrApproved, SSRFError } from "@/lib/ssrf";
 import type { StorageClient } from "@/server/contracts/storage";
 import { storageClient } from "@/server/contracts/storage";
 import type { CaptureMethodProvenance, PageSnapshot, PageState, PageType } from "@/lib/types";
@@ -559,6 +559,24 @@ async function captureQueuedPage(
       await deps.waitAfterNavigation(2000);
 
       const currentUrl = await session.getUrl();
+
+      // Guard: reject private/internal redirect targets and off-origin redirects
+      // before any HTML extraction, screenshot, or artifact storage.
+      try {
+        await assertPublicUrl(currentUrl);
+        assertSameOriginOrApproved(snapshot.url, currentUrl);
+      } catch (ssrfError) {
+        if (ssrfError instanceof SSRFError) {
+          throw new AuditFailureError({
+            failureKind: "access_denied",
+            failureStage: "capture",
+            failureReason: ssrfError.message,
+            failureDetails: { source: "network", marker: "access_denied", retryable: false, url: currentUrl },
+          });
+        }
+        throw ssrfError;
+      }
+
       const { value: html } = await session.extractHtml();
       const htmlBarrier = detectAuditCaptureBarrier({
         stage: "capture",
@@ -734,6 +752,24 @@ async function captureBrowserFirstPage(
     await deps.waitAfterNavigation(2000);
 
     const currentUrl = await browserSession.getUrl();
+
+    // Guard: reject private/internal redirect targets and off-origin redirects
+    // before any HTML extraction, screenshot, or artifact storage.
+    try {
+      await assertPublicUrl(currentUrl);
+      assertSameOriginOrApproved(snapshot.url, currentUrl);
+    } catch (ssrfError) {
+      if (ssrfError instanceof SSRFError) {
+        throw new AuditFailureError({
+          failureKind: "access_denied",
+          failureStage: "capture",
+          failureReason: ssrfError.message,
+          failureDetails: { source: "network", marker: "access_denied", retryable: false, url: currentUrl },
+        });
+      }
+      throw ssrfError;
+    }
+
     const { value: html } = await browserSession.extractHtml();
     const htmlBarrier = detectAuditCaptureBarrier({
       stage: "capture",

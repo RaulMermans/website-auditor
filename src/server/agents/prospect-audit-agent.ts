@@ -8,7 +8,7 @@ import {
   PROSPECT_AUDIT_AGENT_JSON_SCHEMA,
   PROSPECT_AUDIT_AGENT_PROMPT_VERSION,
   PROSPECT_AUDIT_AGENT_SCHEMA_VERSION,
-  ProspectAuditAgentResultSchema,
+  ProspectAuditAgentOutputSchema,
   type ProspectAuditAgentGenerationResult,
   type ProspectAuditAgentInput,
   type ProspectAuditAgentMetadata,
@@ -126,7 +126,7 @@ export async function generateProspectAuditAgent(
     });
 
     const raw = typeof response.text === "string" ? response.text : "";
-    const parsed = ProspectAuditAgentResultSchema.safeParse(JSON.parse(stripJsonFence(raw)));
+    const parsed = ProspectAuditAgentOutputSchema.safeParse(JSON.parse(stripJsonFence(raw)));
 
     if (!parsed.success) {
       const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
@@ -144,4 +144,6 @@ export type {
   ProspectAuditAgentInput,
   ProspectAuditAgentMetadata,
   ProspectAuditAgentResult,
+  ProspectAuditAgentResultLegacy,
 } from "@/server/agents/prospect-audit-agent.schema";
+export { normalizeProspectIntelligenceResult } from "@/server/agents/prospect-audit-agent.schema";

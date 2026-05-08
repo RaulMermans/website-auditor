@@ -1187,6 +1187,7 @@ describe("captureAuditRun", () => {
 
     // Make `extractHtml` return the challenge HTML so it triggers capture_blocked.
     session.navigate = vi.fn().mockResolvedValue({ url: "https://example.com", ok: true, status: 200 });
+    session.getUrl = vi.fn().mockResolvedValue("https://example.com/");
     session.extractHtml = vi.fn().mockResolvedValue({ value: "<html><body>Cloudflare security check captcha verify you are human</body></html>" });
 
     // Secondary routes return usable thin html, homepage static returns unusable thin html
@@ -1336,5 +1337,70 @@ describe("captureAuditRun", () => {
     expect(fetchedUrls).not.toContain("https://example.com/cart");
     expect(fetchedUrls).not.toContain("https://example.com/assets/brochure.pdf");
     expect(capturedUrls.length).toBeLessThanOrEqual(4);
+  });
+
+  // ─── Browser final URL safety ─────────────────────────────────────────────
+
+  it("rejects browser final private/internal redirect before extraction and storage", async () => {
+    const { deps, session } = createDeps();
+
+    // Simulate browser navigating to example.com but ending up at a private IP.
+    session.getUrl.mockResolvedValue("http://192.168.1.1/");
+
+    const result = await captureAuditRun(
+      { auditRunId: "run-private-redirect", domain: "example.com" },
+      deps
+    );
+
+    // Capture must fail — no artifacts stored, snapshot not completed.
+    expect(deps.storage.put).not.toHaveBeenCalled();
+    expect(deps.auditJobs.completePageSnapshotCapture).not.toHaveBeenCalled();
+    expect(result.errorMessage).toBeTruthy();
+  });
+
+  it("rejects browser final off-origin redirect before extraction and storage", async () => {
+    const { deps, session } = createDeps();
+
+    // Browser navigated to example.com but ended up on a different domain.
+    session.getUrl.mockResolvedValue("https://attacker.example.net/harvest");
+
+    const result = await captureAuditRun(
+      { auditRunId: "run-offorigin-redirect", domain: "example.com" },
+      deps
+    );
+
+    // No HTML extracted, no screenshot, no storage.put, no snapshot completion.
+    expect(deps.storage.put).not.toHaveBeenCalled();
+    expect(deps.auditJobs.completePageSnapshotCapture).not.toHaveBeenCalled();
+    expect(result.errorMessage).toBeTruthy();
+  });
+
+  it("does not call storage.put or completePageSnapshotCapture after unsafe browser final URL", async () => {
+    const { deps, session } = createDeps();
+
+    // Redirect to loopback — should never produce artifacts.
+    session.getUrl.mockResolvedValue("http://127.0.0.1/admin");
+
+    await captureAuditRun(
+      { auditRunId: "run-loopback", domain: "example.com" },
+      deps
+    );
+
+    expect(deps.storage.put).not.toHaveBeenCalled();
+    expect(deps.auditJobs.completePageSnapshotCapture).not.toHaveBeenCalled();
+  });
+
+  it("allows safe same-origin browser navigation (control: public URL)", async () => {
+    const { deps } = createDeps();
+
+    // getUrl returns same origin — normal happy path.
+    const result = await captureAuditRun(
+      { auditRunId: "run-safe", domain: "example.com" },
+      deps
+    );
+
+    expect(result.pagesProcessed).toBeGreaterThanOrEqual(1);
+    expect(result.errorMessage).toBeUndefined();
+    expect(deps.auditJobs.completePageSnapshotCapture).toHaveBeenCalled();
   });
 });
