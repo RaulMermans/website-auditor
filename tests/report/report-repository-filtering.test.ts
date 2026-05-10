@@ -64,7 +64,9 @@ describe("reportRepository accepted-only filtering", () => {
             screenshot_page_count: "1",
           },
         ],
-      });
+      })
+      // 5th call: excluded (needs_review / failed) page snapshots
+      .mockResolvedValueOnce({ rows: [] });
 
     withDbClientMock.mockImplementation(async (callback: any) => callback({ query }));
 

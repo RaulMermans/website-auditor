@@ -14,6 +14,20 @@ Internal Prospect Audit Agent for Raul. Evidence-backed website audits, determin
 - Runtime blockers addressed: Lambda-compatible browser launch args + `maxDuration = 300` on the intake route.
 - Operational smoke validation is still pending on Vercel; end-to-end proof requires a live deploy run.
 
+### Completion policy (since v0.2)
+- Secondary page review-gate failures produce `partial_complete` — not `needs_human_review` — when at least one high-priority page (homepage, contact, services, pricing) was accepted.
+- Only high-priority-page review conflicts, all-legal-only-accepted, or majority-failed scenarios escalate to `needs_human_review`.
+- Rejected/needs_review page findings are excluded from scores and report conclusions. Evidence Notes lists excluded pages with URLs, page types, and escalation reasons.
+
+### Static fallback language (since v0.2)
+- For `static`, `fallback_static`, and `secondary_static` captures, technical SEO finding titles use bounded language ("not detected in captured static HTML") rather than definitive "Missing" language.
+
+### Audit progress UX (since v0.2)
+- After submitting a domain, the intake page immediately shows an animated progress card with step checklist and page counts, polling `/api/audits/[auditRunId]/status` every 2.5 seconds.
+
+### Report badge (since v0.2)
+- `rendered_browser + complete` → "Rendered audit" · `rendered_browser + partial_complete` → "Mixed capture audit" · `static_public` → "Static fallback audit" · `secondary_static` → "Partial/static audit"
+
 ## Local setup
 
 ```sh

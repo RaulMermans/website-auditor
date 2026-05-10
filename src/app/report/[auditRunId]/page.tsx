@@ -10,6 +10,7 @@ import {
   AUDIT_STATUS_META,
   CATEGORY_LABELS,
   EVIDENCE_COLORS,
+  getReportBadge,
   REVIEW_STATE_META,
   REPORT_READY_STATUSES,
   scoreColor,
@@ -660,7 +661,10 @@ export default async function ReportPage({
     notFound();
   }
 
-  const statusMeta = AUDIT_STATUS_META[data.auditRun.status];
+  const statusMeta = getReportBadge(
+    data.auditRun.status,
+    data.captureFidelity?.primaryFidelity
+  );
   const failurePresentation = getAuditFailurePresentation(data.auditRun);
 
   if (!REPORT_READY_STATUSES.includes(data.auditRun.status)) {
@@ -1301,6 +1305,18 @@ export default async function ReportPage({
               <p style={panelEyebrowStyle}>Inspection Notes</p>
               {renderSummaryList(fullReport.appendix.inspectionNotes)}
             </div>
+            {fullReport.appendix.excludedPageNotes.length > 0 && (
+              <div
+                style={{
+                  ...summaryPanelStyle,
+                  background: "#fffbeb",
+                  border: "1px solid #fcd34d",
+                }}
+              >
+                <p style={{ ...panelEyebrowStyle, color: "#92400e" }}>Excluded Pages</p>
+                {renderSummaryList(fullReport.appendix.excludedPageNotes)}
+              </div>
+            )}
           </div>
         </section>
 

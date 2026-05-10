@@ -190,4 +190,41 @@ describe("buildFullReportData", () => {
     expect(fullReport.topPriorities[0]?.summary.startsWith("Homepage-only audit:")).toBe(false);
     expect(fullReport.topPriorities[0]?.nextStep.startsWith("Homepage-only audit:")).toBe(false);
   });
+
+  it("builds empty excludedPageNotes when no pages are excluded", () => {
+    const fullReport = buildFullReportData(makeReportData());
+    expect(fullReport.appendix.excludedPageNotes).toEqual([]);
+  });
+
+  it("lists excluded pages with URLs, types, and reason in excludedPageNotes", () => {
+    const data = makeReportData({
+      excludedPages: [
+        {
+          url: "https://example.com/blog",
+          pageType: "content",
+          pageState: "needs_review",
+          escalationReason: "mobile_form_burden routing does not accept this pattern",
+        },
+        {
+          url: "https://example.com/legal",
+          pageType: "legal",
+          pageState: "needs_review",
+          escalationReason: null,
+        },
+      ],
+    });
+    const fullReport = buildFullReportData(data);
+    const notes = fullReport.appendix.excludedPageNotes;
+
+    expect(notes.length).toBeGreaterThanOrEqual(3);
+    // First note is the summary
+    expect(notes[0]).toContain("2 pages were excluded from scoring");
+    expect(notes[0]).toContain("Rejected page findings were not used");
+    // Subsequent notes list each excluded page
+    expect(notes[1]).toContain("content");
+    expect(notes[1]).toContain("https://example.com/blog");
+    expect(notes[1]).toContain("mobile_form_burden");
+    expect(notes[2]).toContain("legal");
+    expect(notes[2]).toContain("https://example.com/legal");
+  });
 });

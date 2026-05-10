@@ -13,7 +13,7 @@ Resolved setup:
 - Repo type: single-repo
 - Coverage target: 80% lines
 
-Current phase: Browser-first capture with final URL safety validation, structured Prospect Intelligence schema (v2), and decision-grade report UX are implemented. Operational smoke validation is still pending, and deployed intake/worker durability must be proven on Vercel.
+Current phase: Browser-first capture, partial-complete policy, capture-fidelity-aware finding language, animated audit progress UX, and decision-grade report UX are implemented. Operational smoke validation is still pending, and deployed intake/worker durability must be proven on Vercel.
 
 # Goals
 
@@ -154,3 +154,9 @@ Preferred commit shapes:
 - Sensitivity is set to none, but captured artifacts are still handled conservatively.
 - Default test target is 80% line coverage.
 - Commands assume broad greenfield scripts: `npm run dev`, `npm test`, `npm run build`.
+- Secondary page review-gate failures produce `partial_complete` (not `needs_human_review`) when at least one high-priority page (homepage, contact, services, pricing) was accepted. Only high-priority-page review conflicts, all-legal-accepted, or majority-failed scenarios escalate to `needs_human_review`.
+- Rejected page findings are excluded from scores and report output. Evidence Notes lists excluded/needs_review pages with their URLs, page types, and escalation reasons.
+- Static fallback findings (missing title, H1, canonical, meta description) use bounded language — "not detected in captured static HTML" — rather than definitive "missing" language for static/fallback_static/secondary_static captures.
+- Audit progress UI shows animated step updates after submission, polling `/api/audits/[auditRunId]/status` every 2.5 seconds until a terminal status is reached.
+- The system does not bypass anti-bot protections; it detects, classifies, downgrades capture fidelity, and continues with public evidence.
+- Report badges are capture-fidelity-aware: `rendered_browser + complete → "Rendered audit"`, `rendered_browser + partial_complete → "Mixed capture audit"`, `static_public → "Static fallback audit"`, `secondary_static → "Partial/static audit"`.

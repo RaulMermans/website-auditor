@@ -1129,18 +1129,47 @@ function scopeText(auditRun: Pick<AuditRun, "homepageOnly">, text: string) {
   return `Homepage-only audit: ${text}`;
 }
 
+// Titles that sound too definitive when the HTML was captured via a static fetch
+// rather than a live browser render. Map bare title → bounded alternative.
+const STATIC_BOUND_TITLE_MAP: Record<string, string> = {
+  "Missing page title": "Title tag not detected in captured static HTML",
+  "Missing meta description": "Meta description not detected in captured static HTML",
+  "Missing canonical tag": "Canonical tag not exposed in captured static HTML",
+  "No H1 heading detected": "H1 heading not detected in captured static HTML",
+};
+
+const STATIC_CAPTURE_METHODS = new Set<import("@/lib/types").CaptureMethodProvenance>([
+  "static",
+  "fallback_static",
+  "secondary_static",
+]);
+
+function applyCaptureBoundTitle(
+  title: string,
+  captureMethod: import("@/lib/types").CaptureMethodProvenance | null | undefined
+): string {
+  if (!captureMethod || !STATIC_CAPTURE_METHODS.has(captureMethod)) return title;
+  // Strip the homepage-only scope prefix before matching, then re-apply it.
+  const prefix = /^Homepage-only audit:\s*/i.exec(title)?.[0] ?? "";
+  const bare = title.slice(prefix.length);
+  const bounded = STATIC_BOUND_TITLE_MAP[bare] ?? bare;
+  return prefix + bounded;
+}
+
 function buildFinding(
   auditRun: Pick<AuditRun, "id" | "homepageOnly">,
-  snapshot: Pick<PageSnapshot, "id" | "url" | "pageType" | "pagePriority">,
+  snapshot: Pick<PageSnapshot, "id" | "url" | "pageType" | "pagePriority"> &
+    Partial<Pick<PageSnapshot, "captureMethod">>,
   draft: SpecialistFindingDraft
 ): CreateFindingInput {
   const route = getRoutedPageContext(snapshot);
+  const rawTitle = scopeText(auditRun, draft.title);
 
   return {
     auditRunId: auditRun.id,
     pageSnapshotId: snapshot.id,
     category: draft.category,
-    title: scopeText(auditRun, draft.title),
+    title: applyCaptureBoundTitle(rawTitle, snapshot.captureMethod),
     description: scopeText(auditRun, draft.description),
     severity: draft.severity,
     confidence: draft.confidence,
@@ -1161,7 +1190,8 @@ function buildFinding(
 
 export function extractPageArtifacts(
   auditRun: Pick<AuditRun, "id" | "homepageOnly">,
-  snapshot: Pick<PageSnapshot, "id" | "url" | "pageType" | "pagePriority">,
+  snapshot: Pick<PageSnapshot, "id" | "url" | "pageType" | "pagePriority"> &
+    Partial<Pick<PageSnapshot, "captureMethod">>,
   html: string
 ): ExtractedPageArtifacts {
   const metrics = parseMetrics(snapshot, html);

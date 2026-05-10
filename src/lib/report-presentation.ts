@@ -1,4 +1,4 @@
-import type { AuditStatus, Finding, FindingCategory } from "@/lib/types";
+import type { AuditStatus, CaptureFidelity, Finding, FindingCategory } from "@/lib/types";
 
 export const OVERALL_SCORE_LABEL = "Brand Conversion Readiness Score";
 export const REPORT_READY_STATUSES: AuditStatus[] = ["complete", "partial_complete"];
@@ -125,6 +125,41 @@ export const AUDIT_STATUS_META: Record<
     text: "#991b1b",
   },
 };
+
+type BadgeMeta = (typeof AUDIT_STATUS_META)[AuditStatus];
+
+/**
+ * Returns a badge with a label tuned to the combination of run status and
+ * capture fidelity.  Callers that want the generic status badge can omit
+ * primaryFidelity and will receive the default AUDIT_STATUS_META entry.
+ */
+export function getReportBadge(
+  status: AuditStatus,
+  primaryFidelity?: CaptureFidelity
+): BadgeMeta {
+  const base = AUDIT_STATUS_META[status];
+
+  if (status === "complete" && primaryFidelity === "rendered_browser") {
+    return { ...base, label: "Rendered audit" };
+  }
+
+  if (status === "partial_complete") {
+    if (primaryFidelity === "rendered_browser") {
+      return { ...base, label: "Mixed capture audit" };
+    }
+    if (primaryFidelity === "static_public") {
+      return { ...base, label: "Static fallback audit" };
+    }
+    if (primaryFidelity === "secondary_static") {
+      return { ...base, label: "Partial/static audit" };
+    }
+    if (primaryFidelity === "blocked_no_evidence") {
+      return { ...base, label: "Limited evidence audit" };
+    }
+  }
+
+  return base;
+}
 
 const HOMEPAGE_ONLY_PREFIX = /^Homepage-only audit:\s*/i;
 

@@ -1,5 +1,6 @@
 import { submitDomainAction } from "@/app/intake/actions";
 import { IntakeSuccessTrigger } from "@/components/intake-success-trigger";
+import { SubmitButton } from "@/components/submit-button";
 
 // Allow up to 5 minutes for the server-side after() worker trigger to run.
 export const maxDuration = 300;
@@ -79,21 +80,8 @@ export default async function IntakePage({
           />
         </label>
 
-        <button
-          type="submit"
-          style={{
-            width: "fit-content",
-            padding: "12px 18px",
-            border: 0,
-            borderRadius: 6,
-            background: "#111827",
-            color: "#fff",
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          Start audit
-        </button>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <SubmitButton label="Start audit" pendingLabel="Starting…" />
       </form>
 
       {success && auditRunId ? (

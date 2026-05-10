@@ -199,6 +199,7 @@ export interface FullReportData {
     evidenceCounts: Record<EvidenceLabel, number>;
     severityCounts: Record<FindingSeverity, number>;
     inspectionNotes: string[];
+    excludedPageNotes: string[];
   };
 }
 
@@ -537,6 +538,22 @@ function buildStrategicReadout(
   });
 }
 
+function buildExcludedPageNotes(data: ReportData): string[] {
+  const excludedPages = data.excludedPages ?? [];
+  if (excludedPages.length === 0) return [];
+
+  const notes: string[] = [
+    `${excludedPages.length} page${excludedPages.length !== 1 ? "s were" : " was"} excluded from scoring because their findings did not pass page-type review. Accepted findings come from homepage, contact, and approved secondary evidence only. Rejected page findings were not used in scoring or report conclusions.`,
+  ];
+
+  for (const page of excludedPages) {
+    const reason = page.escalationReason ? ` Reason: ${page.escalationReason}.` : "";
+    notes.push(`Excluded (${page.pageState}): ${page.pageType} — ${page.url}.${reason}`);
+  }
+
+  return notes;
+}
+
 export function buildFullReportData(data: ReportData): FullReportData {
   const topPriorities = data.topPriorities.map(buildNarrativeFinding);
   const topPriorityGroups = groupFindingsByClaimPosture(topPriorities);
@@ -647,6 +664,7 @@ export function buildFullReportData(data: ReportData): FullReportData {
         `Lightly inspected: ${lightlyInspectedCategories.length > 0 ? joinLabels(lightlyInspectedCategories) : "none"}.`,
         `Not fully assessed / insufficient evidence: ${insufficientEvidenceCategories.length > 0 ? joinLabels(insufficientEvidenceCategories) : "none"}.`,
       ],
+      excludedPageNotes: buildExcludedPageNotes(data),
     },
   };
 }

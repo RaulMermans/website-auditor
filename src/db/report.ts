@@ -89,6 +89,13 @@ export interface AuditRunListItem {
   limitationNote: string | null;
 }
 
+export interface ExcludedPageRecord {
+  url: string;
+  pageType: string;
+  pageState: string;
+  escalationReason: string | null;
+}
+
 export interface ReportData {
   auditRunId: string;
   domain: string;
@@ -98,6 +105,8 @@ export interface ReportData {
   scores: CategoryScores;
   categoryReviews: ReportCategoryReview[];
   captureFidelity?: ReportCaptureFidelity;
+  /** Pages excluded from scoring (needs_review or failed). Empty array when all pages passed. */
+  excludedPages?: ExcludedPageRecord[];
 }
 
 export interface ReportRepository {
@@ -465,6 +474,29 @@ export const reportRepository: ReportRepository = {
       });
       const categoryReviews = buildCategoryReviews(prioritizedFindings, scores);
 
+      // Fetch needs_review / failed page snapshots for Evidence Notes disclosure.
+      const excludedPagesResult = await client.query<{
+        url: string;
+        page_type: string;
+        page_state: string;
+        escalation_reason: string | null;
+      }>(
+        `
+          SELECT url, page_type, page_state, escalation_reason
+          FROM page_snapshots
+          WHERE audit_run_id = $1
+            AND page_state IN ('needs_review', 'failed')
+          ORDER BY page_type, url
+        `,
+        [auditRunId]
+      );
+      const excludedPages: ExcludedPageRecord[] = excludedPagesResult.rows.map((row) => ({
+        url: row.url,
+        pageType: row.page_type,
+        pageState: row.page_state,
+        escalationReason: row.escalation_reason,
+      }));
+
       return {
         auditRunId,
         domain: runRow.domain,
@@ -474,6 +506,7 @@ export const reportRepository: ReportRepository = {
         scores,
         categoryReviews,
         captureFidelity,
+        excludedPages,
       };
     });
   },

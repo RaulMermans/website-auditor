@@ -62,6 +62,17 @@ HARD RULES — violation invalidates the output:
 8. Never suggest bypassing anti-bot protection, security challenges, or access controls.
 9. Do not make revenue-loss claims unless tied to a transparent estimation rule in the accepted findings.
 
+CONFIDENCE CALIBRATION — enforce these rules based on capture fidelity:
+- If primaryFidelity is "static_public" or "secondary_static":
+  - Lower confidence across all outputs. Set reachOutRecommendation.confidence to "low" or "medium".
+  - Do NOT frame static metadata findings (missing title, missing H1, missing canonical) as definitive live-site defects. Static HTML may omit these; the live rendered page may include them.
+  - Recommend "maybe" rather than "yes" unless the evidence is a highly direct technical fact that cannot be rendered dynamically (e.g., a robots noindex directive in raw HTML).
+  - Do NOT infer visual quality, mobile layout, above-the-fold composition, or interaction design from static HTML alone.
+  - Populate missingEvidence with visual, mobile, and rendered-state gaps.
+- If primaryFidelity is "rendered_browser":
+  - You may use direct "missing" language and higher confidence when the accepted findings support it.
+  - Browser-backed findings can produce "yes" recommendations when evidence is strong and multi-signal.
+
 Domain: ${input.domain}
 ${scopeLine}
 Overall deterministic score: ${input.overallScore}/100

@@ -7,6 +7,7 @@ import type {
   AuditCaptureResult,
 } from "@/server/audits/capture-audit-run";
 import { captureAuditRun } from "@/server/audits/capture-audit-run";
+import type { PageType } from "@/lib/types";
 
 export interface ProcessAuditRunDeps {
   auditJobs: Pick<AuditJobRepository, "getAuditRunProgress" | "updateAuditRunStatus">;
@@ -26,6 +27,28 @@ const ANALYSIS_PENDING_STATES = new Set(["captured", "auditing", "evaluating"]);
 // Pages stuck in needs_review after analysis constitute a partial or human-review result.
 const NEEDS_REVIEW_STATES = new Set(["needs_review"]);
 const FAILED_PAGE_STATES = new Set(["failed"]);
+
+// High-priority pages: homepage, contact, services, pricing, product, form
+const HIGH_PRIORITY_PAGE_TYPES = new Set<PageType>([
+  "homepage",
+  "contact",
+  "services",
+  "pricing",
+  "product",
+  "form",
+]);
+
+// Low-priority pages: legal boilerplate pages
+const LOW_PRIORITY_PAGE_TYPES = new Set<PageType>(["legal", "other"]);
+
+export function getAuditPagePriorityGroup(
+  pageType: PageType | null | undefined
+): "high" | "medium" | "low" {
+  if (!pageType) return "medium";
+  if (HIGH_PRIORITY_PAGE_TYPES.has(pageType)) return "high";
+  if (LOW_PRIORITY_PAGE_TYPES.has(pageType)) return "low";
+  return "medium";
+}
 
 function hasPendingCapture(progress: AuditRunProgress) {
   return (
@@ -60,12 +83,16 @@ function resolveCompletionStatus(
   limitationNote?: string | null
 ): import("@/lib/types").AuditStatus {
   const snapshots = progress.pageSnapshots;
+  // Pages with HTML storage (captured), regardless of analysis outcome.
   const captured = snapshots.filter((s) => s.htmlStorageKey);
+  // Pages that passed analysis cleanly.
+  const accepted = snapshots.filter((s) => s.pageState === "accepted" && s.htmlStorageKey);
   const needsReview = snapshots.filter((s) => s.pageState && NEEDS_REVIEW_STATES.has(s.pageState));
   const failed = snapshots.filter((s) => s.pageState && FAILED_PAGE_STATES.has(s.pageState));
 
   const homepageCaptured = captured.some((s) => s.pageType === "homepage");
-  const hasSecondaryCaptured = captured.some((s) => s.pageType !== "homepage");
+  // Secondary non-homepage accepted pages (for homepage-blocked mode).
+  const hasSecondaryCaptured = accepted.some((s) => s.pageType !== "homepage");
 
   // Homepage blocked but secondary evidence exists → bounded partial audit.
   // The limitation note is the authoritative signal that the run completed
@@ -80,17 +107,43 @@ function resolveCompletionStatus(
   }
 
   // No homepage and no secondary evidence → failed.
-  if (!homepageCaptured) {
+  if (!homepageCaptured && !hasSecondaryCaptured) {
     return "failed";
   }
 
-  // Multiple pages need human review → escalate.
-  if (needsReview.length >= 2) {
+  // No usable accepted evidence at all → failed.
+  if (accepted.length === 0) {
+    return "failed";
+  }
+
+  // Determine which needs_review/failed pages are high-priority.
+  const reviewedOrFailedHighPriority = [...needsReview, ...failed].filter(
+    (s) => getAuditPagePriorityGroup(s.pageType) === "high"
+  );
+
+  // Only legal/low-value pages were accepted → not enough for a bounded report.
+  const onlyLowValueAccepted = accepted.every(
+    (s) => getAuditPagePriorityGroup(s.pageType) === "low"
+  );
+
+  if (onlyLowValueAccepted) {
     return "needs_human_review";
   }
 
-  // Some pages failed or are needs_review but homepage was captured → partial.
-  if (failed.length > 0 || needsReview.length > 0) {
+  // A high-priority page (homepage, contact, services…) could not be verified → escalate.
+  if (reviewedOrFailedHighPriority.length > 0) {
+    return "needs_human_review";
+  }
+
+  // Majority of all pages are problematic → too many unresolved issues for a bounded report.
+  const totalPages = snapshots.length;
+  const problemCount = needsReview.length + failed.length;
+  if (totalPages > 0 && problemCount / totalPages > 0.5) {
+    return "needs_human_review";
+  }
+
+  // Secondary/low-priority pages had review failures but enough trusted evidence exists.
+  if (needsReview.length > 0 || failed.length > 0) {
     return "partial_complete";
   }
 
