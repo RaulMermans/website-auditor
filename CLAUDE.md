@@ -70,6 +70,9 @@ Key configs:
 - `.env.example` — documented environment variable contract with no secrets
 - `.gitignore` — exclude local env files and generated artifacts
 - `README.md` — local setup, architecture summary, and operator workflow
+- `workflow.yaml` — canonical machine-readable deterministic workflow + bounded LLM synthesis manifest
+- `agents.yaml` — canonical machine-readable Prospect Audit Agent manifest
+- `docs/agentic/` — prompt inventory and agentic architecture/truth-boundary docs
 - `vercel.json` — deployment and routing config when needed
 - `playwright.config.*` — shared browser automation defaults when applicable
 
@@ -157,6 +160,10 @@ Preferred commit shapes:
 - Secondary page review-gate failures produce `partial_complete` (not `needs_human_review`) when at least one high-priority page (homepage, contact, services, pricing) was accepted. Only high-priority-page review conflicts, all-legal-accepted, or majority-failed scenarios escalate to `needs_human_review`.
 - Rejected page findings are excluded from scores and report output. Evidence Notes lists excluded/needs_review pages with their URLs, page types, and escalation reasons.
 - Static fallback findings (missing title, H1, canonical, meta description) use bounded language — "not detected in captured static HTML" — rather than definitive "missing" language for static/fallback_static/secondary_static captures.
+- Static fallback claim bounding is applied at report time so old persisted findings render safely. Secondary-static reports use "captured secondary static HTML."
+- Homepage-failed secondary-static audits lower confidence and must not render brand, conversion, trust, experience flow, or mobile experience as healthy when homepage/browser/screenshot evidence is absent.
+- Blocked-target failures are expected handled terminal states. The user-facing state is "Automated capture was blocked," and the worker route should not present handled capture-denied conditions as crashed runtime failures.
+- `workflow.yaml` and `agents.yaml` are the canonical architecture manifests. Prompt governance docs live in `docs/agentic/`.
 - Audit progress UI shows animated step updates after submission, polling `/api/audits/[auditRunId]/status` every 2.5 seconds until a terminal status is reached.
 - The system does not bypass anti-bot protections; it detects, classifies, downgrades capture fidelity, and continues with public evidence.
 - Report badges are capture-fidelity-aware: `rendered_browser + complete → "Rendered audit"`, `rendered_browser + partial_complete → "Mixed capture audit"`, `static_public → "Static fallback audit"`, `secondary_static → "Partial/static audit"`.

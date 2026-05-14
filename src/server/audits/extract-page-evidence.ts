@@ -1131,11 +1131,23 @@ function scopeText(auditRun: Pick<AuditRun, "homepageOnly">, text: string) {
 
 // Titles that sound too definitive when the HTML was captured via a static fetch
 // rather than a live browser render. Map bare title → bounded alternative.
-const STATIC_BOUND_TITLE_MAP: Record<string, string> = {
-  "Missing page title": "Title tag not detected in captured static HTML",
-  "Missing meta description": "Meta description not detected in captured static HTML",
-  "Missing canonical tag": "Canonical tag not exposed in captured static HTML",
-  "No H1 heading detected": "H1 heading not detected in captured static HTML",
+const STATIC_BOUND_TITLE_MAP: Record<string, { static: string; secondary: string }> = {
+  "Missing page title": {
+    static: "Title tag not detected in captured static HTML",
+    secondary: "Title tag not detected in captured secondary static HTML",
+  },
+  "Missing meta description": {
+    static: "Meta description not detected in captured static HTML",
+    secondary: "Meta description not detected in captured secondary static HTML",
+  },
+  "Missing canonical tag": {
+    static: "Canonical tag not exposed in captured static HTML",
+    secondary: "Canonical tag not exposed in captured secondary static HTML",
+  },
+  "No H1 heading detected": {
+    static: "H1 heading not detected in captured static HTML",
+    secondary: "H1 heading not detected in captured secondary static HTML",
+  },
 };
 
 const STATIC_CAPTURE_METHODS = new Set<import("@/lib/types").CaptureMethodProvenance>([
@@ -1152,8 +1164,11 @@ function applyCaptureBoundTitle(
   // Strip the homepage-only scope prefix before matching, then re-apply it.
   const prefix = /^Homepage-only audit:\s*/i.exec(title)?.[0] ?? "";
   const bare = title.slice(prefix.length);
-  const bounded = STATIC_BOUND_TITLE_MAP[bare] ?? bare;
-  return prefix + bounded;
+  const bounded =
+    captureMethod === "secondary_static"
+      ? STATIC_BOUND_TITLE_MAP[bare]?.secondary
+      : STATIC_BOUND_TITLE_MAP[bare]?.static;
+  return prefix + (bounded ?? bare);
 }
 
 function buildFinding(

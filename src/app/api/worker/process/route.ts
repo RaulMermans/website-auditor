@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { env } from "@/lib/env";
+import { isExpectedTerminalCaptureFailure } from "@/lib/report-presentation";
 
 // Allow up to 5 minutes for the Playwright audit pipeline to complete.
 export const maxDuration = 300;
@@ -97,6 +98,26 @@ async function handleWorkerRequest(req: Request) {
       { jobId: job.id, auditRunId, domain },
       { queue: queueClient, process: (await import("@/server/audits/process-audit-run")).processAuditRun }
     );
+    if (result.errorMessage && isExpectedTerminalCaptureFailure(result)) {
+      console.log("[worker/process] dispatch end: handled terminal failure", {
+        auditRunId,
+        failureKind: result.failureKind,
+      });
+      return NextResponse.json(
+        {
+          processed: 1,
+          results: [
+            {
+              auditRunId,
+              status: "terminal_failed",
+              failureKind: result.failureKind ?? "capture_blocked",
+            },
+          ],
+        },
+        { status: 200 }
+      );
+    }
+
     if (result.errorMessage) {
       console.error("[worker/process] dispatch end: failed", { auditRunId, errorMessage: result.errorMessage });
     } else {

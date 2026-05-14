@@ -8,6 +8,7 @@ Internal Prospect Audit Agent for Raul. Evidence-backed website audits, determin
 - Deterministic findings and scores remain the source of truth; Gemini enrichment and Prospect Intelligence are downstream synthesis only.
 - The audit engine is deterministic. LLMs may synthesize accepted evidence but must not create audit truth.
 - Capture is browser-first for the homepage. Browser blocks/runtime failures downgrade to authorized public static evidence or bounded secondary static sweep; no anti-bot bypass is implemented.
+- `workflow.yaml` and `agents.yaml` are the canonical machine-readable architecture manifests for static auditors and agent/workflow scanners.
 - Prospect Intelligence is persisted in `prospect_intelligence` and displayed in the internal report UI when generated.
 - `/audits` dashboard lists recent audit runs with status, failure reasons, and links to reports.
 - Report experience now has both a concise operational view (`/report/[auditRunId]`) and a long-form document view (`/report/[auditRunId]/full`).
@@ -18,9 +19,11 @@ Internal Prospect Audit Agent for Raul. Evidence-backed website audits, determin
 - Secondary page review-gate failures produce `partial_complete` — not `needs_human_review` — when at least one high-priority page (homepage, contact, services, pricing) was accepted.
 - Only high-priority-page review conflicts, all-legal-only-accepted, or majority-failed scenarios escalate to `needs_human_review`.
 - Rejected/needs_review page findings are excluded from scores and report conclusions. Evidence Notes lists excluded pages with URLs, page types, and escalation reasons.
+- Blocked-target captures are expected handled terminal states, not generic server crashes. The UI labels them as automated capture blocked and points operators to start another audit.
 
 ### Static fallback language (since v0.2)
-- For `static`, `fallback_static`, and `secondary_static` captures, technical SEO finding titles use bounded language ("not detected in captured static HTML") rather than definitive "Missing" language.
+- For `static`, `fallback_static`, and `secondary_static` captures, technical SEO finding titles and report copy use bounded language ("not detected in captured static HTML") rather than definitive "Missing" language. Secondary-static reports use "captured secondary static HTML" and old persisted findings are calibrated at report time.
+- Homepage-failed secondary-static audits lower confidence for brand clarity, conversion path, trust/proof, experience flow, and mobile experience. Uninspected categories are unknown, not clean.
 
 ### Audit progress UX (since v0.2)
 - After submitting a domain, the intake page immediately shows an animated progress card with step checklist and page counts, polling `/api/audits/[auditRunId]/status` every 2.5 seconds.
@@ -80,6 +83,8 @@ public/         Static assets
 - **Evidence labels**: every finding is `Measured | Observed | Inferred`. Never present Inferred as Measured.
 - **Capture fidelity**: reports and agent context expose `rendered_browser`, `static_public`, `secondary_static`, `manual_evidence`, or `blocked_no_evidence`.
 - **Prospect Audit Agent**: `src/server/agents/prospect-audit-agent.*` uses strict Zod validation and only accepted findings/evidence, scores, capture fidelity, limitation notes, and coverage metadata.
+- **AI workflow manifests**: `workflow.yaml` describes the deterministic audit workflow plus bounded LLM synthesis layer. `agents.yaml` describes the Prospect Audit Agent permissions, inputs, outputs, and forbidden behavior.
+- **Prompt governance**: `docs/agentic/architecture.md` documents the truth boundary. `docs/agentic/prompts.md` inventories prompt/schema/runner artifacts.
 
 ## Not yet implemented
 

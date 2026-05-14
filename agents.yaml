@@ -1,0 +1,57 @@
+agents:
+  - id: prospect_audit_agent
+    name: Prospect Audit Agent
+    type: bounded_llm_synthesis_agent
+    owner: Raul Mermans
+    status: active
+    purpose: Turn accepted website audit evidence into internal prospecting intelligence.
+
+    model:
+      provider: google_gemini
+      api_key_env: GEMINI_API_KEY
+      model_env: GEMINI_MODEL
+
+    files:
+      prompt: src/server/agents/prospect-audit-agent.prompt.ts
+      schema: src/server/agents/prospect-audit-agent.schema.ts
+      runner: src/server/agents/prospect-audit-agent.ts
+
+    inputs:
+      - accepted_findings
+      - accepted_evidence
+      - category_scores
+      - capture_fidelity
+      - limitation_notes
+      - excluded_pages
+
+    outputs:
+      - reach_out_recommendation
+      - prospect_fit_score
+      - commercial_opportunity_score
+      - recommended_service
+      - outreach_angle
+      - top_opportunities
+      - missing_evidence
+      - internal_notes
+
+    allowed:
+      - synthesize_accepted_evidence
+      - calibrate_confidence
+      - recommend_internal_next_steps
+      - draft_internal_outreach_angle
+
+    forbidden:
+      - create_audit_truth
+      - accept_or_reject_findings
+      - control_crawling
+      - score_categories
+      - use_rejected_findings
+      - invent_metrics
+      - invent_revenue_or_traffic
+      - make_visual_claims_without_browser_evidence
+      - suggest_anti_bot_bypass
+
+    validation:
+      schema: strict_zod
+      schema_file: src/server/agents/prospect-audit-agent.schema.ts
+      persistence: prospect_intelligence.result_json

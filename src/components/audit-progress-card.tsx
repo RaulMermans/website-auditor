@@ -82,6 +82,12 @@ export function AuditProgressCard({
 
   const currentStage = data?.currentStage ?? initialStatus ?? "Creating audit run";
   const currentStepIdx = stepIndex(currentStage);
+  const isBlockedTerminal =
+    data?.status === "failed" &&
+    (data.failureKind === "access_denied" ||
+      data.failureKind === "blocked" ||
+      data.failureKind === "capture_blocked" ||
+      data.message === "Automated capture was blocked.");
 
   return (
     <>
@@ -243,9 +249,17 @@ export function AuditProgressCard({
               lineHeight: 1.55,
             }}
           >
-            The audit run failed. Check the domain is publicly accessible and{" "}
+            {isBlockedTerminal ? (
+              <>
+                <strong>Automated capture was blocked.</strong> This website denied the audit
+                request or returned a protection page. This does not mean the website is broken
+                for normal visitors.{" "}
+              </>
+            ) : (
+              <>The audit run failed. Check the domain is publicly accessible and </>
+            )}
             <a href="/intake" style={{ color: "#991b1b", fontWeight: 700 }}>
-              try again
+              Start another audit
             </a>
             .
           </div>

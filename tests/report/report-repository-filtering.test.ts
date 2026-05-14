@@ -65,7 +65,11 @@ describe("reportRepository accepted-only filtering", () => {
           },
         ],
       })
-      // 5th call: excluded (needs_review / failed) page snapshots
+      // 5th call: accepted page snapshots
+      .mockResolvedValueOnce({
+        rows: [{ url: "https://example.com/", page_type: "homepage" }],
+      })
+      // 6th call: excluded (needs_review / failed) page snapshots
       .mockResolvedValueOnce({ rows: [] });
 
     withDbClientMock.mockImplementation(async (callback: any) => callback({ query }));
@@ -77,6 +81,7 @@ describe("reportRepository accepted-only filtering", () => {
     expect(query.mock.calls[1]?.[0]).toContain("ps.page_state = 'accepted'");
     expect(query.mock.calls[2]?.[0]).toContain("ps.page_state = 'accepted'");
     expect(query.mock.calls[3]?.[0]).toContain("page_state = 'accepted'");
+    expect(query.mock.calls[4]?.[0]).toContain("page_state = 'accepted'");
     expect(result?.captureFidelity).toMatchObject({
       acceptedPageCount: 1,
       browserPageCount: 1,

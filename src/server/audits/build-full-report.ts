@@ -1,5 +1,6 @@
 import type { ReportCategoryReview, ReportData } from "@/db/report";
 import type {
+  CaptureFidelity,
   ClaimPosture,
   EvidenceLabel,
   Finding,
@@ -8,6 +9,7 @@ import type {
 } from "@/lib/types";
 import {
   CATEGORY_LABELS,
+  getCaptureBoundFindingDisplay,
   getFindingSupportLabel,
   stripHomepageScopePrefix,
 } from "@/lib/report-presentation";
@@ -162,6 +164,7 @@ export interface FullReportCategorySection {
   label: string;
   score: number | null;
   inspectionStatus: ReportCategoryReview["inspectionStatus"];
+  reviewState: ReportCategoryReview["reviewState"];
   inspectionLabel: string;
   inspectionNote: string;
   interpretation: string;
@@ -261,6 +264,10 @@ function buildScopeNote(data: ReportData) {
 }
 
 function getInspectionLabel(review: ReportCategoryReview) {
+  if (review.reviewState === "limited_coverage") {
+    return "Limited coverage";
+  }
+
   if (review.reviewState === "insufficient_evidence") {
     return "Insufficient evidence";
   }
@@ -277,6 +284,10 @@ function getInspectionLabel(review: ReportCategoryReview) {
 }
 
 function getInspectionNote(review: ReportCategoryReview) {
+  if (review.reviewState === "limited_coverage") {
+    return "Limited secondary-static coverage / no confident score. No material issue surfaced in inspected secondary-static signals.";
+  }
+
   if (review.reviewState === "insufficient_evidence") {
     return "This category was not meaningfully covered in the current deterministic pass and should be treated as unknown.";
   }
@@ -351,8 +362,13 @@ function buildRiskStatement(finding: Finding) {
   return `${severityRisk} The underlying issue is directly present in the captured page evidence.`;
 }
 
-function buildNarrativeFinding(finding: Finding): FullReportFinding {
+function buildNarrativeFinding(finding: Finding, captureFidelity: CaptureFidelity): FullReportFinding {
   const claimPosture = deriveClaimPosture(finding);
+  const display = getCaptureBoundFindingDisplay({
+    title: finding.title,
+    whatWeFound: finding.description,
+    captureFidelity,
+  });
 
   return {
     id: finding.id,
@@ -360,8 +376,8 @@ function buildNarrativeFinding(finding: Finding): FullReportFinding {
     categoryLabel: CATEGORY_LABELS[finding.category],
     claimPosture,
     claimLabel: CLAIM_POSTURE_META[claimPosture].label,
-    title: stripHomepageScopePrefix(finding.title),
-    summary: stripHomepageScopePrefix(finding.description),
+    title: display.title,
+    summary: display.whatWeFound,
     severity: finding.severity,
     confidence: finding.confidence,
     evidenceLevel: finding.evidenceLevel,
@@ -377,6 +393,10 @@ function buildCategoryInterpretation(
   review: ReportCategoryReview,
   narrativeFindings: FullReportFinding[]
 ) {
+  if (review.reviewState === "limited_coverage") {
+    return "No material issue surfaced in inspected secondary-static signals, but homepage capture failed and no browser or screenshot evidence was available. Treat this as limited coverage, not a healthy category result.";
+  }
+
   if (review.reviewState === "insufficient_evidence") {
     return "This area remains outside meaningful deterministic coverage in the current pass. Treat it as unknown rather than healthy.";
   }
@@ -542,8 +562,24 @@ function buildExcludedPageNotes(data: ReportData): string[] {
   const excludedPages = data.excludedPages ?? [];
   if (excludedPages.length === 0) return [];
 
+  const acceptedPageTypes = dedupeStrings(
+    (data.acceptedPages ?? [])
+      .map((page) => page.pageType)
+      .filter(Boolean)
+      .sort()
+  );
+  const excludedPageTypes = dedupeStrings(
+    excludedPages.map((page) => page.pageType).filter(Boolean).sort()
+  );
+  const acceptedSourceText =
+    acceptedPageTypes.length > 0
+      ? `Accepted findings come from: ${joinLabels(acceptedPageTypes)}.`
+      : "Accepted findings come from approved secondary/static evidence only.";
+  const excludedTypeText =
+    excludedPageTypes.length > 0 ? ` Excluded pages: ${joinLabels(excludedPageTypes)}.` : "";
+
   const notes: string[] = [
-    `${excludedPages.length} page${excludedPages.length !== 1 ? "s were" : " was"} excluded from scoring because their findings did not pass page-type review. Accepted findings come from homepage, contact, and approved secondary evidence only. Rejected page findings were not used in scoring or report conclusions.`,
+    `${excludedPages.length} page${excludedPages.length !== 1 ? "s were" : " was"} excluded from scoring because ${excludedPages.length !== 1 ? "they failed capture or did" : "it failed capture or did"} not pass page-type review. ${acceptedSourceText}${excludedTypeText} Rejected or failed page findings were not used in scoring or report conclusions.`,
   ];
 
   for (const page of excludedPages) {
@@ -555,16 +591,22 @@ function buildExcludedPageNotes(data: ReportData): string[] {
 }
 
 export function buildFullReportData(data: ReportData): FullReportData {
-  const topPriorities = data.topPriorities.map(buildNarrativeFinding);
+  const captureFidelity = data.captureFidelity?.primaryFidelity ?? "rendered_browser";
+  const topPriorities = data.topPriorities.map((finding) =>
+    buildNarrativeFinding(finding, captureFidelity)
+  );
   const topPriorityGroups = groupFindingsByClaimPosture(topPriorities);
   const categorySections = data.categoryReviews.map((review) => {
-    const findings = review.findings.map(buildNarrativeFinding);
+    const findings = review.findings.map((finding) =>
+      buildNarrativeFinding(finding, captureFidelity)
+    );
 
     return {
       category: review.category,
       label: CATEGORY_LABELS[review.category],
       score: review.score,
       inspectionStatus: review.inspectionStatus,
+      reviewState: review.reviewState,
       inspectionLabel: getInspectionLabel(review),
       inspectionNote: getInspectionNote(review),
       interpretation: buildCategoryInterpretation(review, findings),

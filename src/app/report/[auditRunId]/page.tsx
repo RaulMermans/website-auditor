@@ -712,6 +712,7 @@ export default async function ReportPage({
     {
       inspected_clean: 0,
       inspected_with_findings: 0,
+      limited_coverage: 0,
       lightly_inspected: 0,
       insufficient_evidence: 0,
     }
@@ -1046,14 +1047,7 @@ export default async function ReportPage({
                 }}
               >
                 {fullReport.categorySections.map((section) => {
-                  const reviewMeta =
-                    section.inspectionStatus === "not_inspected"
-                      ? REVIEW_STATE_META.insufficient_evidence
-                      : section.inspectionStatus === "lightly_inspected"
-                        ? REVIEW_STATE_META.lightly_inspected
-                        : section.findings.length > 0
-                          ? REVIEW_STATE_META.inspected_with_findings
-                          : REVIEW_STATE_META.inspected_clean;
+                  const reviewMeta = REVIEW_STATE_META[section.reviewState];
 
                   return (
                     <a
@@ -1167,14 +1161,7 @@ export default async function ReportPage({
 
           <div style={{ display: "grid", gap: 16 }}>
             {fullReport.categorySections.map((section) => {
-              const reviewMeta =
-                section.inspectionStatus === "not_inspected"
-                  ? REVIEW_STATE_META.insufficient_evidence
-                  : section.inspectionStatus === "lightly_inspected"
-                    ? REVIEW_STATE_META.lightly_inspected
-                    : section.findings.length > 0
-                      ? REVIEW_STATE_META.inspected_with_findings
-                      : REVIEW_STATE_META.inspected_clean;
+              const reviewMeta = REVIEW_STATE_META[section.reviewState];
 
               return (
                 <section

@@ -1,0 +1,136 @@
+name: website-auditor
+type: hybrid_ai_workflow
+owner: Raul Mermans
+status: internal_mvp
+
+architecture:
+  pattern: deterministic_workflow_with_llm_synthesis
+  truth_source: deterministic_audit_engine
+  llm_role: strategic_synthesis_only
+  public_mode: false
+
+workflow:
+  - id: intake
+    name: Audit intake
+    type: deterministic
+    purpose: Create an audit run from a submitted public domain.
+    files:
+      - src/app/intake/page.tsx
+      - src/app/intake/actions.ts
+
+  - id: capture
+    name: Browser-first capture with static fallback
+    type: deterministic_tool_workflow
+    purpose: Capture the best available public evidence without bypassing target protections.
+    tools:
+      - browser_capture
+      - static_fetch
+      - vercel_blob_storage
+    guardrails:
+      - ssrf_protection
+      - same_origin_final_url_validation
+      - no_anti_bot_bypass
+      - capture_fidelity_downgrade
+    files:
+      - src/server/audits/capture-audit-run.ts
+      - src/lib/ssrf.ts
+
+  - id: evidence_extraction
+    name: Evidence extraction
+    type: deterministic
+    purpose: Extract structured evidence from accepted page snapshots.
+    files:
+      - src/server/audits/extract-page-evidence.ts
+
+  - id: evaluators
+    name: Specialist evaluators
+    type: deterministic
+    purpose: Generate candidate findings from structured evidence.
+    files:
+      - src/server/audits/evaluators
+
+  - id: review_gate
+    name: Evidence and page-type review gate
+    type: deterministic_validation
+    purpose: Accept, reject, or escalate findings based on evidence quality and page context.
+    files:
+      - src/server/audits/review-page-findings.ts
+
+  - id: scoring
+    name: Capture-fidelity-aware scoring
+    type: deterministic
+    purpose: Score only categories with enough accepted evidence.
+    files:
+      - src/lib/report-presentation.ts
+      - src/server/audits/build-full-report.ts
+
+  - id: report_generation
+    name: Report generation
+    type: deterministic
+    purpose: Produce evidence-bounded reports with capture fidelity, limitations, and excluded pages.
+    files:
+      - src/app/report/[auditRunId]/page.tsx
+      - src/server/audits/build-full-report.ts
+      - src/db/report.ts
+
+  - id: prospect_audit_agent
+    name: Prospect Audit Agent
+    type: bounded_llm_synthesis_agent
+    purpose: Turn accepted audit evidence into internal client-acquisition intelligence.
+    model_provider: google_gemini
+    model_env_var: GEMINI_MODEL
+    prompt_file: src/server/agents/prospect-audit-agent.prompt.ts
+    schema_file: src/server/agents/prospect-audit-agent.schema.ts
+    runner_file: src/server/agents/prospect-audit-agent.ts
+    input_policy:
+      - accepted_findings_only
+      - accepted_evidence_only
+      - capture_fidelity_required
+      - excluded_pages_included_as_limitations
+      - rejected_findings_excluded
+    output:
+      - reach_out_recommendation
+      - prospect_fit_score
+      - commercial_opportunity_score
+      - recommended_service
+      - outreach_angle
+      - missing_evidence
+    guardrails:
+      - strict_zod_schema
+      - no_visual_claims_without_browser_evidence
+      - no_metrics_or_revenue_invention
+      - confidence_reduced_for_static_fallback
+
+permissions:
+  read_only:
+    - public_website_fetch
+    - report_context_read
+  write_draft:
+    - report_json
+    - prospect_intelligence_json
+  external_side_effect:
+    - none
+  destructive:
+    - none
+
+security:
+  secrets:
+    - DATABASE_URL
+    - WORKER_SECRET
+    - AUDIT_API_KEY
+    - GEMINI_API_KEY
+    - BLOB_READ_WRITE_TOKEN
+  controls:
+    - production_env_required
+    - private_blob_storage
+    - worker_secret_required
+    - audit_api_key_required
+    - no_secret_logging
+    - no_anti_bot_bypass
+
+evals:
+  required_checks:
+    - npm test
+    - tsc --noEmit
+    - npm run lint
+    - npm run build

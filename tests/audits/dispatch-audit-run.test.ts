@@ -64,4 +64,35 @@ describe("dispatchAuditRun", () => {
     expect(queue.complete).not.toHaveBeenCalled();
     expect(result.errorMessage).toBe("capture failed");
   });
+
+  it("completes the queued job for handled terminal capture denial", async () => {
+    const queue = {
+      complete: vi.fn().mockResolvedValue(undefined),
+      fail: vi.fn().mockResolvedValue(undefined),
+    };
+    const process = vi.fn().mockResolvedValue({
+      auditRunId: "run-denied",
+      pagesProcessed: 0,
+      homepageOnly: true,
+      errorMessage: "The target denied this audit request.",
+      failureKind: "access_denied",
+    });
+
+    const result = await dispatchAuditRun(
+      {
+        jobId: "job-denied",
+        auditRunId: "run-denied",
+        domain: "example.com",
+      },
+      { queue, process }
+    );
+
+    expect(queue.complete).toHaveBeenCalledWith("audit.run", "job-denied", {
+      auditRunId: "run-denied",
+      status: "terminal_failed",
+      failureKind: "access_denied",
+    });
+    expect(queue.fail).not.toHaveBeenCalled();
+    expect(result.errorMessage).toBe("The target denied this audit request.");
+  });
 });

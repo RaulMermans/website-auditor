@@ -1095,14 +1095,7 @@ export default async function FullReportPage({
           </h2>
           <div style={{ display: "grid", gap: 18 }}>
             {fullReport.categorySections.map((section) => {
-              const reviewMeta =
-                section.inspectionStatus === "not_inspected"
-                  ? REVIEW_STATE_META.insufficient_evidence
-                  : section.inspectionStatus === "lightly_inspected"
-                    ? REVIEW_STATE_META.lightly_inspected
-                    : section.findings.length > 0
-                      ? REVIEW_STATE_META.inspected_with_findings
-                      : REVIEW_STATE_META.inspected_clean;
+              const reviewMeta = REVIEW_STATE_META[section.reviewState];
 
               return (
                 <section

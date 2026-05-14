@@ -242,6 +242,9 @@ export async function processAuditRun(
     return {
       ...result,
       errorMessage: failure.failureReason,
+      failureKind: failure.failureKind,
+      failureStage: failure.failureStage,
+      failureDetails: failure.failureDetails,
     };
   }
 }

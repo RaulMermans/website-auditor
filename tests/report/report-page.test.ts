@@ -240,7 +240,9 @@ describe("ReportPage", () => {
     const html = renderToStaticMarkup(element);
 
     expect(html).toContain("Audit Run Status");
-    expect(html).toContain("Access denied by target");
+    expect(html).toContain("Automated capture was blocked");
+    expect(html).toContain("This does not mean the website is broken for normal visitors");
+    expect(html).toContain("Start another audit");
     expect(html).not.toContain("Capture limitation");
     expect(html).not.toContain("completed using accessible public secondary pages");
     expect(html).not.toContain("Main Conclusion");

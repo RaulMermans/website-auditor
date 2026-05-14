@@ -90,7 +90,7 @@ describe("capture-bound finding titles", () => {
     it("uses bounded title for missing page title", () => {
       const { findings } = extractPageArtifacts(MINIMAL_AUDIT_RUN, makeSnap("secondary_static"), MINIMAL_HTML);
       const f = findFinding(findings, "missing_title");
-      expect(f?.title).toBe("Title tag not detected in captured static HTML");
+      expect(f?.title).toBe("Title tag not detected in captured secondary static HTML");
     });
   });
 

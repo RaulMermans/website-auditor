@@ -69,6 +69,9 @@ Key configs:
 - `.env.example` — documented environment variable contract with no secrets
 - `.gitignore` — exclude local env files and generated artifacts
 - `README.md` — local setup, architecture summary, and operator workflow
+- `workflow.yaml` — canonical machine-readable deterministic workflow + bounded LLM synthesis manifest
+- `agents.yaml` — canonical machine-readable Prospect Audit Agent manifest
+- `docs/agentic/` — prompt inventory and agentic architecture/truth-boundary docs
 - `vercel.json` — deployment and routing config when needed
 - `playwright.config.*` — shared browser automation defaults when applicable
 
@@ -147,6 +150,11 @@ Preferred commit shapes:
 - Queue abstraction is available and Vercel-compatible.
 - Gemini is the active enrichment provider for report enrichment and Prospect Audit Agent synthesis.
 - Worker processing is available at `/api/worker/process` from request-triggered intake processing and optional GitHub Actions draining; Vercel Cron is not configured for Hobby compatibility. `WORKER_SECRET` is mandatory in production. `/api/worker/trigger` is retained only as a protected compatibility route.
+- `workflow.yaml` and `agents.yaml` are the canonical architecture manifests. Keep them in sync with workflow, agent, prompt, and guardrail changes.
+- Prompt governance lives in `docs/agentic/`. The deterministic audit engine remains the source of truth; the Prospect Audit Agent is bounded synthesis over accepted evidence only.
+- Rejected findings are excluded from reports, scores, context packs, and Prospect Audit Agent inputs.
+- Static fallback findings use bounded report-time claim language. Homepage-failed secondary-static audits lower confidence and must not display uninspected categories as healthy.
+- Blocked-target failures are expected handled terminal states. Do not suggest anti-bot bypass; classify, explain, and stop when reliable public evidence is insufficient.
 - Operational smoke validation is still pending, and the production intake flow is currently failing at runtime.
 - Sensitivity is set to none, but captured artifacts are still handled conservatively.
 - Default test target is 80% line coverage.

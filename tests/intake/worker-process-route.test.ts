@@ -100,6 +100,41 @@ describe("POST /api/worker/process", () => {
     expect(body.status).toBe("failed");
   });
 
+  it("returns handled terminal response when dispatch reports expected capture denial", async () => {
+    queueClientMock.fetch.mockResolvedValue({
+      id: "job-denied",
+      name: "audit.run",
+      payload: { auditRunId: "run-denied", domain: "blocked.example" },
+    });
+    dispatchAuditRunMock.mockResolvedValue({
+      auditRunId: "run-denied",
+      pagesProcessed: 0,
+      homepageOnly: true,
+      errorMessage: "The target denied this audit request.",
+      failureKind: "access_denied",
+      failureDetails: {
+        source: "target",
+        marker: "http_403",
+        retryable: false,
+      },
+    });
+
+    const res = await POST(makeRequest());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toEqual({
+      processed: 1,
+      results: [
+        {
+          auditRunId: "run-denied",
+          status: "terminal_failed",
+          failureKind: "access_denied",
+        },
+      ],
+    });
+  });
+
   it("returns 500 and does not crash when dispatch throws unexpectedly", async () => {
     queueClientMock.fetch.mockResolvedValue({
       id: "job-3",

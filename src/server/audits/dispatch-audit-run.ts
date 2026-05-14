@@ -1,6 +1,7 @@
 import type { QueueClient } from "@/server/contracts/queue";
 import { queueClient } from "@/server/contracts/queue";
 import { processAuditRun } from "@/server/audits/process-audit-run";
+import { isExpectedTerminalCaptureFailure } from "@/lib/report-presentation";
 
 export interface DispatchAuditRunInput {
   jobId: string;
@@ -31,6 +32,15 @@ export async function dispatchAuditRun(
     });
 
     if (result.errorMessage) {
+      if (isExpectedTerminalCaptureFailure(result)) {
+        await deps.queue.complete("audit.run", input.jobId, {
+          auditRunId: result.auditRunId,
+          status: "terminal_failed",
+          failureKind: result.failureKind,
+        });
+        return result;
+      }
+
       await deps.queue.fail("audit.run", input.jobId, {
         auditRunId: result.auditRunId,
         errorMessage: result.errorMessage,

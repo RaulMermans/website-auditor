@@ -17,6 +17,10 @@ import type {
   FindingSupportType,
 } from "@/lib/types";
 import {
+  getCaptureBoundFindingDisplay,
+  isExpectedTerminalCaptureFailure,
+} from "@/lib/report-presentation";
+import {
   ALL_FINDING_CATEGORIES,
   scoreAuditByCategory,
   type CategoryScores,
@@ -96,6 +100,12 @@ export interface ExcludedPageRecord {
   escalationReason: string | null;
 }
 
+export interface AcceptedPageRecord {
+  url: string;
+  pageType: string;
+  pageState: "accepted";
+}
+
 export interface ReportData {
   auditRunId: string;
   domain: string;
@@ -105,6 +115,7 @@ export interface ReportData {
   scores: CategoryScores;
   categoryReviews: ReportCategoryReview[];
   captureFidelity?: ReportCaptureFidelity;
+  acceptedPages?: AcceptedPageRecord[];
   /** Pages excluded from scoring (needs_review or failed). Empty array when all pages passed. */
   excludedPages?: ExcludedPageRecord[];
 }
@@ -124,6 +135,7 @@ export interface ReportCategoryReview {
   reviewState:
     | "inspected_clean"
     | "inspected_with_findings"
+    | "limited_coverage"
     | "lightly_inspected"
     | "insufficient_evidence";
   headline: string;
@@ -228,14 +240,109 @@ function filterFindingsForCaptureFidelity(findings: Finding[], fidelity: ReportC
   return findings.filter((finding) => !BROWSER_REQUIRED_REPORT_CATEGORIES.has(finding.category));
 }
 
+function calibrateFindingDisplayForReport(findings: Finding[], fidelity: ReportCaptureFidelity) {
+  return findings.map((finding) => {
+    const display = getCaptureBoundFindingDisplay({
+      title: finding.title,
+      whatWeFound: finding.description,
+      captureFidelity: fidelity.primaryFidelity,
+    });
+
+    if (display.title === finding.title && display.whatWeFound === finding.description) {
+      return finding;
+    }
+
+    return {
+      ...finding,
+      title: display.title,
+      description: display.whatWeFound,
+    };
+  });
+}
+
+function isHomepageFailedSecondaryStaticCoverage(options?: BuildCategoryReviewOptions) {
+  const fidelity = options?.captureFidelity;
+  if (
+    fidelity?.primaryFidelity !== "secondary_static" ||
+    fidelity.browserPageCount !== 0 ||
+    fidelity.screenshotPageCount !== 0
+  ) {
+    return false;
+  }
+
+  const acceptedPages = options?.acceptedPages ?? [];
+  const excludedPages = options?.excludedPages ?? [];
+
+  if (acceptedPages.length > 0) {
+    return !acceptedPages.some((page) => page.pageType === "homepage");
+  }
+
+  return (
+    excludedPages.some((page) => page.pageType === "homepage") ||
+    isExpectedTerminalCaptureFailure({ failureReason: options?.limitationNote })
+  );
+}
+
+const SECONDARY_STATIC_LIMITED_CATEGORIES = new Set<FindingCategory>([
+  "messaging_content",
+  "conversion",
+  "trust_signals",
+]);
+const SECONDARY_STATIC_INSUFFICIENT_CATEGORIES = new Set<FindingCategory>([
+  "ux_ui",
+  "mobile_experience",
+]);
+
+interface BuildCategoryReviewOptions {
+  captureFidelity?: ReportCaptureFidelity;
+  acceptedPages?: AcceptedPageRecord[];
+  excludedPages?: ExcludedPageRecord[];
+  limitationNote?: string | null;
+}
+
 function buildCategoryReview(
   category: FindingCategory,
   findings: Finding[],
-  scores: CategoryScores
+  scores: CategoryScores,
+  options?: BuildCategoryReviewOptions
 ): ReportCategoryReview {
   const inspection = scores.inspectionSummaryByCategory[category];
   const observedChecks = inspection.observedKeys.length;
   const expectedChecks = inspection.expectedKeys.length;
+
+  if (isHomepageFailedSecondaryStaticCoverage(options) && findings.length === 0) {
+    if (SECONDARY_STATIC_INSUFFICIENT_CATEGORIES.has(category)) {
+      return {
+        category,
+        score: null,
+        findingCount: 0,
+        findings,
+        inspectionStatus: "not_inspected",
+        observedChecks: 0,
+        expectedChecks,
+        reviewState: "insufficient_evidence",
+        headline: "Insufficient evidence",
+        summary:
+          "Homepage capture failed and no browser or screenshot evidence was available, so this category is unknown rather than healthy.",
+      };
+    }
+
+    if (SECONDARY_STATIC_LIMITED_CATEGORIES.has(category)) {
+      return {
+        category,
+        score: null,
+        findingCount: 0,
+        findings,
+        inspectionStatus: "lightly_inspected",
+        observedChecks,
+        expectedChecks,
+        reviewState: "limited_coverage",
+        headline: "Limited secondary-static coverage",
+        summary:
+          "No material issue surfaced in inspected secondary-static signals, but homepage capture failed and no browser or screenshot evidence was available. Do not treat this as a healthy score.",
+      };
+    }
+  }
 
   if (inspection.status === "not_inspected") {
     return {
@@ -305,11 +412,12 @@ function buildCategoryReview(
 
 export function buildCategoryReviews(
   findings: Finding[],
-  scores: CategoryScores
+  scores: CategoryScores,
+  options?: BuildCategoryReviewOptions
 ): ReportCategoryReview[] {
   return ALL_FINDING_CATEGORIES.map((category) => {
     const categoryFindings = findings.filter((finding) => finding.category === category);
-    return buildCategoryReview(category, categoryFindings, scores);
+    return buildCategoryReview(category, categoryFindings, scores, options);
   });
 }
 
@@ -453,8 +561,30 @@ export const reportRepository: ReportRepository = {
         [auditRunId]
       );
       const captureFidelity = mapCaptureFidelity(captureFidelityResult.rows[0]);
-      const findings = filterFindingsForCaptureFidelity(
-        deduplicateFindings(findingsResult.rows.map(mapFinding)),
+      const acceptedPagesResult = await client.query<{
+        url: string;
+        page_type: string;
+      }>(
+        `
+          SELECT url, page_type
+          FROM page_snapshots
+          WHERE audit_run_id = $1
+            AND page_state = 'accepted'
+          ORDER BY page_type, url
+        `,
+        [auditRunId]
+      );
+      const acceptedPages: AcceptedPageRecord[] = acceptedPagesResult.rows.map((row) => ({
+        url: row.url,
+        pageType: row.page_type,
+        pageState: "accepted",
+      }));
+
+      const findings = calibrateFindingDisplayForReport(
+        filterFindingsForCaptureFidelity(
+          deduplicateFindings(findingsResult.rows.map(mapFinding)),
+          captureFidelity
+        ),
         captureFidelity
       );
       const inspectionKeysByCategory = evidenceResult.rows.reduce<
@@ -472,7 +602,11 @@ export const reportRepository: ReportRepository = {
         inspectionKeysByCategory,
         captureFidelity: captureFidelity.primaryFidelity,
       });
-      const categoryReviews = buildCategoryReviews(prioritizedFindings, scores);
+      const categoryReviewInputs = {
+        captureFidelity,
+        acceptedPages,
+        limitationNote: runRow.limitation_note,
+      };
 
       // Fetch needs_review / failed page snapshots for Evidence Notes disclosure.
       const excludedPagesResult = await client.query<{
@@ -496,6 +630,10 @@ export const reportRepository: ReportRepository = {
         pageState: row.page_state,
         escalationReason: row.escalation_reason,
       }));
+      const categoryReviews = buildCategoryReviews(prioritizedFindings, scores, {
+        ...categoryReviewInputs,
+        excludedPages,
+      });
 
       return {
         auditRunId,
@@ -506,6 +644,7 @@ export const reportRepository: ReportRepository = {
         scores,
         categoryReviews,
         captureFidelity,
+        acceptedPages,
         excludedPages,
       };
     });

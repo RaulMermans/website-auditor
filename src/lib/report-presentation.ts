@@ -1,4 +1,11 @@
-import type { AuditStatus, CaptureFidelity, Finding, FindingCategory } from "@/lib/types";
+import type {
+  AuditFailureDetails,
+  AuditFailureKind,
+  AuditStatus,
+  CaptureFidelity,
+  Finding,
+  FindingCategory,
+} from "@/lib/types";
 
 export const OVERALL_SCORE_LABEL = "Brand Conversion Readiness Score";
 export const REPORT_READY_STATUSES: AuditStatus[] = ["complete", "partial_complete"];
@@ -49,6 +56,14 @@ export const REVIEW_STATE_META = {
     label: "Lightly inspected",
     description:
       "Some deterministic checks ran, but coverage is still partial and the absence of more issues is not a clean result.",
+    background: "#fffbeb",
+    border: "#fcd34d",
+    text: "#92400e",
+  },
+  limited_coverage: {
+    label: "Limited coverage",
+    description:
+      "No material issue surfaced in the inspected secondary-static signals, but coverage is too limited to call this healthy.",
     background: "#fffbeb",
     border: "#fcd34d",
     text: "#92400e",
@@ -162,6 +177,73 @@ export function getReportBadge(
 }
 
 const HOMEPAGE_ONLY_PREFIX = /^Homepage-only audit:\s*/i;
+const STATIC_CAPTURE_FIDELITIES = new Set<CaptureFidelity>(["static_public", "secondary_static"]);
+const STATIC_CAPTURE_METHODS = new Set(["static", "fallback_static", "secondary_static"]);
+
+const CAPTURE_BOUND_FINDING_COPY: Record<
+  string,
+  {
+    staticTitle: string;
+    secondaryTitle: string;
+    staticWhat: string;
+    secondaryWhat: string;
+  }
+> = {
+  missing_title: {
+    staticTitle: "Title tag not detected in captured static HTML",
+    secondaryTitle: "Title tag not detected in captured secondary static HTML",
+    staticWhat:
+      "The captured static HTML did not expose a non-empty <title> tag. The live rendered page may still differ, so this is bounded to the stored static snapshot.",
+    secondaryWhat:
+      "The captured secondary static HTML did not expose a non-empty <title> tag. The live rendered page and excluded homepage may still differ, so this is bounded to the inspected secondary static snapshot.",
+  },
+  missing_h1: {
+    staticTitle: "H1 heading not detected in captured static HTML",
+    secondaryTitle: "H1 heading not detected in captured secondary static HTML",
+    staticWhat:
+      "The captured static HTML did not expose an H1 heading. The live rendered page may still differ, so this is bounded to the stored static snapshot.",
+    secondaryWhat:
+      "The captured secondary static HTML did not expose an H1 heading. The live rendered page and excluded homepage may still differ, so this is bounded to the inspected secondary static snapshot.",
+  },
+  missing_canonical: {
+    staticTitle: "Canonical tag not exposed in captured static HTML",
+    secondaryTitle: "Canonical tag not exposed in captured secondary static HTML",
+    staticWhat:
+      "The captured static HTML did not expose a canonical link tag. The live rendered page may still differ, so this is bounded to the stored static snapshot.",
+    secondaryWhat:
+      "The captured secondary static HTML did not expose a canonical link tag. The live rendered page and excluded homepage may still differ, so this is bounded to the inspected secondary static snapshot.",
+  },
+  missing_meta_description: {
+    staticTitle: "Meta description not detected in captured static HTML",
+    secondaryTitle: "Meta description not detected in captured secondary static HTML",
+    staticWhat:
+      "The captured static HTML did not expose a meta description. The live rendered page may still differ, so this is bounded to the stored static snapshot.",
+    secondaryWhat:
+      "The captured secondary static HTML did not expose a meta description. The live rendered page and excluded homepage may still differ, so this is bounded to the inspected secondary static snapshot.",
+  },
+};
+
+const CAPTURE_BOUND_TITLE_TO_ISSUE: Record<string, keyof typeof CAPTURE_BOUND_FINDING_COPY> = {
+  "missing page title": "missing_title",
+  "title tag not detected in captured static html": "missing_title",
+  "title tag not detected in captured secondary static html": "missing_title",
+  "no h1 heading detected": "missing_h1",
+  "h1 heading not detected in captured static html": "missing_h1",
+  "h1 heading not detected in captured secondary static html": "missing_h1",
+  "missing canonical tag": "missing_canonical",
+  "canonical tag not exposed in captured static html": "missing_canonical",
+  "canonical tag not exposed in captured secondary static html": "missing_canonical",
+  "missing meta description": "missing_meta_description",
+  "meta description not detected in captured static html": "missing_meta_description",
+  "meta description not detected in captured secondary static html": "missing_meta_description",
+};
+
+const EXPECTED_TERMINAL_FAILURE_KINDS = new Set<AuditFailureKind>([
+  "access_denied",
+  "blocked",
+  "capture_blocked",
+  "auth_wall",
+]);
 
 export function scoreColor(score: number) {
   if (score >= 80) return "#16a34a";
@@ -173,8 +255,78 @@ export function stripHomepageScopePrefix(text: string) {
   return text.replace(HOMEPAGE_ONLY_PREFIX, "").trim();
 }
 
+function normalizeFindingTitle(title: string) {
+  return stripHomepageScopePrefix(title)
+    .toLowerCase()
+    .replace(/[<>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getIssueKey(title: string): keyof typeof CAPTURE_BOUND_FINDING_COPY | null {
+  return CAPTURE_BOUND_TITLE_TO_ISSUE[normalizeFindingTitle(title)] ?? null;
+}
+
+export function getCaptureBoundFindingDisplay(input: {
+  title: string;
+  whatWeFound: string;
+  captureFidelity: CaptureFidelity;
+  captureMethod?: string | null;
+}): { title: string; whatWeFound: string } {
+  const method = input.captureMethod ?? undefined;
+  const shouldBound =
+    STATIC_CAPTURE_FIDELITIES.has(input.captureFidelity) ||
+    (method ? STATIC_CAPTURE_METHODS.has(method) : false);
+
+  if (!shouldBound) {
+    return {
+      title: stripHomepageScopePrefix(input.title),
+      whatWeFound: stripHomepageScopePrefix(input.whatWeFound),
+    };
+  }
+
+  const issueKey = getIssueKey(input.title);
+  if (!issueKey) {
+    return {
+      title: stripHomepageScopePrefix(input.title),
+      whatWeFound: stripHomepageScopePrefix(input.whatWeFound),
+    };
+  }
+
+  const copy = CAPTURE_BOUND_FINDING_COPY[issueKey];
+  const useSecondary =
+    input.captureFidelity === "secondary_static" || input.captureMethod === "secondary_static";
+
+  return {
+    title: useSecondary ? copy.secondaryTitle : copy.staticTitle,
+    whatWeFound: useSecondary ? copy.secondaryWhat : copy.staticWhat,
+  };
+}
+
 export function shouldDisplayLimitationNote(status: AuditStatus, limitationNote?: string | null) {
   return Boolean(limitationNote) && status !== "failed";
+}
+
+export function isExpectedTerminalCaptureFailure(input: {
+  failureKind?: AuditFailureKind | string | null;
+  failureDetails?: AuditFailureDetails | null;
+  failureReason?: string | null;
+  errorMessage?: string | null;
+}) {
+  const kind = input.failureKind;
+  const marker = input.failureDetails?.marker;
+  const reason = `${input.failureReason ?? ""} ${input.errorMessage ?? ""}`.toLowerCase();
+
+  return (
+    (typeof kind === "string" && EXPECTED_TERMINAL_FAILURE_KINDS.has(kind as AuditFailureKind)) ||
+    marker === "bot_challenge" ||
+    reason.includes("no trustworthy public html evidence") ||
+    reason.includes("no usable public evidence") ||
+    reason.includes("protection page") ||
+    reason.includes("bot-challenge") ||
+    reason.includes("security challenge") ||
+    reason.includes("target denied")
+  );
 }
 
 export function getFindingSupportLabel(

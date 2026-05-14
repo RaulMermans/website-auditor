@@ -147,6 +147,59 @@ describe("report category review semantics", () => {
       "insufficient_evidence"
     );
   });
+
+  it("suppresses confident healthy scores for homepage-failed secondary-static coverage", () => {
+    const scores = scoreAuditByCategory([], {
+      inspectionKeysByCategory: {
+        messaging_content: CATEGORY_EXPECTED_KEYS.messaging_content,
+        conversion: CATEGORY_EXPECTED_KEYS.conversion,
+        trust_signals: CATEGORY_EXPECTED_KEYS.trust_signals,
+        ux_ui: CATEGORY_EXPECTED_KEYS.ux_ui,
+        mobile_experience: CATEGORY_EXPECTED_KEYS.mobile_experience,
+      },
+      captureFidelity: "secondary_static",
+    });
+
+    const reviews = buildCategoryReviews([], scores, {
+      captureFidelity: {
+        acceptedPageCount: 3,
+        browserPageCount: 0,
+        staticPageCount: 0,
+        fallbackStaticPageCount: 0,
+        secondaryStaticPageCount: 3,
+        screenshotPageCount: 0,
+        hasBrowserEvidence: false,
+        primaryFidelity: "secondary_static",
+      },
+      acceptedPages: [
+        { url: "https://example.com/contact", pageType: "contact", pageState: "accepted" },
+        { url: "https://example.com/blog", pageType: "content", pageState: "accepted" },
+      ],
+      excludedPages: [
+        {
+          url: "https://example.com/",
+          pageType: "homepage",
+          pageState: "failed",
+          escalationReason: "homepage capture was blocked",
+        },
+      ],
+    });
+
+    for (const category of ["messaging_content", "conversion", "trust_signals"] as const) {
+      const review = reviews.find((item) => item.category === category);
+      expect(review?.score).toBeNull();
+      expect(review?.reviewState).toBe("limited_coverage");
+      expect(review?.headline).toBe("Limited secondary-static coverage");
+      expect(review?.summary).toContain("inspected secondary-static signals");
+    }
+
+    for (const category of ["ux_ui", "mobile_experience"] as const) {
+      const review = reviews.find((item) => item.category === category);
+      expect(review?.score).toBeNull();
+      expect(review?.reviewState).toBe("insufficient_evidence");
+      expect(review?.summary).toContain("no browser or screenshot evidence");
+    }
+  });
 });
 
 describe("homepage-only scope in report data", () => {

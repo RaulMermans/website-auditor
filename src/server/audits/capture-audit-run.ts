@@ -8,7 +8,15 @@ import {
 import { assertPublicUrl, assertSameOriginOrApproved, SSRFError } from "@/lib/ssrf";
 import type { StorageClient } from "@/server/contracts/storage";
 import { storageClient } from "@/server/contracts/storage";
-import type { CaptureMethodProvenance, PageSnapshot, PageState, PageType } from "@/lib/types";
+import type {
+  AuditFailureDetails,
+  AuditFailureKind,
+  AuditFailureStage,
+  CaptureMethodProvenance,
+  PageSnapshot,
+  PageState,
+  PageType,
+} from "@/lib/types";
 import { buildCapturePlan, getPagePriority } from "@/server/audits/page-archetypes";
 import {
   assessPublicHtmlEvidence,
@@ -58,6 +66,9 @@ export interface AuditCaptureResult {
   homepageOnly: boolean;
   limitationNote?: string | null;
   errorMessage?: string;
+  failureKind?: AuditFailureKind;
+  failureStage?: AuditFailureStage;
+  failureDetails?: AuditFailureDetails;
 }
 
 export interface CaptureAuditRunDeps {
@@ -1090,6 +1101,9 @@ export async function captureAuditRun(
       ...summary,
       limitationNote: null,
       errorMessage: failure.failureReason,
+      failureKind: failure.failureKind,
+      failureStage: failure.failureStage,
+      failureDetails: failure.failureDetails,
     };
   } finally {
     await session?.close().catch(() => undefined);

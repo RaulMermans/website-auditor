@@ -1,3 +1,8 @@
+/**
+ * @agent-prompt prospect_audit_agent
+ * Purpose: Bounded LLM synthesis over accepted deterministic audit evidence.
+ * Owner: Raul Mermans
+ */
 import type { ProspectAuditAgentInput } from "@/server/agents/prospect-audit-agent.schema";
 import { captureFidelityAllowsVisualClaims } from "@/server/agents/prospect-audit-agent.schema";
 

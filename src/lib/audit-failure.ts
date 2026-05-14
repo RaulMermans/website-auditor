@@ -4,6 +4,7 @@ import type {
   AuditFailureStage,
   AuditStatus,
 } from "@/lib/types";
+import { isExpectedTerminalCaptureFailure } from "@/lib/report-presentation";
 
 const BOT_CHALLENGE_PATTERNS = [
   /captcha/i,
@@ -368,11 +369,11 @@ function buildRetryGuidance(kind: AuditFailureKind, source: FailureSource, retry
   }
 
   if (kind === "capture_blocked") {
-    return "Retry only after the target allows automated capture or the security challenge is bypassed for the audited pages.";
+    return null;
   }
 
   if (kind === "access_denied") {
-    return "Retry only if the requested pages are intended to be publicly accessible or the audit runtime has been allowlisted.";
+    return null;
   }
 
   if (kind === "auth_wall") {
@@ -437,6 +438,22 @@ export function getAuditFailurePresentation(input: {
   };
   const failureReason = input.failureReason ?? fallback.failureReason;
   const source = failureDetails.source ?? "unknown";
+
+  if (
+    isExpectedTerminalCaptureFailure({
+      failureKind,
+      failureDetails,
+      failureReason,
+    })
+  ) {
+    return {
+      label: "Automated capture was blocked",
+      explanation:
+        "This website denied the audit request or returned a protection page. The system stopped because there was not enough reliable public evidence to produce a report. This does not mean the website is broken for normal visitors.",
+      retryGuidance: null,
+      stageLabel: getFailureStageLabel(failureStage),
+    };
+  }
 
   return {
     label: buildFailureLabel(failureKind, source),
