@@ -287,7 +287,7 @@ describe("buildFullReportData", () => {
     expect(notes[0]).toContain("Accepted findings come from: contact, content, and legal");
     expect(notes[0]).not.toContain("Accepted findings come from homepage");
     expect(notes[0]).toContain("Excluded pages: homepage and pricing");
-    expect(notes[0]).toContain("Rejected page findings were not used");
+    expect(notes[0]).toContain("Rejected or failed page findings were not used");
     // Subsequent notes list each excluded page
     expect(notes[1]).toContain("homepage");
     expect(notes[1]).toContain("https://example.com/");
