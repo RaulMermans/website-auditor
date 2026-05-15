@@ -95,7 +95,49 @@ public/         Static assets
 - [ ] Production private artifact storage validation
 - [x] LLM enrichment layer
 - [x] Persisted Prospect Intelligence
-- [ ] Auth / access control
+- [x] Auth / access control
+
+## Access control
+
+The repository is public, but the deployed Vercel app is not. All product routes are protected by an app-level access gate — no live demo is exposed.
+
+### How it works
+
+- Next.js middleware (`src/middleware.ts`) guards every request to protected routes.
+- Valid access is a 30-day HMAC-SHA256-signed cookie (`ia_session`), issued after the correct password is entered at `/internal-login`.
+- Signing uses the Web Crypto API — no external auth library required.
+- `/api/worker/process` is **exempt** from the cookie gate; its own `WORKER_SECRET` header check is the auth layer (used by GitHub Actions).
+- The homepage `/` is public and shows a "private internal tool" landing page with a sign-in link.
+- `/internal-logout` clears the cookie and redirects to `/`.
+
+### Protected routes
+
+| Route | Guard |
+|---|---|
+| `/intake` | Session cookie |
+| `/audits` | Session cookie |
+| `/report/:path*` | Session cookie |
+| `/api/audits/:path*` | Session cookie |
+| `/api/reports/:path*` | Session cookie |
+| `/api/worker/:path*` | Session cookie |
+| `/api/worker/process` | `WORKER_SECRET` header only (exempt from cookie) |
+
+### Public routes
+
+`/`, `/internal-login`, `/internal-logout`, `/_next/*`, `/favicon.ico`, `/robots.txt`, `/sitemap.xml`
+
+### Required env vars (production)
+
+| Variable | Description |
+|---|---|
+| `INTERNAL_ACCESS_PASSWORD` | Password shown on `/internal-login`. Min 8 chars. |
+| `INTERNAL_ACCESS_COOKIE_SECRET` | HMAC signing secret for the session cookie. Min 32 chars. Generate with `openssl rand -base64 32`. |
+
+Both are optional in local dev — the gate opens automatically when the secret is not configured (so `npm run dev` works without setup).
+
+### Repo vs. deployed app
+
+The GitHub repository is public (code, architecture, manifests). The deployed Vercel app is private — no audit runs, reports, intake, or enrichment are accessible without the internal access password. Code being public does not expose the tool.
 
 ## Shot 3 status
 

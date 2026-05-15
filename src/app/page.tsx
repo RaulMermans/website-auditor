@@ -19,14 +19,23 @@ export default function HomePage() {
         SiteSignal Internal
       </h1>
       <p style={{ color: "#6b7280", marginBottom: 24, fontSize: "1.05rem" }}>
-        AI Brand &amp; Conversion Auditor — evidence-backed audits for brand clarity, trust, UX flow, and conversion readiness.
+        Private internal tool — not a public product. No live demo is exposed.
       </p>
-      <div style={{ display: "flex", gap: 24, marginBottom: 24 }}>
-        <Link href="/intake" style={{ color: "#111827", fontWeight: 600 }}>
-          Run an audit
-        </Link>
-        <Link href="/audits" style={{ color: "#111827", fontWeight: 600 }}>
-          View audit runs
+      <div style={{ marginBottom: 24 }}>
+        <Link
+          href="/internal-login"
+          style={{
+            display: "inline-block",
+            padding: "10px 20px",
+            background: "#6366f1",
+            color: "#fff",
+            borderRadius: 6,
+            fontWeight: 600,
+            textDecoration: "none",
+            fontSize: "1rem",
+          }}
+        >
+          Sign in
         </Link>
       </div>
       <div
@@ -39,7 +48,8 @@ export default function HomePage() {
           fontSize: "0.9rem",
         }}
       >
-        Submit a domain on the intake page to produce a rule-first, evidence-backed diagnostic. LLM enrichment is additive and optional.
+        Access to audit runs, reports, and intake requires an internal access password.
+        The repository is public but the deployed app is access-gated.
       </div>
     </main>
   );

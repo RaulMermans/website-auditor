@@ -150,10 +150,11 @@ Preferred commit shapes:
 - Artifact storage currently uses a local filesystem provider in code; private Vercel Blob support exists behind the storage abstraction but production artifact access control still needs validation.
 - Queue abstraction is available and Vercel-compatible.
 - Gemini is the active enrichment provider for report enrichment and Prospect Audit Agent synthesis.
-- Worker processing is available at `/api/worker/process` — the canonical and only worker execution route. GitHub Actions can drain the queue by POSTing to this route with `WORKER_SECRET`. Required production env vars: `WORKER_SECRET`, `AUDIT_API_KEY`, `GEMINI_API_KEY`, `DATABASE_URL`.
+- Worker processing is available at `/api/worker/process` — the canonical and only worker execution route. GitHub Actions can drain the queue by POSTing to this route with `WORKER_SECRET`. Required production env vars: `WORKER_SECRET`, `AUDIT_API_KEY`, `GEMINI_API_KEY`, `DATABASE_URL`, `INTERNAL_ACCESS_PASSWORD`, `INTERNAL_ACCESS_COOKIE_SECRET`.
 - `/api/worker/trigger` has been removed. Do not reference or recreate it.
 - Prospect Intelligence is structured around a reach-out decision (yes/maybe/no), service recommendation, per-opportunity evidence labels, and outreach angle. Old flat records are normalized on read via `normalizeProspectIntelligenceResult`.
 - Operational smoke validation is still pending, and the production intake flow is currently failing at runtime.
+- The repository may be public. The deployed Vercel app is protected by an app-level access gate: HMAC-SHA256-signed HttpOnly cookie (`ia_session`) issued at `/internal-login`. All product and API routes require the cookie. `/api/worker/process` is exempt and uses `WORKER_SECRET` only. The gate is open in dev/test when `INTERNAL_ACCESS_COOKIE_SECRET` is not set. Required production env vars: `INTERNAL_ACCESS_PASSWORD` (≥8 chars) and `INTERNAL_ACCESS_COOKIE_SECRET` (≥32 chars). No live demo is exposed; code being public does not expose the tool.
 - Sensitivity is set to none, but captured artifacts are still handled conservatively.
 - Default test target is 80% line coverage.
 - Commands assume broad greenfield scripts: `npm run dev`, `npm test`, `npm run build`.

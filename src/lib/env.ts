@@ -25,6 +25,10 @@ const envSchema = z.object({
   // Auth — shared API key for report enrichment/PDF/prospect routes (optional in dev/test)
   AUDIT_API_KEY: z.string().min(16).optional(),
 
+  // Internal access gate — password + cookie signing secret (optional in dev/test, required in production)
+  INTERNAL_ACCESS_PASSWORD: z.string().min(8).optional(),
+  INTERNAL_ACCESS_COOKIE_SECRET: z.string().min(32).optional(),
+
   // LLM
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
@@ -47,6 +51,22 @@ const envSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["AUDIT_API_KEY"],
       message: "AUDIT_API_KEY is required in production",
+    });
+  }
+
+  if (value.NODE_ENV === "production" && !isNextProductionBuild && !value.INTERNAL_ACCESS_PASSWORD) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["INTERNAL_ACCESS_PASSWORD"],
+      message: "INTERNAL_ACCESS_PASSWORD is required in production",
+    });
+  }
+
+  if (value.NODE_ENV === "production" && !isNextProductionBuild && !value.INTERNAL_ACCESS_COOKIE_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["INTERNAL_ACCESS_COOKIE_SECRET"],
+      message: "INTERNAL_ACCESS_COOKIE_SECRET is required in production",
     });
   }
 
