@@ -166,11 +166,10 @@ describe("audit failure classification", () => {
         },
       })
     ).toEqual({
-      label: "Security challenge blocked capture",
+      label: "Automated capture was blocked",
       explanation:
-        "The audit reached a security or bot-challenge page instead of the requested content. That means capture was blocked, not that the site is broken.",
-      retryGuidance:
-        "Retry only after the target allows automated capture or the security challenge is bypassed for the audited pages.",
+        "This website denied the audit request or returned a protection page. The system stopped because there was not enough reliable public evidence to produce a report. This does not mean the website is broken for normal visitors.",
+      retryGuidance: null,
       stageLabel: "Discovery",
     });
   });

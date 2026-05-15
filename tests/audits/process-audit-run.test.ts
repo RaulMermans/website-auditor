@@ -406,6 +406,17 @@ describe("processAuditRun", () => {
       pagesProcessed: 0,
       homepageOnly: true,
       errorMessage: "browser launch failed",
+      failureKind: "runtime_error",
+      failureStage: "discover",
+      failureDetails: {
+        driver: undefined,
+        marker: "browser_launch",
+        message: "browser launch failed",
+        retryable: true,
+        source: "runtime",
+        statusCode: undefined,
+        url: undefined,
+      },
     });
   });
 
