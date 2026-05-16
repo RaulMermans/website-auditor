@@ -13,7 +13,7 @@ Resolved setup:
 - Repo type: single-repo
 - Coverage target: 80% lines
 
-Current phase: Browser-first capture + persisted Prospect Intelligence is in progress. Operational smoke validation is still pending, and deployed intake/worker durability must be proven on Vercel.
+Current phase: Browser-first capture, partial-complete policy, capture-fidelity-aware finding language, animated audit progress UX, and decision-grade report UX are implemented. Operational smoke validation is still pending, and deployed intake/worker durability must be proven on Vercel.
 
 # Goals
 
@@ -149,7 +149,7 @@ Preferred commit shapes:
 - Artifact storage currently uses a local filesystem provider in code; private Vercel Blob support exists behind the storage abstraction but production artifact access control still needs validation.
 - Queue abstraction is available and Vercel-compatible.
 - Gemini is the active enrichment provider for report enrichment and Prospect Audit Agent synthesis.
-- Worker processing is available at `/api/worker/process` from request-triggered intake processing and optional GitHub Actions draining; Vercel Cron is not configured for Hobby compatibility. `WORKER_SECRET` is mandatory in production. `/api/worker/trigger` is retained only as a protected compatibility route.
+- Worker processing is available at `/api/worker/process` — the only worker execution route. Intake triggers it immediately after audit run creation (event-driven). The GitHub Actions `worker-drain.yml` is a manual-only emergency recovery action (`workflow_dispatch`) and is not scheduled. `WORKER_SECRET` is mandatory in production. `/api/worker/trigger` has been removed; do not reference or recreate it.
 - `workflow.yaml` and `agents.yaml` are the canonical architecture manifests. Keep them in sync with workflow, agent, prompt, and guardrail changes.
 - Prompt governance lives in `docs/agentic/`. The deterministic audit engine remains the source of truth; the Prospect Audit Agent is bounded synthesis over accepted evidence only.
 - Rejected findings are excluded from reports, scores, context packs, and Prospect Audit Agent inputs.

@@ -16,7 +16,7 @@ describe("environment validation", () => {
 
   it("requires AUDIT_API_KEY in production", () => {
     vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("WORKER_SECRET", "supersecretvalue1234");
+    vi.stubEnv("WORKER_SECRET", "test-secret-placeholder");
     Reflect.deleteProperty(process.env, "AUDIT_API_KEY");
 
     expect(() => getEnv()).toThrow(/AUDIT_API_KEY is required in production/);
@@ -24,7 +24,7 @@ describe("environment validation", () => {
 
   it("requires BLOB_READ_WRITE_TOKEN for Vercel Blob in production", () => {
     vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("WORKER_SECRET", "supersecretvalue1234");
+    vi.stubEnv("WORKER_SECRET", "test-secret-placeholder");
     vi.stubEnv("AUDIT_API_KEY", "auditapikeyvalue123");
     vi.stubEnv("STORAGE_PROVIDER", "vercel_blob");
     Reflect.deleteProperty(process.env, "BLOB_READ_WRITE_TOKEN");

@@ -188,7 +188,7 @@ describe("POST /api/worker/process", () => {
   });
 
   it("returns 401 when a wrong secret is provided", async () => {
-    envMock.WORKER_SECRET = "supersecretvalue1234";
+    envMock.WORKER_SECRET = "test-secret-placeholder";
     queueClientMock.fetch.mockResolvedValue(null);
 
     const res = await POST(makeRequest("wrong-secret"));
@@ -198,7 +198,7 @@ describe("POST /api/worker/process", () => {
   });
 
   it("returns 401 when WORKER_SECRET is set but no secret header is provided", async () => {
-    envMock.WORKER_SECRET = "supersecretvalue1234";
+    envMock.WORKER_SECRET = "test-secret-placeholder";
     queueClientMock.fetch.mockResolvedValue(null);
 
     const res = await POST(makeRequest(/* no secret */));

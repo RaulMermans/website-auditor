@@ -51,6 +51,13 @@ agents:
       - make_visual_claims_without_browser_evidence
       - suggest_anti_bot_bypass
 
+    tools: []
+
+    evals:
+      - reach_out_recommendation_matches_accepted_evidence
+      - no_invented_metrics_in_output
+      - output_passes_strict_zod_schema
+
     validation:
       schema: strict_zod
       schema_file: src/server/agents/prospect-audit-agent.schema.ts
