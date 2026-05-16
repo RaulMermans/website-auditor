@@ -1,11 +1,10 @@
 name: Worker Drain
 
 on:
-  schedule:
-    # GitHub Actions is used instead of Vercel Cron so Hobby deployments do not
-    # fail on Vercel's once-per-day cron limit.
-    - cron: "*/5 * * * *"
   workflow_dispatch:
+    # Manual emergency drain for queue recovery.
+    # Audit processing is event-triggered by intake at submission time.
+    # Run this action only when jobs are stuck or intake-triggered processing failed.
 
 jobs:
   drain:

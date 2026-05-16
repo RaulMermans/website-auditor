@@ -150,7 +150,7 @@ Preferred commit shapes:
 - Artifact storage currently uses a local filesystem provider in code; private Vercel Blob support exists behind the storage abstraction but production artifact access control still needs validation.
 - Queue abstraction is available and Vercel-compatible.
 - Gemini is the active enrichment provider for report enrichment and Prospect Audit Agent synthesis.
-- Worker processing is available at `/api/worker/process` — the canonical and only worker execution route. GitHub Actions can drain the queue by POSTing to this route with `WORKER_SECRET`. Required production env vars: `WORKER_SECRET`, `AUDIT_API_KEY`, `GEMINI_API_KEY`, `DATABASE_URL`, `INTERNAL_ACCESS_PASSWORD`, `INTERNAL_ACCESS_COOKIE_SECRET`.
+- Worker processing is available at `/api/worker/process` — the canonical and only worker execution route. Intake triggers the worker immediately after audit run creation (event-driven, not polled). The GitHub Actions `worker-drain.yml` is a manual-only emergency recovery action (`workflow_dispatch`) and is not scheduled. Required production env vars: `WORKER_SECRET`, `AUDIT_API_KEY`, `GEMINI_API_KEY`, `DATABASE_URL`, `INTERNAL_ACCESS_PASSWORD`, `INTERNAL_ACCESS_COOKIE_SECRET`.
 - `/api/worker/trigger` has been removed. Do not reference or recreate it.
 - Prospect Intelligence is structured around a reach-out decision (yes/maybe/no), service recommendation, per-opportunity evidence labels, and outreach angle. Old flat records are normalized on read via `normalizeProspectIntelligenceResult`.
 - Operational smoke validation is still pending, and the production intake flow is currently failing at runtime.

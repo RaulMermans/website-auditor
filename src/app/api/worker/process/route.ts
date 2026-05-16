@@ -79,7 +79,7 @@ async function handleWorkerRequest(req: Request) {
   if (!job) {
     const message = useExplicitPath
       ? "Job not claimable or already processed"
-      : "No jobs pending";
+      : "No queued audit jobs.";
     console.log("[worker/process] no job acquired", { message });
     return NextResponse.json({ status: "idle", message }, { status: 200 });
   }

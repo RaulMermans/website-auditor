@@ -150,7 +150,7 @@ describe("POST /api/worker/process", () => {
     expect(body.status).toBe("failed");
   });
 
-  it("returns 200 idle when no jobs are pending", async () => {
+  it("returns 200 idle with correct message when no jobs are queued", async () => {
     queueClientMock.fetch.mockResolvedValue(null);
 
     const res = await POST(makeRequest());
@@ -158,6 +158,7 @@ describe("POST /api/worker/process", () => {
 
     expect(res.status).toBe(200);
     expect(body.status).toBe("idle");
+    expect(body.message).toBe("No queued audit jobs.");
     expect(dispatchAuditRunMock).not.toHaveBeenCalled();
   });
 
@@ -191,6 +192,16 @@ describe("POST /api/worker/process", () => {
     queueClientMock.fetch.mockResolvedValue(null);
 
     const res = await POST(makeRequest("wrong-secret"));
+
+    expect(res.status).toBe(401);
+    expect(queueClientMock.fetch).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 when WORKER_SECRET is set but no secret header is provided", async () => {
+    envMock.WORKER_SECRET = "supersecretvalue1234";
+    queueClientMock.fetch.mockResolvedValue(null);
+
+    const res = await POST(makeRequest(/* no secret */));
 
     expect(res.status).toBe(401);
     expect(queueClientMock.fetch).not.toHaveBeenCalled();

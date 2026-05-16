@@ -75,7 +75,7 @@ public/         Static assets
 ## Architecture decisions
 
 - **App runtime** (Next.js / Vercel): intake, audit processing trigger, browser capture orchestration, report viewing.
-- **Processing path**: `submitDomainAction()` creates the audit run and enqueues `audit.run`; `/api/worker/process` drains jobs from the request path or the GitHub Actions worker drain.
+- **Processing path**: `submitDomainAction()` creates the audit run, enqueues `audit.run`, and immediately triggers `/api/worker/process` server-side. The GitHub Actions `worker-drain.yml` workflow is a manual-only emergency recovery tool and is not scheduled.
 - **Browser runtime**: `src/server/browser/*` owns the `BrowserDriver` / `BrowserSession` seam. The default adapter remains Playwright + `@sparticuz/chromium`; the optional `browser_use` path is an external HTTP sidecar boundary only. Audit orchestration, scoring, reporting, and enrichment stay in this repo.
 - **Queue**: `pg-boss` behind `src/server/contracts/queue.ts`.
 - **Storage**: local FS provider remains the dev default. Vercel Blob support exists behind `src/server/contracts/storage.ts`; production private artifact access still needs validation.
@@ -159,7 +159,7 @@ App runtime envs:
 - Required when `STORAGE_PROVIDER=vercel_blob` in production: `BLOB_READ_WRITE_TOKEN`
 - Optional: `PG_BOSS_SCHEMA` (defaults to `pgboss`), `BROWSER_DRIVER` (defaults to `playwright`), `BROWSER_USE_BASE_URL`, `BROWSER_USE_API_TOKEN`, `GEMINI_API_KEY`, `GEMINI_MODEL` (defaults to `gemini-2.5-flash`), `NEXT_PUBLIC_APP_URL`, `STORAGE_PROVIDER`
 
-No Vercel Cron is configured because Hobby deployments reject sub-daily cron schedules. `.github/workflows/worker-drain.yml` can drain `/api/worker/process` every 5 minutes using GitHub repository secrets `WORKER_DRAIN_URL` (for example, `https://your-app.vercel.app/api/worker/process`) and `WORKER_SECRET`. `/api/worker/trigger` is retained as a protected compatibility route only.
+No Vercel Cron is configured. Audit processing is **event-triggered**: `submitDomainAction()` calls `/api/worker/process` immediately after creating an audit run — no polling or scheduled drain is required under normal operation. `.github/workflows/worker-drain.yml` is a **manual-only** emergency recovery action (`workflow_dispatch`) for draining stuck jobs; it is not scheduled and does not run automatically. Required GitHub repository secrets for manual drain: `WORKER_DRAIN_URL` (for example, `https://your-app.vercel.app/api/worker/process`) and `WORKER_SECRET`.
 Browser capture defaults to `@sparticuz/chromium` (Lambda-compatible binary) + `playwright-core`. No `postinstall` step or browser download is required; `npm install` is sufficient for both local dev and Vercel. The optional `browser_use` path is not in-process product logic; it expects a separately run sidecar/service that exposes the repo-owned browser session contract over HTTP. The `worker/` directory is legacy and is **not** a workspace — it is excluded from the root install to prevent the full `playwright` package from being installed and polluting `playwright-core/.local-browsers/`.
 
 1. Ensure the Next.js app deployment has `DATABASE_URL` set.
