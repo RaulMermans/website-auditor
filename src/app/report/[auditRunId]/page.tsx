@@ -7,7 +7,6 @@ import { getAuditFailurePresentation } from "@/lib/audit-failure";
 import type { OutreachAsset } from "@/lib/types";
 import type { ProspectAuditAgentResult } from "@/server/agents/prospect-audit-agent";
 import {
-  AUDIT_STATUS_META,
   CATEGORY_LABELS,
   EVIDENCE_COLORS,
   getReportBadge,

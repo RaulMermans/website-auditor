@@ -446,17 +446,34 @@ export default async function AuditsPage() {
         ) : runs.length === 0 ? (
           <section
             style={{
-              padding: 32,
+              padding: "40px 32px",
               background: "#fff",
               border: "1px solid #e5e7eb",
               borderRadius: 18,
-              color: "#64748b",
               textAlign: "center",
             }}
           >
-            No audit runs yet.{" "}
-            <Link href="/intake" style={{ color: "#1d4ed8", fontWeight: 700 }}>
-              Create the first one.
+            <p style={{ margin: "0 0 4px", fontSize: "1.1rem", fontWeight: 700, color: "#0f172a" }}>
+              No audits yet
+            </p>
+            <p style={{ margin: "0 0 20px", color: "#64748b", fontSize: "0.95rem" }}>
+              Run your first domain audit to start building your evidence library.
+            </p>
+            <Link
+              href="/intake"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "10px 20px",
+                borderRadius: 999,
+                background: "#0f172a",
+                color: "#fff",
+                fontSize: "0.9rem",
+                fontWeight: 700,
+                textDecoration: "none",
+              }}
+            >
+              Start an audit
             </Link>
           </section>
         ) : (
