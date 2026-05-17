@@ -115,6 +115,17 @@ describe("AuditsPage", () => {
     expect(html).not.toContain("completed using accessible public secondary pages");
   });
 
+  it("renders the empty state with a CTA when no runs exist", async () => {
+    listRecentAuditRunsMock.mockResolvedValue([]);
+
+    const element = await AuditsPage();
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("No audits yet");
+    expect(html).toContain('href="/intake"');
+    expect(html).toContain("Start an audit");
+  });
+
   it("renders a diagnostic state when the audit list query fails", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const error = new Error("column ar.failure_kind does not exist") as Error & { code: string };
