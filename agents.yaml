@@ -16,6 +16,11 @@ agents:
       schema: src/server/agents/prospect-audit-agent.schema.ts
       runner: src/server/agents/prospect-audit-agent.ts
 
+    # Scanner-friendly path aliases (mirrors files: block)
+    prompt_path: src/server/agents/prospect-audit-agent.prompt.ts
+    schema_path: src/server/agents/prospect-audit-agent.schema.ts
+    runner_path: src/server/agents/prospect-audit-agent.ts
+
     inputs:
       - accepted_findings
       - accepted_evidence

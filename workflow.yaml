@@ -9,7 +9,7 @@ architecture:
   llm_role: strategic_synthesis_only
   public_mode: false
 
-workflow:
+workflows:
   - id: intake
     name: Audit intake
     type: deterministic
