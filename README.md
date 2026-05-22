@@ -1,140 +1,96 @@
 # Website Audit Agent
 
-Internal prospect audit tool. Accepts a public website URL and produces an evidence-backed audit with deterministic scoring and persisted client-acquisition intelligence.
+![CI](https://github.com/RaulMermans/website-auditor/actions/workflows/ci.yml/badge.svg)
+![Status](https://img.shields.io/badge/status-internal%20MVP-555)
+![TypeScript](https://img.shields.io/badge/TypeScript-99.4%25-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-black)
 
-The audit engine is rule-first: findings are produced deterministically from captured evidence. Gemini is downstream synthesis only — it may interpret accepted findings but cannot create audit truth.
+Evidence-bounded website audit workflow for internal prospecting.
 
-The repository is public for portfolio and reference purposes. The live Vercel deployment is private. No demo is exposed.
+`website-auditor` accepts a public website URL, captures authorized public evidence, produces deterministic audit findings and category scores, then optionally uses a bounded Gemini synthesis layer to translate accepted evidence into internal prospect intelligence.
 
-## Stack
+The core architectural rule is simple:
 
-Fullstack Node.js + TypeScript · Next.js App Router · Vercel · Postgres · pg-boss · Playwright + @sparticuz/chromium · Gemini
+> The deterministic audit engine creates audit truth.  
+> The LLM may synthesize accepted evidence, but it cannot invent findings, scores, metrics, traffic claims, revenue claims, or audit facts.
 
-## Architecture
+This repository is public for portfolio and reference purposes. The deployed Vercel app is private and no public demo is currently exposed.
 
-```
-Intake (browser)
-  └─► submitDomainAction()
-        ├─► creates audit_run in Postgres
-        ├─► enqueues audit.run job via pg-boss
-        └─► triggers /api/worker/process server-side (event-driven)
-              └─► capture pipeline (browser-first → static fallback)
-                    ├─► page_snapshots + page_evidence (stored)
-                    ├─► deterministic findings + category scores
-                    └─► optional Gemini synthesis → prospect_intelligence
-```
+---
 
-**Truth boundary:** The deterministic audit engine creates all findings and scores. The Prospect Audit Agent (`src/server/agents/`) reads only accepted evidence and may not accept/reject findings, score categories, or invent metrics or revenue claims.
+## Why this exists
 
-**Capture fidelity:** Browser-first for homepage. Blocks and runtime failures downgrade to authorized public static evidence. No anti-bot bypass is implemented.
+Most AI audit tools blur three things that should stay separate:
 
-**Evidence labels:** Every finding carries `Measured | Observed | Inferred`. Inferred claims are never presented as measured facts.
+1. **Measured evidence** — what the system actually captured.
+2. **Deterministic findings** — what rules can safely conclude from that evidence.
+3. **Strategic synthesis** — how those findings may translate into business-development opportunities.
 
-**Report badges:** `rendered_browser + complete` → Rendered audit · `rendered_browser + partial_complete` → Mixed capture · `static_public` → Static fallback · `secondary_static` → Partial/static
+This project separates those layers.
 
-**Worker:** Audit processing runs inside the Vercel app project. `.github/workflows/worker-drain.yml` is a manual-only emergency recovery action (`workflow_dispatch`) for stuck jobs — it is not scheduled.
+It is not a chatbot that “looks at a website and gives opinions.”  
+It is a bounded audit workflow with evidence capture, deterministic scoring, storage, worker execution, access control, and a constrained LLM synthesis layer.
 
-**Manifests:** `workflow.yaml` documents the deterministic workflow and bounded LLM synthesis layer. `agents.yaml` documents the Prospect Audit Agent permissions, inputs, outputs, and forbidden behavior.
+---
 
-## Local setup
+## What it does
 
-```sh
-cp .env.example .env.local   # fill in real values — see .env.example for all vars
-npm install
-npm run migrate:up:local     # apply Postgres migrations from .env.local
-npm run dev                  # http://localhost:3000
-```
+- Accepts a public website URL through an internal intake flow.
+- Creates an `audit_run` record in Postgres.
+- Enqueues an `audit.run` job through `pg-boss`.
+- Runs an event-driven worker route inside the Vercel app.
+- Captures homepage evidence with a browser-first strategy.
+- Falls back to authorized public static evidence when rendering is blocked or unavailable.
+- Stores page snapshots and page evidence.
+- Produces deterministic findings and category scores.
+- Labels claims as `Measured`, `Observed`, or `Inferred`.
+- Generates report-ready audit narratives.
+- Optionally creates internal prospect intelligence through a bounded Gemini agent.
+- Protects the deployed app behind internal access controls.
 
-The access gate is open in local dev when `INTERNAL_ACCESS_COOKIE_SECRET` is not set.
+---
 
-## Scripts
+## What it is not
 
-| Command | Purpose |
-|---|---|
-| `npm run dev` | Start Next.js dev server |
-| `npm run build` | Production build |
-| `npm run lint` | ESLint |
-| `npm run typecheck` | TypeScript check (no emit) |
-| `npm test` | Vitest unit tests |
-| `npm run test:coverage` | Tests + coverage (80% target) |
-| `npm run migrate:up:local` | Apply migrations from `.env.local` |
-| `npm run migrate:down:local` | Roll back migrations from `.env.local` |
-| `npm run migrate:up:vercel:prod` | Pull Vercel production env, apply migrations |
+This project is intentionally scoped.
 
-## Repo structure
+It is **not**:
 
-```
-src/
-  app/          Next.js App Router pages, layouts, route handlers
-  components/   UI components (intake, dashboard, report)
-  lib/          Shared: types, env validation, scoring helpers
-  server/       Orchestration: job creation, capture, scoring, report assembly
-  server/agents/ Prospect Audit Agent: prompt, schema, runner
-  db/           Raw pg client + audit repositories
-worker/         Legacy Playwright package (not a production dependency)
-migrations/     Reversible SQL migrations
-tests/          Unit, integration, and security tests
-docs/agentic/   Architecture and prompt governance docs
-public/         Static assets
-```
+- a public SaaS product
+- a generic website crawler
+- an anti-bot bypass system
+- a Lighthouse replacement
+- a full SEO or accessibility scanner
+- a fully autonomous AI auditor
+- a system where the LLM decides audit truth
+- a tool for scanning private, authenticated, or restricted pages
 
-## Access control
+The system only works with authorized public website evidence.
 
-The repository is public. The deployed Vercel app is not — no live demo is exposed.
+---
 
-**How it works:**
+## System architecture
 
-- `src/middleware.ts` guards every request to protected routes.
-- Valid access is a 30-day HMAC-SHA256-signed `ia_session` cookie, issued at `/internal-login` after the correct password is entered.
-- `/api/worker/process` is exempt from the cookie gate and uses its own `WORKER_SECRET` header check.
-- `/` is a public landing page that shows a sign-in link only.
+```mermaid
+flowchart TD
+  A["Internal user enters domain"] --> B["submitDomainAction()"]
+  B --> C["Create audit_run in Postgres"]
+  C --> D["Enqueue audit.run job via pg-boss"]
+  D --> E["Trigger /api/worker/process"]
+  E --> F["Capture pipeline"]
 
-**Protected routes:**
+  F --> G["Browser-first homepage capture"]
+  F --> H["Static public fallback"]
 
-| Route | Guard |
-|---|---|
-| `/intake` | Session cookie |
-| `/audits` | Session cookie |
-| `/report/:path*` | Session cookie |
-| `/api/audits/:path*` | Session cookie |
-| `/api/reports/:path*` | Session cookie |
-| `/api/worker/:path*` | Session cookie |
-| `/api/worker/process` | `WORKER_SECRET` header (cookie exempt) |
+  G --> I["page_snapshots + page_evidence"]
+  H --> I
 
-**Public routes:** `/`, `/internal-login`, `/internal-logout`, `/_next/*`, `/favicon.ico`, `/robots.txt`, `/sitemap.xml`
+  I --> J["Deterministic audit engine"]
+  J --> K["Findings + category scores"]
 
-## Environment variables
+  K --> L["Report assembly"]
+  K --> M["Optional Prospect Audit Agent"]
 
-All variables are documented in `.env.example` with placeholder values only. Required in production:
-
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | Postgres connection string |
-| `WORKER_SECRET` | Auth header for `/api/worker/process` (≥16 chars) |
-| `AUDIT_API_KEY` | Auth for report enrichment routes (≥16 chars) |
-| `INTERNAL_ACCESS_PASSWORD` | Password for `/internal-login` (≥8 chars) |
-| `INTERNAL_ACCESS_COOKIE_SECRET` | HMAC signing key for session cookie (≥32 chars) |
-| `GEMINI_API_KEY` | Gemini API key for Prospect Audit Agent synthesis |
-
-Optional: `GEMINI_MODEL` (defaults to `gemini-2.5-flash`), `STORAGE_PROVIDER` (`local` or `vercel_blob`), `BLOB_READ_WRITE_TOKEN`, `BROWSER_DRIVER` (`playwright` or `browser_use`), `APP_URL`, `NEXT_PUBLIC_APP_URL`.
-
-Generate `INTERNAL_ACCESS_COOKIE_SECRET`:
-```sh
-openssl rand -base64 32
-```
-
-## Deployment
-
-Vercel-only. Intake triggers audit processing inside the same app project — no external worker host required.
-
-Migrations do not run automatically on deploy. Apply them manually:
-```sh
-npm run migrate:up:vercel:prod
-```
-
-## Known limitations
-
-- Production private artifact storage (Vercel Blob) still needs access-control validation.
-- Static-only and secondary-static reports intentionally exclude visual/mobile/above-the-fold scoring.
-- Prospect Intelligence is internal prospecting guidance, not audit truth.
-- End-to-end operational smoke validation on a live Vercel deployment is still pending.
+  M --> N["prospect_intelligence"]
+  L --> O["Internal audit report"]
+  N --> O
