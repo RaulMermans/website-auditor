@@ -226,4 +226,46 @@ describe("IntakePage", () => {
     expect(html).toContain("data-testid=\"success-trigger\"");
     expect(html).not.toContain("Unable to create audit job.");
   });
+
+  it("renders an Unknown badge instead of crashing for an unrecognized status", async () => {
+    listRecentAuditRunsMock.mockResolvedValue([
+      makeRun({ auditRunId: "run-legacy", domain: "legacy.example", status: "queued_legacy" as never }),
+    ]);
+
+    const element = await IntakePage({});
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("legacy.example");
+    expect(html).toContain("Unknown");
+    expect(html).toContain("View status");
+  });
+
+  it("renders a fallback dash for null or invalid createdAt values", async () => {
+    listRecentAuditRunsMock.mockResolvedValue([
+      makeRun({ auditRunId: "run-null-date", domain: "nulldate.example", createdAt: null as never }),
+      makeRun({ auditRunId: "run-bad-date", domain: "baddate.example", createdAt: "not-a-date" as never }),
+    ]);
+
+    const element = await IntakePage({});
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("nulldate.example");
+    expect(html).toContain("baddate.example");
+    expect(html).toContain("—");
+  });
+
+  it("renders malformed recent audit rows defensively without crashing", async () => {
+    listRecentAuditRunsMock.mockResolvedValue([
+      makeRun({ auditRunId: "run-good", domain: "good.example", status: "complete" }),
+      makeRun({ auditRunId: "run-no-domain", domain: "" as never, status: "analyzing" }),
+      makeRun({ auditRunId: null as never, domain: "ghost.example" }),
+    ]);
+
+    const element = await IntakePage({});
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("good.example");
+    expect(html).toContain("Unknown domain");
+    expect(html).not.toContain("ghost.example");
+  });
 });

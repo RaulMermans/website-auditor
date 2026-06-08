@@ -2,8 +2,9 @@ import Link from "next/link";
 import { listRecentAuditRuns } from "@/db/report";
 import { getAuditFailurePresentation } from "@/lib/audit-failure";
 import {
-  AUDIT_STATUS_META,
-  REPORT_READY_STATUSES,
+  getAuditStatusMeta,
+  isReportReadyStatus,
+  safeFormatDate,
   shouldDisplayLimitationNote,
 } from "@/lib/report-presentation";
 import type { AuditRunListItem } from "@/db/report";
@@ -51,20 +52,8 @@ async function loadRecentAuditRuns(): Promise<AuditRunsLoadResult> {
   }
 }
 
-function formatDate(date: Date | null) {
-  if (!date) return "—";
-
-  return new Date(date).toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function StatusBadge({ status }: { status: AuditStatus }) {
-  const meta = AUDIT_STATUS_META[status];
+  const meta = getAuditStatusMeta(status);
 
   return (
     <span
@@ -88,7 +77,7 @@ function StatusBadge({ status }: { status: AuditStatus }) {
 }
 
 function renderActionLinks(run: AuditRunListItem) {
-  if (REPORT_READY_STATUSES.includes(run.status)) {
+  if (isReportReadyStatus(run.status)) {
     return (
       <>
         <Link href={`/report/${run.auditRunId}`} style={primaryLinkStyle}>
@@ -127,7 +116,10 @@ function renderActionLinks(run: AuditRunListItem) {
 }
 
 function AuditRunCard({ run }: { run: AuditRunListItem }) {
-  const statusMeta = AUDIT_STATUS_META[run.status];
+  if (!run.auditRunId) return null;
+
+  const domain = run.domain || "Unknown domain";
+  const statusMeta = getAuditStatusMeta(run.status);
   const failurePresentation = getAuditFailurePresentation(run);
   const showLimitationNote = shouldDisplayLimitationNote(run.status, run.limitationNote);
 
@@ -164,7 +156,7 @@ function AuditRunCard({ run }: { run: AuditRunListItem }) {
           >
             Audit Run
           </p>
-          <h2 style={{ margin: "0 0 6px", fontSize: "1.15rem", fontWeight: 700 }}>{run.domain}</h2>
+          <h2 style={{ margin: "0 0 6px", fontSize: "1.15rem", fontWeight: 700 }}>{domain}</h2>
           <p style={{ margin: 0, color: "#6b7280", fontSize: "0.82rem" }}>
             {run.auditRunId}
           </p>
@@ -218,16 +210,16 @@ function AuditRunCard({ run }: { run: AuditRunListItem }) {
       >
         <div style={metaCardStyle}>
           <p style={metaLabelStyle}>Created</p>
-          <p style={metaValueStyle}>{formatDate(run.createdAt)}</p>
+          <p style={metaValueStyle}>{safeFormatDate(run.createdAt)}</p>
         </div>
         <div style={metaCardStyle}>
           <p style={metaLabelStyle}>Completed</p>
-          <p style={metaValueStyle}>{formatDate(run.completedAt)}</p>
+          <p style={metaValueStyle}>{safeFormatDate(run.completedAt)}</p>
         </div>
         <div style={metaCardStyle}>
           <p style={metaLabelStyle}>Recommended next step</p>
           <p style={metaValueStyle}>
-            {REPORT_READY_STATUSES.includes(run.status)
+            {isReportReadyStatus(run.status)
               ? "Review the concise report first, then open the full report."
               : run.status === "failed"
                 ? failurePresentation?.retryGuidance ??
@@ -335,7 +327,7 @@ const secondaryLinkStyle: React.CSSProperties = {
 
 export default async function AuditsPage() {
   const { runs, errorMessage } = await loadRecentAuditRuns();
-  const readyCount = runs.filter((run) => REPORT_READY_STATUSES.includes(run.status)).length;
+  const readyCount = runs.filter((run) => isReportReadyStatus(run.status)).length;
   const inProgressCount = runs.filter((run) =>
     ["pending", "discovering", "capturing", "analyzing"].includes(run.status)
   ).length;

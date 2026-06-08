@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { getReportBadge } from "@/lib/report-presentation";
+import {
+  getAuditStatusMeta,
+  getReportBadge,
+  isReportReadyStatus,
+  safeFormatDate,
+  UNKNOWN_AUDIT_STATUS_META,
+} from "@/lib/report-presentation";
 
 describe("getReportBadge", () => {
   it("returns 'Rendered audit' for rendered_browser + complete", () => {
@@ -52,5 +58,53 @@ describe("getReportBadge", () => {
     expect(badge.background).toBeDefined();
     expect(badge.border).toBeDefined();
     expect(badge.text).toBeDefined();
+  });
+});
+
+describe("getAuditStatusMeta", () => {
+  it("returns the known status meta for a recognized status", () => {
+    expect(getAuditStatusMeta("complete").label).toBe("Report ready");
+  });
+
+  it("returns UNKNOWN_AUDIT_STATUS_META for an unrecognized status string", () => {
+    expect(getAuditStatusMeta("queued_legacy")).toEqual(UNKNOWN_AUDIT_STATUS_META);
+  });
+
+  it("returns UNKNOWN_AUDIT_STATUS_META for null, undefined, and non-string values", () => {
+    expect(getAuditStatusMeta(null)).toEqual(UNKNOWN_AUDIT_STATUS_META);
+    expect(getAuditStatusMeta(undefined)).toEqual(UNKNOWN_AUDIT_STATUS_META);
+    expect(getAuditStatusMeta(42)).toEqual(UNKNOWN_AUDIT_STATUS_META);
+  });
+});
+
+describe("isReportReadyStatus", () => {
+  it("returns true for complete and partial_complete", () => {
+    expect(isReportReadyStatus("complete")).toBe(true);
+    expect(isReportReadyStatus("partial_complete")).toBe(true);
+  });
+
+  it("returns false for in-progress, failed, and unrecognized statuses", () => {
+    expect(isReportReadyStatus("analyzing")).toBe(false);
+    expect(isReportReadyStatus("failed")).toBe(false);
+    expect(isReportReadyStatus("queued_legacy")).toBe(false);
+    expect(isReportReadyStatus(null)).toBe(false);
+    expect(isReportReadyStatus(undefined)).toBe(false);
+  });
+});
+
+describe("safeFormatDate", () => {
+  it("formats a valid Date instance", () => {
+    expect(safeFormatDate(new Date("2026-04-21T09:00:00.000Z"))).not.toBe("—");
+  });
+
+  it("formats a valid date string", () => {
+    expect(safeFormatDate("2026-04-21T09:00:00.000Z")).not.toBe("—");
+  });
+
+  it("returns a dash for null, undefined, and invalid date values", () => {
+    expect(safeFormatDate(null)).toBe("—");
+    expect(safeFormatDate(undefined)).toBe("—");
+    expect(safeFormatDate("not-a-date")).toBe("—");
+    expect(safeFormatDate(new Date("invalid"))).toBe("—");
   });
 });

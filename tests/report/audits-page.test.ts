@@ -33,6 +33,23 @@ vi.stubGlobal("React", React);
 
 const now = new Date("2026-04-21T09:00:00.000Z");
 
+function makeRun(overrides: Record<string, unknown> = {}) {
+  return {
+    auditRunId: "run-1",
+    domain: "example.com",
+    status: "complete",
+    createdAt: now,
+    completedAt: now,
+    homepageOnly: false,
+    failureReason: null,
+    failureKind: null,
+    failureStage: null,
+    failureDetails: null,
+    limitationNote: null,
+    ...overrides,
+  };
+}
+
 describe("AuditsPage", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -143,5 +160,38 @@ describe("AuditsPage", () => {
         code: "42703",
       })
     );
+  });
+
+  it("renders an Unknown badge instead of crashing for an unrecognized status", async () => {
+    listRecentAuditRunsMock.mockResolvedValue([
+      makeRun({ auditRunId: "run-legacy", domain: "legacy.example", status: "queued_legacy" }),
+    ]);
+
+    const element = await AuditsPage();
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("legacy.example");
+    expect(html).toContain("Unknown");
+    expect(html).toContain(
+      "This run reported a status that the report UI does not recognize yet."
+    );
+  });
+
+  it("renders malformed recent audit rows defensively without crashing", async () => {
+    listRecentAuditRunsMock.mockResolvedValue([
+      makeRun({ auditRunId: "run-good", domain: "good.example", status: "complete" }),
+      makeRun({ auditRunId: "run-no-domain", domain: "", status: "analyzing", completedAt: null }),
+      makeRun({ auditRunId: null, domain: "ghost.example", status: "complete" }),
+      makeRun({ auditRunId: "run-bad-date", domain: "baddate.example", status: "pending", createdAt: "not-a-date", completedAt: undefined }),
+    ]);
+
+    const element = await AuditsPage();
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("good.example");
+    expect(html).toContain("Unknown domain");
+    expect(html).not.toContain("ghost.example");
+    expect(html).toContain("baddate.example");
+    expect(html).toContain("—");
   });
 });

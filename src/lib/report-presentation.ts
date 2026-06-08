@@ -143,6 +143,32 @@ export const AUDIT_STATUS_META: Record<
 
 type BadgeMeta = (typeof AUDIT_STATUS_META)[AuditStatus];
 
+export const UNKNOWN_AUDIT_STATUS_META: BadgeMeta = {
+  label: "Unknown",
+  description: "This run reported a status that the report UI does not recognize yet.",
+  background: "#f8fafc",
+  border: "#cbd5e1",
+  text: "#475569",
+};
+
+const KNOWN_AUDIT_STATUSES = new Set<AuditStatus>(Object.keys(AUDIT_STATUS_META) as AuditStatus[]);
+
+function isKnownAuditStatus(status: unknown): status is AuditStatus {
+  return typeof status === "string" && KNOWN_AUDIT_STATUSES.has(status as AuditStatus);
+}
+
+/**
+ * Looks up status badge metadata defensively. Unknown, null, or legacy
+ * status values fall back to UNKNOWN_AUDIT_STATUS_META instead of crashing.
+ */
+export function getAuditStatusMeta(status: unknown): BadgeMeta {
+  return isKnownAuditStatus(status) ? AUDIT_STATUS_META[status] : UNKNOWN_AUDIT_STATUS_META;
+}
+
+export function isReportReadyStatus(status: unknown): boolean {
+  return isKnownAuditStatus(status) && REPORT_READY_STATUSES.includes(status);
+}
+
 /**
  * Returns a badge with a label tuned to the combination of run status and
  * capture fidelity.  Callers that want the generic status badge can omit
@@ -152,7 +178,7 @@ export function getReportBadge(
   status: AuditStatus,
   primaryFidelity?: CaptureFidelity
 ): BadgeMeta {
-  const base = AUDIT_STATUS_META[status];
+  const base = getAuditStatusMeta(status);
 
   if (status === "complete" && primaryFidelity === "rendered_browser") {
     return { ...base, label: "Rendered audit" };
@@ -244,6 +270,26 @@ const EXPECTED_TERMINAL_FAILURE_KINDS = new Set<AuditFailureKind>([
   "capture_blocked",
   "auth_wall",
 ]);
+
+/**
+ * Formats a date defensively for display. Null, undefined, or unparseable
+ * values render as "—" instead of throwing or printing "Invalid Date".
+ */
+export function safeFormatDate(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+
+  const date = value instanceof Date ? value : new Date(value as string | number);
+
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export function scoreColor(score: number) {
   if (score >= 80) return "#16a34a";

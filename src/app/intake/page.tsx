@@ -3,7 +3,7 @@ import { submitDomainAction } from "@/app/intake/actions";
 import { IntakeSuccessTrigger } from "@/components/intake-success-trigger";
 import { SubmitButton } from "@/components/submit-button";
 import { listRecentAuditRuns, type AuditRunListItem } from "@/db/report";
-import { AUDIT_STATUS_META, REPORT_READY_STATUSES } from "@/lib/report-presentation";
+import { getAuditStatusMeta, isReportReadyStatus, safeFormatDate } from "@/lib/report-presentation";
 
 // Allow up to 5 minutes for the server-side after() worker trigger to run.
 export const maxDuration = 300;
@@ -22,21 +22,12 @@ async function resolveSearchParams(searchParams?: Promise<SearchParams>) {
   return Promise.resolve(searchParams ?? {});
 }
 
-function formatDate(date: Date | null) {
-  if (!date) return "—";
-
-  return new Date(date).toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function RecentAuditRow({ run }: { run: AuditRunListItem }) {
-  const meta = AUDIT_STATUS_META[run.status];
-  const isReady = REPORT_READY_STATUSES.includes(run.status);
+  if (!run.auditRunId) return null;
+
+  const domain = run.domain || "Unknown domain";
+  const meta = getAuditStatusMeta(run.status);
+  const isReady = isReportReadyStatus(run.status);
   const actionLabel = isReady ? "View report" : "View status";
 
   return (
@@ -61,10 +52,10 @@ function RecentAuditRow({ run }: { run: AuditRunListItem }) {
             whiteSpace: "nowrap",
           }}
         >
-          {run.domain}
+          {domain}
         </p>
         <p style={{ margin: "2px 0 0", fontSize: "0.75rem", color: "#94a3b8" }}>
-          {formatDate(run.createdAt)}
+          {safeFormatDate(run.createdAt)}
         </p>
       </div>
       <span
