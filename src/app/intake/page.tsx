@@ -176,22 +176,25 @@ export default async function IntakePage({
             >
               View all audits
             </Link>
-            <Link
-              href="/internal-logout"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                padding: "9px 16px",
-                borderRadius: 999,
-                background: "#0f172a",
-                color: "#fff",
-                fontSize: "0.84rem",
-                fontWeight: 700,
-                textDecoration: "none",
-              }}
-            >
-              Logout
-            </Link>
+            <form action="/internal-logout" method="POST">
+              <button
+                type="submit"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "9px 16px",
+                  borderRadius: 999,
+                  border: 0,
+                  background: "#0f172a",
+                  color: "#fff",
+                  fontSize: "0.84rem",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Logout
+              </button>
+            </form>
           </nav>
         </section>
 

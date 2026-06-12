@@ -89,7 +89,8 @@ describe("IntakePage", () => {
     expect(html).toContain("View all audits");
     expect(html).toContain('href="/audits"');
     expect(html).toContain("Logout");
-    expect(html).toContain('href="/internal-logout"');
+    expect(html).toContain('action="/internal-logout"');
+    expect(html).toContain('method="POST"');
   });
 
   it("renders recent audits section with runs", async () => {
