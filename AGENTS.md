@@ -88,6 +88,42 @@ Core domain entities:
 - `scorecard`
 - `prospect_intelligence`
 
+# Browser Capture Layer (Playwright)
+
+Playwright is a **deterministic read-only capture tool**, not an AI agent.
+
+The capture layer (`src/lib/capture/rendered-capture.ts`) sits between page discovery and evidence normalization:
+
+```
+Page discovery
+→ Playwright rendered capture (deterministic, read-only)
+→ Blocker classification (cloudflare / captcha / security_challenge / forbidden / login)
+→ Static / secondary-static fallback if rendered capture fails
+→ Evidence normalization + schema validation
+→ Deterministic findings engine
+→ Optional Prospect Audit Agent enrichment (consumes validated evidence only)
+→ Deterministic report generation
+```
+
+**Key rules:**
+- Playwright improves capture depth but does **not** bypass blockers, CAPTCHA, or login walls.
+- Playwright capture is a deterministic read-only workflow tool — it navigates, reads DOM, and takes screenshots.
+- The Prospect Audit Agent does **not** control the browser. It only receives the validated evidence package.
+- LLM visual interpretation is a future optional layer, not part of the current implementation.
+- Static fallback remains mandatory and always runs when rendered capture is blocked, times out, or fails.
+- All screenshots and HTML are stored as private artifacts. Raw storage URLs must never appear in the UI.
+
+**Allowed browser actions:** navigate, wait_for_load, read_dom, extract_visible_text, extract_title, extract_headings, extract_cta_candidates, collect_page_metrics, take_desktop_screenshot, classify_blocker.
+
+**Forbidden browser actions:** click, fill, type, press, selectOption, setInputFiles, submit_form, login, purchase, bypass_captcha, evade_bot_protection, change_site_state.
+
+**Report fidelity badges:**
+- `rendered_browser + complete` → "Rendered audit"
+- `rendered_browser + partial_complete` → "Mixed capture audit"
+- `static_public` → "Static fallback audit"
+- `secondary_static` → "Partial/static audit"
+- `blocked_no_evidence` → "Limited evidence audit"
+
 # Run/Test/Build
 
 ```sh

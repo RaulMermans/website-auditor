@@ -9,6 +9,61 @@ architecture:
   llm_role: strategic_synthesis_only
   public_mode: false
 
+# ─── Tool inventory ────────────────────────────────────────────────────────────
+
+tools:
+  - id: playwright_rendered_capture
+    name: Playwright Rendered Capture
+    type: browser_capture
+    permission_class: read_only
+    owner_step: rendered_capture
+    implementation: src/lib/capture/rendered-capture.ts
+    used_by:
+      - website_audit_workflow
+    not_controlled_by:
+      - prospect_audit_agent
+    allowed_actions:
+      - navigate
+      - wait_for_load
+      - read_dom
+      - extract_visible_text
+      - extract_title
+      - extract_headings
+      - extract_cta_candidates
+      - collect_page_metrics
+      - take_desktop_screenshot
+      - classify_blocker
+    forbidden_actions:
+      - click
+      - fill
+      - type
+      - press
+      - selectOption
+      - setInputFiles
+      - submit_form
+      - login
+      - purchase
+      - bypass_captcha
+      - evade_bot_protection
+      - change_site_state
+    output_schema: RenderedCaptureResult
+
+  - id: static_capture_fallback
+    name: Static HTTP Fallback Capture
+    type: static_fetch
+    permission_class: read_only
+    owner_step: static_fallback
+    implementation: src/server/audits/capture-audit-run.ts
+    allowed_actions:
+      - fetch_public_html
+      - detect_blocker_patterns
+      - extract_static_links
+    forbidden_actions:
+      - execute_javascript
+      - take_screenshot
+
+# ─── Workflows ────────────────────────────────────────────────────────────────
+
 workflows:
   - id: intake
     name: Audit intake
@@ -18,29 +73,74 @@ workflows:
       - src/app/intake/page.tsx
       - src/app/intake/actions.ts
 
-  - id: capture
-    name: Browser-first capture with static fallback
-    type: deterministic_tool_workflow
-    purpose: Capture the best available public evidence without bypassing target protections.
-    tools:
-      - browser_capture
-      - static_fetch
-      - vercel_blob_storage
-    guardrails:
-      - ssrf_protection
-      - same_origin_final_url_validation
-      - no_anti_bot_bypass
-      - capture_fidelity_downgrade
+  - id: page_discovery
+    name: Page discovery
+    type: deterministic
+    purpose: Select up to 5 priority pages for audit capture.
+    files:
+      - src/server/audits/page-archetypes.ts
+      - src/server/audits/capture-audit-run.ts
+
+  - id: rendered_capture
+    name: Playwright rendered capture
+    type: tool
+    tool_id: playwright_rendered_capture
+    permission_class: read_only
+    purpose: >
+      Capture browser-rendered page evidence using Playwright (deterministic,
+      read-only). Classifies bot-challenge and access-denial blockers without
+      attempting to bypass them.
+    inputs:
+      - normalized_url
+      - page_type
+      - audit_run_id
+    outputs:
+      - rendered_capture_result
+      - desktop_screenshot_path
+      - blocker_classification
+    fallback_on:
+      - blocked
+      - timeout
+      - failed
+    next:
+      success: evidence_normalization
+      blocked: static_fallback
+      timeout: static_fallback
+      failed: static_fallback
+    files:
+      - src/lib/capture/rendered-capture.ts
+      - src/server/audits/capture-audit-run.ts
+
+  - id: static_fallback
+    name: Static / secondary-static fallback capture
+    type: deterministic_tool
+    tool_id: static_capture_fallback
+    purpose: >
+      Capture public static HTML when rendered capture is unavailable, blocked,
+      or timed out. Supports secondary-static sweep when the homepage is blocked
+      by a security challenge.
+    outputs:
+      - static_capture_result
     files:
       - src/server/audits/capture-audit-run.ts
-      - src/lib/ssrf.ts
+      - src/lib/capture-policy.ts
 
-  - id: evidence_extraction
-    name: Evidence extraction
+  - id: evidence_normalization
+    name: Evidence normalization
     type: deterministic
-    purpose: Extract structured evidence from accepted page snapshots.
+    purpose: >
+      Normalize, validate, and label captured evidence before findings or agent
+      enrichment. Preserves capture fidelity (rendered_browser, static_public,
+      secondary_static, blocked_no_evidence) so downstream steps and the agent
+      can respect evidence boundaries.
+    inputs:
+      - rendered_capture_result
+      - static_capture_result
+    outputs:
+      - evidence_package
     files:
       - src/server/audits/extract-page-evidence.ts
+      - src/server/audits/review-page-findings.ts
 
   - id: evaluators
     name: Specialist evaluators
@@ -76,7 +176,11 @@ workflows:
   - id: prospect_audit_agent
     name: Prospect Audit Agent
     type: bounded_llm_synthesis_agent
-    purpose: Turn accepted audit evidence into internal client-acquisition intelligence.
+    purpose: >
+      Turn accepted audit evidence into internal client-acquisition intelligence.
+      The agent receives the validated evidence package — it does NOT control the
+      browser, does NOT run playwright_rendered_capture, and does NOT have access
+      to raw Playwright output.
     model_provider: google_gemini
     model_env_var: GEMINI_MODEL
     prompt_file: src/server/agents/prospect-audit-agent.prompt.ts
@@ -100,6 +204,7 @@ workflows:
       - no_visual_claims_without_browser_evidence
       - no_metrics_or_revenue_invention
       - confidence_reduced_for_static_fallback
+      - agent_does_not_control_playwright
 
 permissions:
   read_only:

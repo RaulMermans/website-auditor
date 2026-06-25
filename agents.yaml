@@ -21,6 +21,26 @@ agents:
     schema_path: src/server/agents/prospect-audit-agent.schema.ts
     runner_path: src/server/agents/prospect-audit-agent.ts
 
+    permission_class: read_only
+
+    # Evidence consumed by the agent — always from the validated evidence package,
+    # never directly from raw Playwright output.
+    consumes:
+      - evidence_package
+      - finding_candidates
+
+    # These capture tools may have produced the upstream evidence, but the agent
+    # never calls them and does not control them.
+    may_consume_evidence_from:
+      - playwright_rendered_capture
+      - static_capture_fallback
+      - secondary_static_capture
+
+    # The agent must never control or trigger these tools.
+    does_not_control_tools:
+      - playwright_rendered_capture
+      - static_capture_fallback
+
     inputs:
       - accepted_findings
       - accepted_evidence
@@ -39,6 +59,14 @@ agents:
       - missing_evidence
       - internal_notes
 
+    constraints:
+      - The agent never controls the browser directly.
+      - The agent only receives normalized, validated evidence.
+      - The agent must respect capture fidelity labels.
+      - The agent must not claim visual, mobile, or interaction evidence unless screenshot/rendered evidence exists in the evidence package.
+      - The agent must not convert static fallback evidence into full rendered-browser conclusions.
+      - The agent must label uncertainty when evidence is incomplete or from static fallback only.
+
     allowed:
       - synthesize_accepted_evidence
       - calibrate_confidence
@@ -55,6 +83,7 @@ agents:
       - invent_revenue_or_traffic
       - make_visual_claims_without_browser_evidence
       - suggest_anti_bot_bypass
+      - control_playwright_rendered_capture
 
     tools: []
 

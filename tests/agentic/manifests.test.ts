@@ -45,6 +45,21 @@ describe("agentic workflow manifests", () => {
     }
   });
 
+  it("workflow.yaml declares rendered_capture as a workflow step with read_only permission", async () => {
+    const manifest = await readRepoFile("workflow.yaml");
+    expect(manifest).toContain("id: rendered_capture");
+    expect(manifest).toContain("tool_id: playwright_rendered_capture");
+    expect(manifest).toContain("id: evidence_normalization");
+    expect(manifest).toContain("id: static_fallback");
+  });
+
+  it("agents.yaml documents that the prospect_audit_agent does not control Playwright", async () => {
+    const manifest = await readRepoFile("agents.yaml");
+    expect(manifest).toContain("does_not_control_tools:");
+    expect(manifest).toContain("playwright_rendered_capture");
+    expect(manifest).toContain("permission_class: read_only");
+  });
+
   it("prompt governance docs and prompt marker exist", async () => {
     await expect(readRepoFile("docs/agentic/architecture.md")).resolves.toContain(
       "hybrid AI workflow"
