@@ -5,9 +5,18 @@ vi.mock("@/db/client", () => ({
   withTransaction: vi.fn(),
 }));
 
+vi.mock("@/lib/capture/rendered-capture", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/capture/rendered-capture")>();
+  return {
+    ...actual,
+    captureRenderedPage: vi.fn(actual.captureRenderedPage),
+  };
+});
+
 import { captureAuditRun } from "@/server/audits/capture-audit-run";
 import { AuditFailureError } from "@/lib/audit-failure";
 import { normalizePlaywrightChromiumLaunchError } from "@/server/browser/playwright-chromium-driver";
+import { captureRenderedPage } from "@/lib/capture/rendered-capture";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -44,6 +53,11 @@ function createDeps(options?: {
     }
   }
 
+  const currentHtml = () =>
+    htmlByUrl.get(currentUrl) ??
+    htmlByUrl.get(currentUrl.replace(/\/$/, "")) ??
+    `<html data-url="${currentUrl}"></html>`;
+
   const session = {
     navigate: vi.fn(async ({ url }: { url: string }) => {
       currentUrl = url;
@@ -63,17 +77,36 @@ function createDeps(options?: {
       };
     }),
     getUrl: vi.fn(async () => currentUrl),
-    extractHtml: vi.fn(async () => ({
-      value:
-        htmlByUrl.get(currentUrl) ??
-        htmlByUrl.get(currentUrl.replace(/\/$/, "")) ??
-        `<html data-url="${currentUrl}"></html>`,
-    })),
+    extractHtml: vi.fn(async () => ({ value: currentHtml() })),
     screenshot: vi.fn().mockResolvedValue({
       data: Buffer.from("fake-image"),
       contentType: "image/jpeg",
     }),
-    evaluate: vi.fn().mockResolvedValue({ value: links }),
+    // Mirrors rendered-capture.ts's expression shapes so title/body text (used for
+    // blocker classification) reflect the same HTML fixture as extractHtml().
+    evaluate: vi.fn().mockImplementation(async ({ expression }: { expression: string }) => {
+      const html = currentHtml();
+
+      if (expression.includes("document.title")) {
+        const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        return { value: match ? match[1].trim() : "" };
+      }
+      if (expression.includes("querySelectorAll('h1')")) {
+        return { value: [] };
+      }
+      if (expression.includes("body.innerText") || expression.includes("body ?")) {
+        return { value: html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() };
+      }
+      if (expression.includes("domElementCount")) {
+        return {
+          value: { domElementCount: 10, scriptCount: 1, imageCount: 0, headingCount: 1, linkCount: 1 },
+        };
+      }
+      if (expression.includes("innerText") || expression.includes("getAttribute")) {
+        return { value: links };
+      }
+      return { value: null };
+    }),
     close: vi.fn().mockResolvedValue(undefined),
   };
 
@@ -251,7 +284,7 @@ describe("captureAuditRun", () => {
       pageSnapshotId: "snapshot-1",
       url: "https://example.com/",
       htmlStorageKey: "audit-runs/run-123/homepage/root.html",
-      screenshotStorageKey: "audit-runs/run-123/homepage/root.jpg",
+      screenshotStorageKey: "audit-runs/run-123/homepage/desktop.jpg",
       captureMethod: "browser",
       retryCount: 0,
     });
@@ -1185,10 +1218,20 @@ describe("captureAuditRun", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { deps, session } = createDeps();
 
-    // Make `extractHtml` return the challenge HTML so it triggers capture_blocked.
+    // Make the rendered page look like a Cloudflare challenge so it triggers capture_blocked.
     session.navigate = vi.fn().mockResolvedValue({ url: "https://example.com", ok: true, status: 200 });
     session.getUrl = vi.fn().mockResolvedValue("https://example.com/");
     session.extractHtml = vi.fn().mockResolvedValue({ value: "<html><body>Cloudflare security check captcha verify you are human</body></html>" });
+    session.evaluate = vi.fn().mockImplementation(async ({ expression }: { expression: string }) => {
+      if (expression.includes("document.title")) return { value: "" };
+      if (expression.includes("body.innerText") || expression.includes("body ?")) {
+        return { value: "Cloudflare security check captcha verify you are human" };
+      }
+      if (expression.includes("domElementCount")) {
+        return { value: { domElementCount: 1, scriptCount: 0, imageCount: 0, headingCount: 0, linkCount: 0 } };
+      }
+      return { value: [] };
+    });
 
     // Secondary routes return usable thin html, homepage static returns unusable thin html
     deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => {
@@ -1402,5 +1445,92 @@ describe("captureAuditRun", () => {
     expect(result.pagesProcessed).toBeGreaterThanOrEqual(1);
     expect(result.errorMessage).toBeUndefined();
     expect(deps.auditJobs.completePageSnapshotCapture).toHaveBeenCalled();
+  });
+
+  // ─── Canonical rendered-capture wiring ────────────────────────────────────
+  // Regression coverage for: the live audit capture workflow must not bypass
+  // captureRenderedPage() by using an independent browser-first implementation.
+
+  describe("canonical rendered-capture wiring", () => {
+    it("calls the canonical captureRenderedPage() service for homepage capture", async () => {
+      const { deps } = createDeps();
+
+      await captureAuditRun({ auditRunId: "run-canonical-wiring", domain: "example.com" }, deps);
+
+      expect(captureRenderedPage).toHaveBeenCalledWith(
+        "https://example.com/",
+        expect.objectContaining({
+          driver: deps.browser,
+          storage: deps.storage,
+          storageKeyPrefix: "audit-runs/run-canonical-wiring/homepage",
+        })
+      );
+    });
+
+    it("rendered success flows the extracted HTML and screenshot into rendered_browser fidelity (captureMethod: browser)", async () => {
+      const { deps } = createDeps();
+
+      await captureAuditRun({ auditRunId: "run-fidelity-browser", domain: "example.com" }, deps);
+
+      const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
+      const homepageCall = calls.find((c: any) => c[0].url?.endsWith("/"));
+      expect(homepageCall[0].captureMethod).toBe("browser");
+      expect(homepageCall[0].screenshotStorageKey).toBeTruthy();
+    });
+
+    it("falls back to static when rendered capture times out during navigation", async () => {
+      const { deps } = createDeps({
+        htmlByUrl: {
+          "https://example.com": USABLE_THIN_HTML,
+          "https://example.com/": USABLE_THIN_HTML,
+        },
+      });
+      const originalCreateSession = deps.browser.createSession;
+      deps.browser.createSession = vi.fn().mockImplementation(async () => {
+        const session = await (originalCreateSession as any)();
+        session.navigate = vi.fn().mockRejectedValue(new Error("Navigation timeout exceeded 15000ms"));
+        return session;
+      });
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      const result = await captureAuditRun(
+        { auditRunId: "run-render-timeout", domain: "example.com" },
+        deps
+      );
+
+      // Timeout is not a bot challenge — run succeeds via static fallback, not a hard failure.
+      expect(result.errorMessage).toBeUndefined();
+      expect(result.pagesProcessed).toBe(1);
+      expect(result.limitationNote).toMatch(/runtime error/i);
+
+      const calls = (deps.auditJobs.completePageSnapshotCapture as any).mock.calls;
+      const homepageCall = calls.find((c: any) => c[0].url?.endsWith("/"));
+      expect(homepageCall[0].captureMethod).toBe("fallback_static");
+      expect(homepageCall[0].screenshotStorageKey).toBeNull();
+    });
+
+    it("hard-fails with a handled blocked failure when rendered capture is blocked and no fallback evidence exists", async () => {
+      // Covers: rendered blocked + no usable static/secondary evidence -> handled failure, not a crash.
+      const challengeHtml =
+        "<html><head><title>Just a moment…</title></head><body>Cloudflare security check captcha verify you are human</body></html>";
+      const { deps } = createDeps({ htmlByUrl: { "https://example.com/": challengeHtml } });
+      deps.fetchStatic = vi.fn().mockImplementation(async (url: string) => ({
+        html: challengeHtml,
+        statusCode: 200,
+        ok: true,
+        finalUrl: url,
+      }));
+
+      const result = await captureAuditRun(
+        { auditRunId: "run-blocked-no-fallback", domain: "example.com" },
+        deps
+      );
+
+      expect(result.pagesProcessed).toBe(0);
+      expect(result.errorMessage).toBeDefined();
+      expect(deps.auditJobs.updateAuditRunStatus).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: "failed" })
+      );
+    });
   });
 });

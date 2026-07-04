@@ -12,6 +12,7 @@ export type BlockerKind =
   | "captcha"
   | "login"
   | "forbidden"
+  | "rate_limited"
   | "security_challenge"
   | "timeout"
   | "unknown";
@@ -20,10 +21,13 @@ export interface RenderedCaptureResult {
   status: RenderedCaptureStatus;
   url: string;
   finalUrl?: string;
+  statusCode?: number;
 
   title?: string;
   h1Texts: string[];
   visibleTextSample: string;
+  /** Full extracted document HTML, used by the deterministic findings engine downstream. */
+  html: string;
 
   desktopScreenshotPath?: string;
   mobileScreenshotPath?: string;
@@ -153,6 +157,9 @@ export function classifyBlocker(
   if (statusCode === 401) {
     return { detected: true, kind: "login", evidence: "HTTP 401" };
   }
+  if (statusCode === 429) {
+    return { detected: true, kind: "rate_limited", evidence: "HTTP 429" };
+  }
 
   const combined = `${title} ${bodyText}`.substring(0, 3_000);
 
@@ -231,6 +238,7 @@ function makeFailedResult(
     url,
     h1Texts: [],
     visibleTextSample: "",
+    html: "",
     ctaCandidates: [],
     pageMetrics: EMPTY_METRICS,
     capturedAt,
@@ -295,9 +303,11 @@ async function runCapture(
       status: "blocked",
       url,
       finalUrl,
+      statusCode: response.status,
       title,
       h1Texts,
       visibleTextSample,
+      html: "",
       ctaCandidates: [],
       pageMetrics: EMPTY_METRICS,
       blocker,
@@ -329,13 +339,20 @@ async function runCapture(
   // Mobile screenshots require viewport manipulation not yet exposed by BrowserSession.
   // mobileScreenshotPath remains undefined until BrowserSession gains setViewport().
 
+  const html = await session
+    .extractHtml()
+    .then((result) => result.value)
+    .catch(() => "");
+
   return {
     status: "success",
     url,
     finalUrl,
+    statusCode: response.status,
     title,
     h1Texts,
     visibleTextSample,
+    html,
     desktopScreenshotPath,
     ctaCandidates,
     pageMetrics,

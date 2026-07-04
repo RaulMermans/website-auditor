@@ -31,6 +31,8 @@ import type {
   BrowserDriver,
   BrowserSession,
 } from "@/server/browser/types";
+import { captureRenderedPage } from "@/lib/capture/rendered-capture";
+import { adaptRenderedCaptureResult } from "@/server/audits/rendered-capture-adapter";
 
 const DEFAULT_MAX_PAGES = 5;
 const CAPTURE_PENDING_STATES = new Set<PageState>(["queued", "capturing"]);
@@ -694,8 +696,6 @@ async function captureQueuedPage(
 
 // ─── Static-preferred capture (homepage static-first policy) ─────────────────
 
-type SessionGetter = () => Promise<BrowserSession | null>;
-
 interface BrowserFirstResult {
   limitationNote: string | null;
   browserDegraded: boolean;
@@ -705,7 +705,8 @@ interface BrowserFirstResult {
 
 /**
  * Captures a homepage using browser-first policy:
- * 1. Try rendered browser capture and store rendered HTML + screenshot when it succeeds.
+ * 1. Try rendered browser capture (via the canonical captureRenderedPage() service) and
+ *    store rendered HTML + screenshot when it succeeds.
  * 2. If the browser is blocked, unavailable, or fails at runtime, downgrade to public static HTML.
  * 3. If static HTML is blocked or too limited, try a bounded secondary public sweep.
  * 4. If no authorized public evidence is available, fail the run without producing findings.
@@ -714,7 +715,6 @@ async function captureBrowserFirstPage(
   auditRunId: string,
   snapshot: Pick<PageSnapshot, "id" | "url" | "pageType" | "retryCount" | "auditRunId">,
   deps: CaptureAuditRunDeps,
-  getSession: SessionGetter,
   maxPages: number
 ): Promise<BrowserFirstResult> {
   const fetcher = deps.fetchStatic ?? fetchStaticPage;
@@ -726,96 +726,25 @@ async function captureBrowserFirstPage(
     lastError: null,
   });
 
-  const browserSession = await getSession();
+  const renderedResult = await captureRenderedPage(snapshot.url, {
+    driver: deps.browser,
+    storage: deps.storage,
+    storageKeyPrefix: `audit-runs/${auditRunId}/${snapshot.pageType}`,
+  });
+  const evidence = adaptRenderedCaptureResult(renderedResult);
 
-  if (!browserSession) {
-    return captureStaticFallbackAfterBrowserFailure({
-      auditRunId,
-      snapshot,
-      deps,
-      fetcher,
-      note: BROWSER_UNAVAILABLE_LIMITATION_NOTE,
-      failureReason: "Browser rendering is unavailable in this environment.",
-      secondarySweepNote: BROWSER_UNAVAILABLE_LIMITATION_NOTE,
-      maxPages,
-    });
-  }
-
-  try {
-    const response = await browserSession.navigate({
-      url: snapshot.url,
-      waitUntil: "load",
-      timeoutMs: 30000,
-    });
-    const statusBarrier = detectAuditCaptureBarrier({
-      stage: "capture",
-      statusCode: response.status,
-      url: response.url,
-      driver: deps.browser.name,
-    });
-    if (statusBarrier) {
-      throw new AuditFailureError(statusBarrier);
-    }
-    if (!response.ok) {
-      throw new Error(`Failed to load ${snapshot.url}. Status: ${response.status}`);
-    }
-
-    await deps.waitAfterNavigation(2000);
-
-    const currentUrl = await browserSession.getUrl();
-
-    // Guard: reject private/internal redirect targets and off-origin redirects
-    // before any HTML extraction, screenshot, or artifact storage.
-    try {
-      await assertPublicUrl(currentUrl);
-      assertSameOriginOrApproved(snapshot.url, currentUrl);
-    } catch (ssrfError) {
-      if (ssrfError instanceof SSRFError) {
-        throw new AuditFailureError({
-          failureKind: "access_denied",
-          failureStage: "capture",
-          failureReason: ssrfError.message,
-          failureDetails: { source: "network", marker: "access_denied", retryable: false, url: currentUrl },
-        });
-      }
-      throw ssrfError;
-    }
-
-    const { value: html } = await browserSession.extractHtml();
-    const htmlBarrier = detectAuditCaptureBarrier({
-      stage: "capture",
-      statusCode: response.status,
-      html,
-      url: currentUrl,
-      driver: deps.browser.name,
-    });
-    if (htmlBarrier) {
-      throw new AuditFailureError(htmlBarrier);
-    }
-
-    const screenshot = await browserSession.screenshot({
-      fullPage: true,
-      format: "jpeg",
-      quality: 80,
-      timeoutMs: 90000,
-    });
-
+  if (evidence.status === "success") {
     const browserHtmlKey = await deps.storage.put(
-      buildArtifactKey(auditRunId, snapshot.pageType, currentUrl, "html"),
-      html,
+      buildArtifactKey(auditRunId, snapshot.pageType, evidence.finalUrl, "html"),
+      evidence.html,
       "text/html"
-    );
-    const screenshotKey = await deps.storage.put(
-      buildArtifactKey(auditRunId, snapshot.pageType, currentUrl, "jpg"),
-      screenshot.data,
-      screenshot.contentType
     );
 
     await deps.auditJobs.completePageSnapshotCapture({
       pageSnapshotId: snapshot.id,
-      url: currentUrl,
+      url: evidence.finalUrl,
       htmlStorageKey: browserHtmlKey,
-      screenshotStorageKey: screenshotKey,
+      screenshotStorageKey: evidence.screenshotStorageKey,
       captureMethod: "browser",
       retryCount: 0,
     });
@@ -823,30 +752,27 @@ async function captureBrowserFirstPage(
     return {
       limitationNote: null,
       browserDegraded: false,
-      capturedUrl: currentUrl,
-      discoveredLinks: extractLinksFromStaticHtml(html, currentUrl),
+      capturedUrl: evidence.finalUrl,
+      discoveredLinks: extractLinksFromStaticHtml(evidence.html, evidence.finalUrl),
     };
-  } catch (browserError) {
-    const failure = toAuditFailure(browserError, {
-      stage: "capture",
-      url: snapshot.url,
-      driver: deps.browser.name,
-    });
-    const isBotChallenge = failure.failureKind === "capture_blocked";
-
-    return captureStaticFallbackAfterBrowserFailure({
-      auditRunId,
-      snapshot,
-      deps,
-      fetcher,
-      note: isBotChallenge ? BROWSER_BLOCKED_LIMITATION_NOTE : BROWSER_RUNTIME_FAILURE_LIMITATION_NOTE,
-      failureReason: failure.failureReason,
-      secondarySweepNote: isBotChallenge
-        ? HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE
-        : BROWSER_RUNTIME_FAILURE_LIMITATION_NOTE,
-      maxPages,
-    });
   }
+
+  const note = evidence.isBotChallenge
+    ? BROWSER_BLOCKED_LIMITATION_NOTE
+    : evidence.isBrowserUnavailable
+      ? BROWSER_UNAVAILABLE_LIMITATION_NOTE
+      : BROWSER_RUNTIME_FAILURE_LIMITATION_NOTE;
+
+  return captureStaticFallbackAfterBrowserFailure({
+    auditRunId,
+    snapshot,
+    deps,
+    fetcher,
+    note,
+    failureReason: evidence.failureReason,
+    secondarySweepNote: evidence.isBotChallenge ? HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE : note,
+    maxPages,
+  });
 }
 
 async function captureStaticFallbackAfterBrowserFailure(options: {
@@ -1019,7 +945,7 @@ export async function captureAuditRun(
         const plan = planCaptureMethod({ pageType: snapshot.pageType, browserDegraded });
 
         if (plan.captureMethod === "browser_first") {
-          const result = await captureBrowserFirstPage(auditRunId, snapshot, deps, getSession, maxPages);
+          const result = await captureBrowserFirstPage(auditRunId, snapshot, deps, maxPages);
           if (result.browserDegraded && !browserDegraded) {
             browserDegraded = true;
           }

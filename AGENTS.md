@@ -97,7 +97,7 @@ The capture layer (`src/lib/capture/rendered-capture.ts`) sits between page disc
 ```
 Page discovery
 → Playwright rendered capture (deterministic, read-only)
-→ Blocker classification (cloudflare / captcha / security_challenge / forbidden / login)
+→ Blocker classification (cloudflare / captcha / security_challenge / forbidden / login / rate_limited)
 → Static / secondary-static fallback if rendered capture fails
 → Evidence normalization + schema validation
 → Deterministic findings engine
