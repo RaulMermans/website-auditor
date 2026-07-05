@@ -16,6 +16,8 @@ describe("extractPageArtifacts", () => {
         id: "snapshot-1",
         url: "https://example.com/",
         pageType: "homepage",
+        pagePriority: 0,
+        captureMethod: "browser",
       },
       `
         <html>
@@ -46,6 +48,15 @@ describe("extractPageArtifacts", () => {
         text: "Example Home",
       });
     expect(getEvidenceValue<number>(result.pageEvidence, "h1_count")).toBe(1);
+    expect(getEvidenceValue<Record<string, unknown>>(result.pageEvidence, "crawl_metadata"))
+      .toMatchObject({
+        url: "https://example.com/",
+        pageType: "homepage",
+        crawlSource: "homepage_seed",
+        crawlScore: 1000,
+        captureMethod: "browser",
+        captureFidelity: "rendered_browser",
+      });
     expect(getEvidenceValue<number>(result.pageEvidence, "image_count")).toBe(2);
     expect(getEvidenceValue<number>(result.pageEvidence, "missing_alt_count")).toBe(1);
     expect(getEvidenceValue<number>(result.pageEvidence, "internal_link_count")).toBe(1);

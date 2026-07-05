@@ -13,7 +13,7 @@ export function buildProspectAuditAgentPrompt(input: ProspectAuditAgentInput) {
   const fidelity = input.captureFidelity;
   const visualBoundary = captureFidelityAllowsVisualClaims(fidelity.primaryFidelity)
     ? "Browser or manual visual evidence is available. Visual/mobile comments are allowed only when tied to accepted findings or screenshot-backed evidence."
-    : "NO BROWSER/SCREENSHOT EVIDENCE. Do NOT make any visual, mobile layout, above-the-fold, animation, interaction, spacing, color, or experiential UX claims. Violating this rule invalidates the output.";
+    : "NO BROWSER/SCREENSHOT EVIDENCE. Do NOT make any visual, small-screen layout, opening-screen composition, animation, interaction, spacing, color, or experiential UX claims. Violating this rule invalidates the output.";
   const limitationNotes = input.limitationNotes ?? [];
   const limitations =
     limitationNotes.length > 0
@@ -72,7 +72,7 @@ CONFIDENCE CALIBRATION — enforce these rules based on capture fidelity:
   - Lower confidence across all outputs. Set reachOutRecommendation.confidence to "low" or "medium".
   - Do NOT frame static metadata findings (missing title, missing H1, missing canonical) as definitive live-site defects. Static HTML may omit these; the live rendered page may include them.
   - Recommend "maybe" rather than "yes" unless the evidence is a highly direct technical fact that cannot be rendered dynamically (e.g., a robots noindex directive in raw HTML).
-  - Do NOT infer visual quality, mobile layout, above-the-fold composition, or interaction design from static HTML alone.
+  - Do NOT infer visual quality, small-screen layout, opening-screen composition, or interaction design from static HTML alone.
   - Populate missingEvidence with visual, mobile, and rendered-state gaps.
 - If primaryFidelity is "rendered_browser":
   - You may use direct "missing" language and higher confidence when the accepted findings support it.

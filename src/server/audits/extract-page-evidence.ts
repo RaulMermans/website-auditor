@@ -1,7 +1,10 @@
 import type {
   AuditRun,
+  CaptureFidelity,
+  CaptureMethodProvenance,
   PageSnapshot,
 } from "@/lib/types";
+import type { PageEvidenceMetadata } from "@/server/audits/crawler/types";
 import type { CreateFindingInput, CreatePageEvidenceInput } from "@/db/analysis";
 import { runSpecialistEvaluators } from "@/server/audits/evaluators";
 import { getPagePriority } from "@/server/audits/page-archetypes";
@@ -795,7 +798,8 @@ function parseMetrics(snapshot: Pick<PageSnapshot, "url">, html: string): Parsed
 function buildPageEvidence(
   auditRunId: string,
   pageSnapshotId: string,
-  metrics: ParsedPageMetrics
+  metrics: ParsedPageMetrics,
+  crawlMetadata: PageEvidenceMetadata
 ): CreatePageEvidenceInput[] {
   const messagingAlignment = {
     titleAlignment: metrics.messagingQuality.titleAlignment,
@@ -854,6 +858,14 @@ function buildPageEvidence(
   };
 
   return [
+    {
+      auditRunId,
+      pageSnapshotId,
+      category: "technical_seo",
+      key: "crawl_metadata",
+      value: crawlMetadata,
+      evidenceLevel: "Measured",
+    },
     {
       auditRunId,
       pageSnapshotId,
@@ -1156,6 +1168,49 @@ const STATIC_CAPTURE_METHODS = new Set<import("@/lib/types").CaptureMethodProven
   "secondary_static",
 ]);
 
+function getCaptureFidelityFromMethod(
+  captureMethod: CaptureMethodProvenance | null | undefined
+): CaptureFidelity {
+  if (captureMethod === "browser") return "rendered_browser";
+  if (captureMethod === "secondary_static") return "secondary_static";
+  if (captureMethod === "static" || captureMethod === "fallback_static") return "static_public";
+  return "blocked_no_evidence";
+}
+
+function getMetadataCaptureMethod(
+  captureMethod: CaptureMethodProvenance | null | undefined
+): PageEvidenceMetadata["captureMethod"] {
+  if (captureMethod === "browser") return "browser";
+  if (captureMethod === "secondary_static") return "secondary_static";
+  if (captureMethod === "static" || captureMethod === "fallback_static") return "static";
+  return "failed";
+}
+
+function buildCrawlMetadata(
+  snapshot: Pick<PageSnapshot, "url" | "pageType" | "pagePriority"> &
+    Partial<Pick<PageSnapshot, "captureMethod" | "lastError">>
+): PageEvidenceMetadata {
+  const crawlScore =
+    typeof snapshot.pagePriority === "number" ? Math.max(0, 1_000 - snapshot.pagePriority) : undefined;
+  const crawlSource = snapshot.pageType === "homepage" ? "homepage_seed" : "business_priority_selection";
+  const crawlReasons =
+    snapshot.pageType === "homepage"
+      ? ["homepage_seed"]
+      : [`selected_${snapshot.pageType}_page`, "bounded_business_priority_selection"];
+
+  return {
+    url: snapshot.url,
+    finalUrl: snapshot.url,
+    pageType: snapshot.pageType,
+    crawlSource,
+    crawlScore,
+    crawlReasons,
+    captureMethod: getMetadataCaptureMethod(snapshot.captureMethod),
+    captureFidelity: getCaptureFidelityFromMethod(snapshot.captureMethod),
+    limitationNote: snapshot.lastError ?? undefined,
+  };
+}
+
 function applyCaptureBoundTitle(
   title: string,
   captureMethod: import("@/lib/types").CaptureMethodProvenance | null | undefined
@@ -1206,12 +1261,12 @@ function buildFinding(
 export function extractPageArtifacts(
   auditRun: Pick<AuditRun, "id" | "homepageOnly">,
   snapshot: Pick<PageSnapshot, "id" | "url" | "pageType" | "pagePriority"> &
-    Partial<Pick<PageSnapshot, "captureMethod">>,
+    Partial<Pick<PageSnapshot, "captureMethod" | "lastError">>,
   html: string
 ): ExtractedPageArtifacts {
   const metrics = parseMetrics(snapshot, html);
   const route = getRoutedPageContext(snapshot);
-  const pageEvidence = buildPageEvidence(auditRun.id, snapshot.id, metrics);
+  const pageEvidence = buildPageEvidence(auditRun.id, snapshot.id, metrics, buildCrawlMetadata(snapshot));
   const findings = runSpecialistEvaluators({ snapshot, route, metrics }).map((draft) =>
     buildFinding(auditRun, snapshot, draft)
   );

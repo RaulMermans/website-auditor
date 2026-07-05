@@ -313,6 +313,17 @@ function getIssueKey(title: string): keyof typeof CAPTURE_BOUND_FINDING_COPY | n
   return CAPTURE_BOUND_TITLE_TO_ISSUE[normalizeFindingTitle(title)] ?? null;
 }
 
+function sanitizeStaticOnlyClaimLanguage(text: string) {
+  return stripHomepageScopePrefix(text)
+    .replace(/\babove[-\s]the[-\s]fold(?:\s+UX|\s+composition)?\b/gi, "opening-page")
+    .replace(/\bvisual hierarchy\b/gi, "content hierarchy")
+    .replace(/\bmobile layout\b/gi, "small-screen structure")
+    .replace(/\brendered interaction states?\b/gi, "rendered states")
+    .replace(/\binteraction behavior\b/gi, "interactive-state evidence")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function getCaptureBoundFindingDisplay(input: {
   title: string;
   whatWeFound: string;
@@ -334,8 +345,8 @@ export function getCaptureBoundFindingDisplay(input: {
   const issueKey = getIssueKey(input.title);
   if (!issueKey) {
     return {
-      title: stripHomepageScopePrefix(input.title),
-      whatWeFound: stripHomepageScopePrefix(input.whatWeFound),
+      title: sanitizeStaticOnlyClaimLanguage(input.title),
+      whatWeFound: sanitizeStaticOnlyClaimLanguage(input.whatWeFound),
     };
   }
 

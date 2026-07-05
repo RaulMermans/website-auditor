@@ -51,7 +51,7 @@ export function buildProspectAuditAgentInput(data: ReportData): ProspectAuditAge
   const limitationNotes = [
     data.auditRun.limitationNote,
     captureFidelity.primaryFidelity === "static_public"
-      ? "Static-only capture excludes visual hierarchy, mobile layout, above-the-fold composition, rendered interaction states, and screenshot-based UX claims."
+      ? "Static-only capture excludes visual composition, small-screen structure, opening-screen composition, rendered states, and screenshot-based UX claims."
       : null,
     captureFidelity.primaryFidelity === "secondary_static"
       ? "Homepage capture was unavailable or blocked; intelligence is based on accessible secondary public evidence only."

@@ -17,7 +17,7 @@ import type {
   PageState,
   PageType,
 } from "@/lib/types";
-import { buildCapturePlan, getPagePriority } from "@/server/audits/page-archetypes";
+import { getPagePriority } from "@/server/audits/page-archetypes";
 import {
   assessPublicHtmlEvidence,
   HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE,
@@ -33,6 +33,14 @@ import type {
 } from "@/server/browser/types";
 import { captureRenderedPage } from "@/lib/capture/rendered-capture";
 import { adaptRenderedCaptureResult } from "@/server/audits/rendered-capture-adapter";
+import {
+  discoverAuditPages,
+  toSnapshotInputs,
+} from "@/server/audits/crawler/discovery";
+import {
+  fetchRobotsPolicy,
+  isUrlAllowedByRobots,
+} from "@/server/audits/crawler/robots";
 
 const DEFAULT_MAX_PAGES = 5;
 const CAPTURE_PENDING_STATES = new Set<PageState>(["queued", "capturing"]);
@@ -158,15 +166,27 @@ async function queueHomepageSnapshot(baseUrl: string, auditRunId: string, deps: 
   });
 }
 
-async function queueDiscoveredPagesFromLinks(options: {
+async function queueDiscoveredPages(options: {
   auditRunId: string;
   homepageUrl: string;
-  links: BrowserDiscoveredLink[];
+  homepageHtml?: string;
+  renderedLinks?: BrowserDiscoveredLink[];
   maxPages: number;
   deps: CaptureAuditRunDeps;
 }) {
-  const { auditRunId, homepageUrl, links, maxPages, deps } = options;
-  const captureTargets = buildCapturePlan(homepageUrl, links, maxPages).filter(
+  const { auditRunId, homepageUrl, homepageHtml, renderedLinks, maxPages, deps } = options;
+  const fetcher = deps.fetchStatic ?? fetchStaticPage;
+  const discovery = await discoverAuditPages({
+    baseUrl: homepageUrl,
+    homepageHtml,
+    homepageFinalUrl: homepageUrl,
+    renderedLinks,
+    fetcher,
+    limits: {
+      maxPagesCaptured: maxPages,
+    },
+  });
+  const captureTargets = toSnapshotInputs(discovery.selected).filter(
     (target) => target.pageType !== "homepage"
   );
 
@@ -700,7 +720,8 @@ interface BrowserFirstResult {
   limitationNote: string | null;
   browserDegraded: boolean;
   capturedUrl?: string;
-  discoveredLinks: BrowserDiscoveredLink[];
+  homepageHtml?: string;
+  renderedLinks?: BrowserDiscoveredLink[];
 }
 
 /**
@@ -753,7 +774,7 @@ async function captureBrowserFirstPage(
       limitationNote: null,
       browserDegraded: false,
       capturedUrl: evidence.finalUrl,
-      discoveredLinks: extractLinksFromStaticHtml(evidence.html, evidence.finalUrl),
+      renderedLinks: extractLinksFromStaticHtml(evidence.html, evidence.finalUrl),
     };
   }
 
@@ -815,7 +836,7 @@ async function captureStaticFallbackAfterBrowserFailure(options: {
       limitationNote: note,
       browserDegraded: true,
       capturedUrl: staticResult.finalUrl,
-      discoveredLinks: extractLinksFromStaticHtml(staticResult.html, staticResult.finalUrl),
+      homepageHtml: staticResult.html,
     };
   } catch (staticError) {
     const staticFailure = toAuditFailure(staticError, {
@@ -849,7 +870,6 @@ async function captureStaticFallbackAfterBrowserFailure(options: {
       return {
         limitationNote: secondarySweepNote,
         browserDegraded: true,
-        discoveredLinks: [],
       };
     }
 
@@ -950,11 +970,12 @@ export async function captureAuditRun(
             browserDegraded = true;
           }
           limitationNote = limitationNote ?? result.limitationNote ?? null;
-          if (result.capturedUrl && result.discoveredLinks.length > 0) {
-            await queueDiscoveredPagesFromLinks({
+          if (result.capturedUrl) {
+            await queueDiscoveredPages({
               auditRunId,
               homepageUrl: result.capturedUrl,
-              links: result.discoveredLinks,
+              homepageHtml: result.homepageHtml,
+              renderedLinks: result.renderedLinks,
               maxPages,
               deps,
             });
@@ -1068,10 +1089,12 @@ async function runSecondaryStaticSweep(
   const queuedUrls = new Set<string>();
   const sitemapCandidates: SecondarySweepCandidate[] = [];
   const internalLinkCandidates: SecondarySweepCandidate[] = [];
+  const robotsPolicy = await fetchRobotsPolicy({ baseUrl, fetcher });
 
   async function tryCandidate(candidate: SecondarySweepCandidate): Promise<void> {
     if (queued >= pageCap || attempted >= SECONDARY_FETCH_ATTEMPT_CAP) return;
     if (fetchedUrls.has(candidate.url)) return;
+    if (!isUrlAllowedByRobots(candidate.url, robotsPolicy)) return;
 
     // Avoid two pages of the same type (e.g. /about and /about-us both being "about").
     if (seenPageTypes.has(candidate.pageType) && candidate.pageType !== "other") return;

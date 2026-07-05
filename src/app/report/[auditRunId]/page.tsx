@@ -80,13 +80,13 @@ function getCaptureLimitations(fidelity?: ReportCaptureFidelity) {
     return [
       "Homepage browser/static capture was blocked or unusable.",
       "Findings are bounded to accessible secondary public pages and static technical evidence.",
-      "Visual, mobile layout, above-the-fold, and rendered interaction claims are excluded.",
+      "Visual, small-screen, opening-screen, and rendered-state claims are excluded.",
     ];
   }
   if (fidelity.primaryFidelity === "static_public") {
     return [
       "The audit used public HTML/static evidence only.",
-      "Visual, mobile layout, above-the-fold, and rendered interaction claims are excluded.",
+      "Visual, small-screen, opening-screen, and rendered-state claims are excluded.",
     ];
   }
   if (fidelity.primaryFidelity === "blocked_no_evidence") {

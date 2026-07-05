@@ -190,6 +190,59 @@ describe("buildFullReportData", () => {
     expect(seoFinding?.summary).toContain("captured static HTML");
   });
 
+  it("adds concise page-selection transparency to the scope note", () => {
+    const fullReport = buildFullReportData(makeReportData());
+
+    expect(fullReport.appendix.scopeNote).toContain(
+      "Inspected pages were selected from public sitemap, homepage navigation, and accessible internal links"
+    );
+    expect(fullReport.appendix.scopeNote).toContain("services, contact, product, pricing, and about");
+  });
+
+  it("uses blocked-homepage page-selection copy for secondary-static reports", () => {
+    const data = makeReportData({
+      captureFidelity: {
+        acceptedPageCount: 2,
+        browserPageCount: 0,
+        staticPageCount: 0,
+        fallbackStaticPageCount: 0,
+        secondaryStaticPageCount: 2,
+        screenshotPageCount: 0,
+        hasBrowserEvidence: false,
+        primaryFidelity: "secondary_static",
+      },
+      acceptedPages: [
+        { url: "https://example.com/contact", pageType: "contact", pageState: "accepted" },
+      ],
+    });
+    const fullReport = buildFullReportData(data);
+
+    expect(fullReport.appendix.scopeNote).toContain("Homepage capture was blocked");
+  });
+
+  it("removes rendered-only phrases from static-only report finding display", () => {
+    const data = makeReportData({
+      captureFidelity: {
+        acceptedPageCount: 1,
+        browserPageCount: 0,
+        staticPageCount: 1,
+        fallbackStaticPageCount: 0,
+        secondaryStaticPageCount: 0,
+        screenshotPageCount: 0,
+        hasBrowserEvidence: false,
+        primaryFidelity: "static_public",
+      },
+    });
+    const fullReport = buildFullReportData(data);
+    const serialized = JSON.stringify(fullReport).toLowerCase();
+
+    expect(serialized).not.toContain("above the fold");
+    expect(serialized).not.toContain("above-the-fold");
+    expect(serialized).not.toContain("visual hierarchy");
+    expect(serialized).not.toContain("mobile layout");
+    expect(serialized).not.toContain("interaction behavior");
+  });
+
   it("keeps direct missing-language for rendered-browser reports", () => {
     const data = makeReportData({
       captureFidelity: {

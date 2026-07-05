@@ -259,8 +259,14 @@ function buildScopeNote(data: ReportData) {
   const base = data.auditRun.homepageOnly
     ? "Homepage-only audit. Conclusions apply to the captured homepage snapshot and should not be generalized to the full site."
     : "Multi-page audit. Conclusions apply only to the captured page set included in this run.";
+  const crawlNote =
+    data.captureFidelity?.primaryFidelity === "secondary_static" &&
+    !(data.acceptedPages ?? []).some((page) => page.pageType === "homepage")
+      ? "Homepage capture was blocked. Secondary pages were selected from accessible public links and sitemap evidence where available."
+      : "Inspected pages were selected from public sitemap, homepage navigation, and accessible internal links. Selection prioritized commercially relevant pages such as services, contact, product, pricing, and about pages.";
+  const scopedBase = `${base} ${crawlNote}`;
 
-  return data.auditRun.limitationNote ? `${base} ${data.auditRun.limitationNote}` : base;
+  return data.auditRun.limitationNote ? `${scopedBase} ${data.auditRun.limitationNote}` : scopedBase;
 }
 
 function getInspectionLabel(review: ReportCategoryReview) {

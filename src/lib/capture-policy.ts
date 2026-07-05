@@ -34,7 +34,7 @@ export const SAFE_SECONDARY_ROUTES: Array<{ path: string; pageType: PageType }> 
  * but secondary public evidence allowed a bounded partial audit.
  */
 export const HOMEPAGE_BLOCKED_SECONDARY_SWEEP_NOTE =
-  "Homepage capture was blocked by a security or bot-challenge page. This audit was completed using accessible public secondary pages and static technical evidence only. Findings are bounded to the inspected public evidence and do not include homepage-specific observations (hero clarity, above-the-fold UX, or rendered visual hierarchy).";
+  "Homepage capture was blocked by a security or bot-challenge page. This audit was completed using accessible public secondary pages and static technical evidence only. Findings are bounded to the inspected public evidence and do not include homepage-specific rendered experience observations.";
 
 /**
  * Minimum number of secondary pages that must be successfully captured before
